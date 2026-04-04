@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Effect, Layer, Ref } from "effect"
+import { Effect, Layer } from "effect"
 import * as Socket from "effect/unstable/socket/Socket"
 import type { AgentInfo } from "@scout/shared"
 import { AgentManager } from "../../src/services/agent-manager.js"
