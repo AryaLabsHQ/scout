@@ -15,6 +15,9 @@ import { MetricsIngestion } from "./services/metrics-ingestion.js"
 import { MetricsBroadcast } from "./services/metrics-broadcast.js"
 import { AgentManager } from "./services/agent-manager.js"
 import { LogService } from "./services/log-service.js"
+import { SystemdService } from "./services/systemd-service.js"
+import { DockerService } from "./services/docker-service.js"
+import { K8sService } from "./services/k8s-service.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -555,7 +558,7 @@ export const ClientWebSocketRoute = HttpRouter.add(
 
             const msg = parsed as Record<string, unknown>
 
-            // Handle RPC requests from client for log streaming
+            // Handle RPC requests from client for log streaming and management
             if (typeof msg["id"] === "string" && typeof msg["method"] === "string") {
               const id = msg["id"] as string
               const method = msg["method"] as string
@@ -605,6 +608,105 @@ export const ClientWebSocketRoute = HttpRouter.add(
                   yield* logSvc.stopStream(streamId)
                 }
                 yield* write(JSON.stringify({ id, ok: true, result: null })).pipe(Effect.ignore)
+              } else if (
+                method === "systemd.start" || method === "systemd.stop" ||
+                method === "systemd.restart" || method === "systemd.enable" ||
+                method === "systemd.disable" || method === "systemd.reload" ||
+                method === "systemd.unit-file" || method === "systemd.unit-file-edit"
+              ) {
+                const systemdSvc = yield* SystemdService
+                const agentId = params["agentId"] as string | undefined
+                const unit = params["unit"] as string | undefined
+                if (!agentId) {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "BAD_REQUEST", message: "Missing agentId" } })).pipe(Effect.ignore)
+                  return
+                }
+                let actionEffect: Effect.Effect<unknown, unknown>
+                if (method === "systemd.reload") {
+                  actionEffect = systemdSvc.reload(agentId)
+                } else if (method === "systemd.unit-file") {
+                  actionEffect = unit ? systemdSvc.getUnitFile(agentId, unit) : Effect.fail({ code: "BAD_REQUEST", message: "Missing unit" })
+                } else if (method === "systemd.unit-file-edit") {
+                  const content = params["content"] as string | undefined
+                  actionEffect = unit && content ? systemdSvc.editUnitFile(agentId, unit, content) : Effect.fail({ code: "BAD_REQUEST", message: "Missing unit or content" })
+                } else if (method === "systemd.start" && unit) {
+                  actionEffect = systemdSvc.start(agentId, unit)
+                } else if (method === "systemd.stop" && unit) {
+                  actionEffect = systemdSvc.stop(agentId, unit)
+                } else if (method === "systemd.restart" && unit) {
+                  actionEffect = systemdSvc.restart(agentId, unit)
+                } else if (method === "systemd.enable" && unit) {
+                  actionEffect = systemdSvc.enable(agentId, unit)
+                } else if (method === "systemd.disable" && unit) {
+                  actionEffect = systemdSvc.disable(agentId, unit)
+                } else {
+                  actionEffect = Effect.fail({ code: "BAD_REQUEST", message: "Missing unit" })
+                }
+                const result = yield* Effect.exit(actionEffect)
+                if (result._tag === "Failure") {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "RPC_ERROR", message: "Action failed" } })).pipe(Effect.ignore)
+                } else {
+                  yield* write(JSON.stringify({ id, ok: true, result: result.value ?? null })).pipe(Effect.ignore)
+                }
+              } else if (
+                method === "docker.start" || method === "docker.stop" ||
+                method === "docker.restart" || method === "docker.remove" ||
+                method === "docker.inspect" || method === "docker.logs"
+              ) {
+                const dockerSvc = yield* DockerService
+                const agentId = params["agentId"] as string | undefined
+                const containerId = params["containerId"] as string | undefined
+                if (!agentId || !containerId) {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "BAD_REQUEST", message: "Missing agentId or containerId" } })).pipe(Effect.ignore)
+                  return
+                }
+                let actionEffect: Effect.Effect<unknown, unknown>
+                if (method === "docker.start") actionEffect = dockerSvc.start(agentId, containerId)
+                else if (method === "docker.stop") actionEffect = dockerSvc.stop(agentId, containerId)
+                else if (method === "docker.restart") actionEffect = dockerSvc.restart(agentId, containerId)
+                else if (method === "docker.remove") actionEffect = dockerSvc.remove(agentId, containerId)
+                else if (method === "docker.inspect") actionEffect = dockerSvc.inspect(agentId, containerId)
+                else {
+                  const tail = typeof params["tail"] === "number" ? params["tail"] : 100
+                  actionEffect = dockerSvc.logs(agentId, containerId, tail)
+                }
+                const result = yield* Effect.exit(actionEffect)
+                if (result._tag === "Failure") {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "RPC_ERROR", message: "Action failed" } })).pipe(Effect.ignore)
+                } else {
+                  yield* write(JSON.stringify({ id, ok: true, result: result.value ?? null })).pipe(Effect.ignore)
+                }
+              } else if (
+                method === "k8s.scale" || method === "k8s.restart-pod" || method === "k8s.describe"
+              ) {
+                const k8sSvc = yield* K8sService
+                const agentId = params["agentId"] as string | undefined
+                if (!agentId) {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "BAD_REQUEST", message: "Missing agentId" } })).pipe(Effect.ignore)
+                  return
+                }
+                let actionEffect: Effect.Effect<unknown, unknown>
+                if (method === "k8s.scale") {
+                  const deployment = params["deployment"] as string
+                  const namespace = params["namespace"] as string ?? "default"
+                  const replicas = params["replicas"] as number
+                  actionEffect = k8sSvc.scale(agentId, deployment, namespace, replicas)
+                } else if (method === "k8s.restart-pod") {
+                  const podName = params["podName"] as string
+                  const namespace = params["namespace"] as string ?? "default"
+                  actionEffect = k8sSvc.restartPod(agentId, podName, namespace)
+                } else {
+                  const resource = params["resource"] as string
+                  const name = params["name"] as string
+                  const namespace = params["namespace"] as string ?? "default"
+                  actionEffect = k8sSvc.describe(agentId, resource, name, namespace)
+                }
+                const result = yield* Effect.exit(actionEffect)
+                if (result._tag === "Failure") {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "RPC_ERROR", message: "Action failed" } })).pipe(Effect.ignore)
+                } else {
+                  yield* write(JSON.stringify({ id, ok: true, result: result.value ?? null })).pipe(Effect.ignore)
+                }
               } else {
                 yield* Effect.log(`Client WS message: ${method}`)
               }
@@ -627,6 +729,380 @@ export const ClientWebSocketRoute = HttpRouter.add(
   }),
 )
 
+// ── Management error helper ────────────────────────────────────────────────────
+
+function handleManagementError(err: unknown): Effect.Effect<Response> {
+  if (err && typeof err === "object" && "_tag" in err) {
+    const tagged = err as { _tag: string; agentId?: string; message?: string; code?: string }
+    if (tagged._tag === "AgentNotConnected") {
+      return HttpServerResponse.json(
+        { error: "AGENT_NOT_CONNECTED", message: `Agent ${tagged.agentId ?? "unknown"} is not connected` },
+        { status: 503 },
+      )
+    }
+    if (tagged._tag === "RpcCallError") {
+      return HttpServerResponse.json(
+        { error: tagged.code ?? "RPC_ERROR", message: tagged.message ?? "RPC error" },
+        { status: 502 },
+      )
+    }
+    if (tagged._tag === "TimeoutError") {
+      return HttpServerResponse.json(
+        { error: "TIMEOUT", message: "Agent did not respond in time" },
+        { status: 504 },
+      )
+    }
+  }
+  return HttpServerResponse.json(
+    { error: "INTERNAL_ERROR", message: "Internal server error" },
+    { status: 500 },
+  )
+}
+
+// ── POST /api/systems/:id/systemd/:unit/start ─────────────────────────────────
+
+export const SystemdStartRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/:unit/start",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.start(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/systemd/:unit/stop ──────────────────────────────────
+
+export const SystemdStopRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/:unit/stop",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.stop(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/systemd/:unit/restart ───────────────────────────────
+
+export const SystemdRestartRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/:unit/restart",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.restart(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/systemd/:unit/enable ────────────────────────────────
+
+export const SystemdEnableRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/:unit/enable",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.enable(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/systemd/:unit/disable ───────────────────────────────
+
+export const SystemdDisableRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/:unit/disable",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.disable(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/systemd/reload ─────────────────────────────────────
+
+export const SystemdReloadRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/systemd/reload",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.reload(agentId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── GET /api/systems/:id/systemd/:unit/file ───────────────────────────────────
+
+export const SystemdGetUnitFileRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/systemd/:unit/file",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.getUnitFile(agentId, unit))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json(result.value)
+  }),
+)
+
+// ── PUT /api/systems/:id/systemd/:unit/file ───────────────────────────────────
+
+export const SystemdEditUnitFileRoute = HttpRouter.add(
+  "PUT",
+  "/api/systems/:id/systemd/:unit/file",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const agentId = params["id"]!
+    const unit = decodeURIComponent(params["unit"]!)
+    const body = yield* request.json as Effect.Effect<{ content?: string } | null>
+    const content = (body as Record<string, unknown> | null)?.["content"]
+    if (typeof content !== "string") {
+      return yield* HttpServerResponse.json(
+        { error: "BAD_REQUEST", message: "Missing content field" },
+        { status: 400 },
+      )
+    }
+    const svc = yield* SystemdService
+    const result = yield* Effect.exit(svc.editUnitFile(agentId, unit, content))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/docker/:containerId/start ──────────────────────────
+
+export const DockerStartRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/docker/:containerId/start",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.start(agentId, containerId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/docker/:containerId/stop ───────────────────────────
+
+export const DockerStopRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/docker/:containerId/stop",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.stop(agentId, containerId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/docker/:containerId/restart ────────────────────────
+
+export const DockerRestartRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/docker/:containerId/restart",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.restart(agentId, containerId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/docker/:containerId/remove ─────────────────────────
+
+export const DockerRemoveRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/docker/:containerId/remove",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.remove(agentId, containerId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── GET /api/systems/:id/docker/:containerId/inspect ─────────────────────────
+
+export const DockerInspectRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/docker/:containerId/inspect",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.inspect(agentId, containerId))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json(result.value)
+  }),
+)
+
+// ── GET /api/systems/:id/docker/:containerId/logs ─────────────────────────────
+
+export const DockerLogsRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/docker/:containerId/logs",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const containerId = params["containerId"]!
+    const searchParams = yield* HttpServerRequest.ParsedSearchParams
+    const tail = typeof searchParams["tail"] === "string" ? Number(searchParams["tail"]) || 100 : 100
+    const svc = yield* DockerService
+    const result = yield* Effect.exit(svc.logs(agentId, containerId, tail))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ logs: result.value })
+  }),
+)
+
+// ── POST /api/systems/:id/k8s/scale ──────────────────────────────────────────
+
+export const K8sScaleRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/k8s/scale",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const agentId = params["id"]!
+    const body = (yield* request.json) as Record<string, unknown> | null
+    const deployment = body?.["deployment"]
+    const namespace = body?.["namespace"]
+    const replicas = body?.["replicas"]
+    if (typeof deployment !== "string" || typeof namespace !== "string" || typeof replicas !== "number") {
+      return yield* HttpServerResponse.json(
+        { error: "BAD_REQUEST", message: "Missing deployment, namespace, or replicas" },
+        { status: 400 },
+      )
+    }
+    const svc = yield* K8sService
+    const result = yield* Effect.exit(svc.scale(agentId, deployment, namespace, replicas))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── POST /api/systems/:id/k8s/restart-pod ────────────────────────────────────
+
+export const K8sRestartPodRoute = HttpRouter.add(
+  "POST",
+  "/api/systems/:id/k8s/restart-pod",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const agentId = params["id"]!
+    const body = (yield* request.json) as Record<string, unknown> | null
+    const podName = body?.["podName"]
+    const namespace = body?.["namespace"]
+    if (typeof podName !== "string" || typeof namespace !== "string") {
+      return yield* HttpServerResponse.json(
+        { error: "BAD_REQUEST", message: "Missing podName or namespace" },
+        { status: 400 },
+      )
+    }
+    const svc = yield* K8sService
+    const result = yield* Effect.exit(svc.restartPod(agentId, podName, namespace))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ ok: true })
+  }),
+)
+
+// ── GET /api/systems/:id/k8s/describe ────────────────────────────────────────
+
+export const K8sDescribeRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/k8s/describe",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const agentId = params["id"]!
+    const searchParams = yield* HttpServerRequest.ParsedSearchParams
+    const resource = searchParams["resource"]
+    const name = searchParams["name"]
+    const namespace = searchParams["namespace"] ?? "default"
+    if (typeof resource !== "string" || typeof name !== "string") {
+      return yield* HttpServerResponse.json(
+        { error: "BAD_REQUEST", message: "Missing resource or name query params" },
+        { status: 400 },
+      )
+    }
+    const svc = yield* K8sService
+    const result = yield* Effect.exit(svc.describe(agentId, resource, name, namespace as string))
+    if (result._tag === "Failure") {
+      return yield* handleManagementError(result.cause)
+    }
+    return yield* HttpServerResponse.json({ data: result.value })
+  }),
+)
+
 // ── AppRoutes: single Layer that registers all routes ─────────────────────────
 
 export const AppRoutes = Layer.mergeAll(
@@ -644,4 +1120,22 @@ export const AppRoutes = Layer.mergeAll(
   ResolveAlertRoute,
   AgentWebSocketRoute,
   ClientWebSocketRoute,
+  // Management routes
+  SystemdStartRoute,
+  SystemdStopRoute,
+  SystemdRestartRoute,
+  SystemdEnableRoute,
+  SystemdDisableRoute,
+  SystemdReloadRoute,
+  SystemdGetUnitFileRoute,
+  SystemdEditUnitFileRoute,
+  DockerStartRoute,
+  DockerStopRoute,
+  DockerRestartRoute,
+  DockerRemoveRoute,
+  DockerInspectRoute,
+  DockerLogsRoute,
+  K8sScaleRoute,
+  K8sRestartPodRoute,
+  K8sDescribeRoute,
 )

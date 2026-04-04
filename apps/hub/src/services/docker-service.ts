@@ -1,18 +1,69 @@
 import { Effect, Layer } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
+import { AgentManager } from "./agent-manager.js"
+import { AgentNotConnected, RpcCallError, TimeoutError } from "../lib/errors.js"
+import type { Socket } from "effect/unstable/socket/Socket"
 
-// Not implemented — M5
-// Proxies Docker management RPC calls to agents (start/stop/restart containers,
-// stream logs, pull images).
+type DockerError = AgentNotConnected | RpcCallError | TimeoutError | Socket.SocketError
+
+// ── invoke helper ─────────────────────────────────────────────────────────────
+
+function invokeAgent(
+  mgr: InstanceType<typeof AgentManager>["Type"],
+  agentId: string,
+  method: string,
+  params: Record<string, unknown>,
+): Effect.Effect<unknown, DockerError> {
+  return Effect.gen(function* () {
+    const connected = yield* mgr.getConnected(agentId)
+    if (!connected) {
+      return yield* Effect.fail(new AgentNotConnected({ agentId }))
+    }
+    const resp = yield* mgr.call(
+      agentId,
+      { id: crypto.randomUUID(), method, params },
+      30_000,
+    )
+    return resp.result
+  })
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 export class DockerService extends ServiceMap.Service<DockerService, {
-  readonly _tag: "@scout/DockerService"
+  readonly start: (agentId: string, containerId: string) => Effect.Effect<void, DockerError>
+  readonly stop: (agentId: string, containerId: string) => Effect.Effect<void, DockerError>
+  readonly restart: (agentId: string, containerId: string) => Effect.Effect<void, DockerError>
+  readonly remove: (agentId: string, containerId: string) => Effect.Effect<void, DockerError>
+  readonly inspect: (agentId: string, containerId: string) => Effect.Effect<unknown, DockerError>
+  readonly logs: (agentId: string, containerId: string, tail: number) => Effect.Effect<string, DockerError>
 }>()(
   "@scout/DockerService",
   {
     make: Effect.gen(function* () {
-      // TODO: implement in M5
-      return yield* Effect.die(new Error("Not implemented — M5"))
+      const mgr = yield* AgentManager
+
+      const start = (agentId: string, containerId: string) =>
+        invokeAgent(mgr, agentId, "docker.start", { containerId }).pipe(Effect.asVoid)
+
+      const stop = (agentId: string, containerId: string) =>
+        invokeAgent(mgr, agentId, "docker.stop", { containerId }).pipe(Effect.asVoid)
+
+      const restart = (agentId: string, containerId: string) =>
+        invokeAgent(mgr, agentId, "docker.restart", { containerId }).pipe(Effect.asVoid)
+
+      const remove = (agentId: string, containerId: string) =>
+        invokeAgent(mgr, agentId, "docker.remove", { containerId }).pipe(Effect.asVoid)
+
+      const inspect = (agentId: string, containerId: string): Effect.Effect<unknown, DockerError> =>
+        invokeAgent(mgr, agentId, "docker.inspect", { containerId })
+
+      const logs = (agentId: string, containerId: string, tail: number): Effect.Effect<string, DockerError> =>
+        invokeAgent(mgr, agentId, "docker.logs", { containerId, tail }).pipe(
+          Effect.map((result) => (typeof result === "string" ? result : String(result ?? ""))),
+        )
+
+      return { start, stop, restart, remove, inspect, logs }
     }),
   },
 ) {
