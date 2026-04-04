@@ -4,23 +4,22 @@ import { Database } from "../../src/services/database.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
 import { systems } from "../../drizzle/schema.js"
 
-const run = <A>(effect: Effect.Effect<A, unknown, Database>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(TestDatabaseLayer)))
+const run = <A, E>(effect: Effect.Effect<A, E, Database>): Promise<A> =>
+  Effect.runPromise(Effect.provide(effect, TestDatabaseLayer))
 
 describe("Database service", () => {
-  it("provides a drizzle db instance", async () => {
-    await run(
+  it("provides a drizzle db instance", () =>
+    run(
       Effect.gen(function* () {
         const db = yield* Database
         expect(db).toBeDefined()
         expect(typeof db.select).toBe("function")
         expect(typeof db.insert).toBe("function")
       }),
-    )
-  })
+    ))
 
-  it("has foreign keys enabled", async () => {
-    await run(
+  it("has foreign keys enabled", () =>
+    run(
       Effect.gen(function* () {
         const db = yield* Database
         const result = db.$client
@@ -28,11 +27,10 @@ describe("Database service", () => {
           .get() as { foreign_keys: number }
         expect(result.foreign_keys).toBe(1)
       }),
-    )
-  })
+    ))
 
-  it("can insert and query a row", async () => {
-    await run(
+  it("can insert and query a row", () =>
+    run(
       Effect.gen(function* () {
         const db = yield* Database
         const now = new Date()
@@ -53,13 +51,10 @@ describe("Database service", () => {
         expect(rows[0].hostname).toBe("test-host")
         expect(rows[0].status).toBe("online")
       }),
-    )
-  })
+    ))
 
-  it("WAL mode is set or gracefully ignored (in-memory may not support it)", async () => {
-    // In-memory SQLite databases return 'memory' for journal_mode=WAL
-    // The database service handles this gracefully
-    await run(
+  it("WAL mode is set or gracefully ignored (in-memory may not support it)", () =>
+    run(
       Effect.gen(function* () {
         const db = yield* Database
         const result = db.$client
@@ -68,6 +63,5 @@ describe("Database service", () => {
         // In-memory SQLite returns 'memory', file-based returns 'wal'
         expect(["memory", "wal"]).toContain(result.journal_mode)
       }),
-    )
-  })
+    ))
 })

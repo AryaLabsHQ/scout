@@ -55,8 +55,8 @@ CREATE INDEX IF NOT EXISTS idx_alerts_system_state
 `
 
 /**
- * Creates an in-memory SQLite Database layer for tests.
- * Runs schema DDL on setup so all tables are available.
+ * In-memory SQLite Database layer for integration tests.
+ * Creates a fresh database with the full schema on each test run.
  */
 export const TestDatabaseLayer: Layer.Layer<Database> = Layer.effect(
   Database,
@@ -65,7 +65,7 @@ export const TestDatabaseLayer: Layer.Layer<Database> = Layer.effect(
       const sqlite = new BunDatabase(":memory:")
       sqlite.exec("PRAGMA foreign_keys=ON")
       sqlite.exec(CREATE_SCHEMA_SQL)
-      return drizzle(sqlite, { schema })
+      return drizzle({ client: sqlite, schema })
     }),
     (db) => Effect.sync(() => db.$client.close()),
   ),
