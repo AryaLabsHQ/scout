@@ -84,7 +84,7 @@ export class MetricsIngestion extends ServiceMap.Service<MetricsIngestion, {
                 errors: e,
               }),
           ),
-          Effect.flatMap(ingest),
+          Effect.flatMap((decoded) => ingest(decoded as AgentReport)),
         )
 
       const querySystemMetrics = (

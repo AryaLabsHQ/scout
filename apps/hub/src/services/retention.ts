@@ -1,6 +1,6 @@
 import { Effect, Layer, Schedule } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
-import { and, eq, gte, lt } from "drizzle-orm"
+import { and, eq, lt } from "drizzle-orm"
 import type { AgentReport } from "@scout/shared"
 import { Database } from "./database.js"
 import * as schema from "../../drizzle/schema.js"

@@ -15,7 +15,7 @@ export class Database extends ServiceMap.Service<Database, ScoutDatabase>()(
       const db = yield* Effect.acquireRelease(
         Effect.sync(() => {
           const sqlite = new BunDatabase(dbPath)
-          return drizzle(sqlite, { schema })
+          return drizzle({ client: sqlite, schema })
         }),
         (db) =>
           Effect.sync(() => {
