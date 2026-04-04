@@ -288,6 +288,13 @@ export class AlertEngine extends ServiceMap.Service<AlertEngine, {
                       resolvedAt: now.getTime(),
                     }
                     yield* broadcast.publishAlertResolved(resolvedAlert)
+                    yield* Effect.logInfo("Alert resolved").pipe(
+                      Effect.annotateLogs({
+                        alertId: row.id,
+                        metric: row.metric,
+                        systemId,
+                      }),
+                    )
                   }
                 }
 

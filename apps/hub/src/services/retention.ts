@@ -195,10 +195,11 @@ export class Retention extends ServiceMap.Service<Retention, {
       const db = yield* Database
 
       const runOnce = (): Effect.Effect<void> =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const now = Date.now()
           const policy = defaultPolicy
 
+          yield* Effect.sync(() => {
           // Aggregate each tier
           for (const tier of TIERS) {
             // Get distinct systemIds that have source records
@@ -263,6 +264,9 @@ export class Retention extends ServiceMap.Service<Retention, {
               ),
             )
             .run()
+          })
+
+          yield* Effect.logInfo("Retention cleanup completed")
         })
 
       const runForever = (): Effect.Effect<void> =>
