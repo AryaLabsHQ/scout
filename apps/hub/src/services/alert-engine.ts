@@ -365,7 +365,6 @@ export class AlertEngine extends ServiceMap.Service<AlertEngine, {
         resolve,
       }
     }),
-    dependencies: [Database.layer, MetricsBroadcast.layer],
   },
 ) {
   static readonly layer = Layer.effect(this, this.make)
