@@ -183,6 +183,137 @@ interface ActiveStream {
   readonly abort: () => void
 }
 
+// ── Active terminal sessions ──────────────────────────────────────────────────
+
+interface ActiveTerminal {
+  readonly proc: ReturnType<typeof Bun.spawn>
+  readonly mode: "shell" | "podExec"
+  readonly abort: () => void
+}
+
+// ── Terminal helpers ──────────────────────────────────────────────────────────
+
+function startTerminalProcess(params: {
+  sessionId: string
+  mode: "shell" | "podExec"
+  cols: number
+  rows: number
+  podName?: string
+  namespace?: string
+  hub: { send: (msg: ScoutMessage) => Effect.Effect<void> }
+}): Effect.Effect<ActiveTerminal> {
+  return Effect.sync(() => {
+    const { sessionId, mode, cols, rows, podName, namespace, hub } = params
+    const env: Record<string, string> = {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][]
+      ),
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      COLUMNS: String(cols),
+      LINES: String(rows),
+    }
+
+    let proc: ReturnType<typeof Bun.spawn>
+
+    if (mode === "podExec") {
+      if (!podName) {
+        throw new Error("podName required for podExec mode")
+      }
+      const ns = namespace ?? "default"
+      const kubeconfigPath = process.env["KUBECONFIG"] ?? `${os.homedir()}/.kube/config`
+      if (kubeconfigPath) env["KUBECONFIG"] = kubeconfigPath
+      // Use script wrapper for PTY allocation on Linux/macOS
+      const shell = "/bin/sh"
+      const execArgs = ["kubectl", "exec", "-it", podName, "-n", ns, "--", shell]
+      proc = Bun.spawn(execArgs, {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env,
+      })
+    } else {
+      // shell mode — use `script` to allocate a PTY on Linux, direct spawn on macOS
+      const shell = process.env["SHELL"] ?? "/bin/bash"
+      const platform = process.platform
+      if (platform === "linux") {
+        proc = Bun.spawn(["script", "-qc", shell, "/dev/null"], {
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+          env,
+        })
+      } else {
+        // macOS: script syntax differs — fallback to direct spawn
+        proc = Bun.spawn([shell], {
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+          env,
+        })
+      }
+    }
+
+    const aborted = { current: false }
+
+    // Stream stdout to hub as terminal.output events
+    void (async () => {
+      try {
+        const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader()
+        while (!aborted.current) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value && value.length > 0) {
+            // base64 encode the chunk
+            const b64 = Buffer.from(value).toString("base64")
+            await Effect.runPromise(
+              hub.send({
+                event: "terminal.output",
+                streamId: sessionId,
+                dataBase64: b64,
+              } as ScoutMessage)
+            )
+          }
+        }
+      } catch {
+        // process killed or error
+      }
+    })()
+
+    // Also stream stderr
+    void (async () => {
+      try {
+        const reader = (proc.stderr as ReadableStream<Uint8Array>).getReader()
+        while (!aborted.current) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value && value.length > 0) {
+            const b64 = Buffer.from(value).toString("base64")
+            await Effect.runPromise(
+              hub.send({
+                event: "terminal.output",
+                streamId: sessionId,
+                dataBase64: b64,
+              } as ScoutMessage)
+            )
+          }
+        }
+      } catch {
+        // process killed or error
+      }
+    })()
+
+    return {
+      proc,
+      mode,
+      abort: () => {
+        aborted.current = true
+        try { proc.kill() } catch { /* ignore */ }
+      },
+    }
+  })
+}
+
 // ── Log streaming helpers ─────────────────────────────────────────────────────
 
 interface LogStartParams {
@@ -393,6 +524,8 @@ export class CommandHandler extends ServiceMap.Service<CommandHandler, {
       const hub = yield* HubConnection
       // Active log streams: streamId → AbortController/kill fn
       const activeStreams = yield* Ref.make(new Map<string, ActiveStream>())
+      // Active terminal sessions: sessionId → ActiveTerminal
+      const activeTerminals = yield* Ref.make(new Map<string, ActiveTerminal>())
 
       const runForever: Effect.Effect<void> = Stream.runForEach(
         hub.onMessage,
@@ -687,6 +820,84 @@ export class CommandHandler extends ServiceMap.Service<CommandHandler, {
                 yield* replyError(hub, id, "K8S_ERROR", "k8s describe failed")
               } else {
                 yield* replyOk(hub, id, result.value)
+              }
+
+            // ── Terminal management ──────────────────────────────────────────
+
+            } else if (method === "terminal.open") {
+              const sessionId = params["sessionId"] as string | undefined
+              const mode = params["mode"] as "shell" | "podExec" | undefined
+              const cols = typeof params["cols"] === "number" ? params["cols"] : 80
+              const rows = typeof params["rows"] === "number" ? params["rows"] : 24
+
+              if (!sessionId || !mode) {
+                yield* Effect.logWarning("CommandHandler: terminal.open missing params")
+                return
+              }
+
+              yield* Effect.log(`CommandHandler: opening terminal session ${sessionId} (${mode})`)
+
+              const termResult = yield* Effect.exit(
+                startTerminalProcess({
+                  sessionId,
+                  mode,
+                  cols,
+                  rows,
+                  podName: params["podName"] as string | undefined,
+                  namespace: params["namespace"] as string | undefined,
+                  hub,
+                })
+              )
+
+              if (termResult._tag === "Failure") {
+                yield* Effect.logWarning(`CommandHandler: terminal.open failed for ${sessionId}`)
+                return
+              }
+
+              yield* Ref.update(activeTerminals, (m) => new Map(m).set(sessionId, termResult.value))
+
+            } else if (method === "terminal.input") {
+              const sessionId = params["sessionId"] as string | undefined
+              const dataBase64 = params["dataBase64"] as string | undefined
+
+              if (!sessionId || !dataBase64) return
+
+              const terminals = yield* Ref.get(activeTerminals)
+              const term = terminals.get(sessionId)
+              if (term && term.proc.stdin) {
+                yield* Effect.tryPromise({
+                  try: async () => {
+                    const data = Buffer.from(dataBase64, "base64")
+                    const writer = (term.proc.stdin as WritableStream<Uint8Array>).getWriter()
+                    await writer.write(data)
+                    writer.releaseLock()
+                  },
+                  catch: () => new Error("stdin write failed"),
+                }).pipe(Effect.ignore)
+              }
+
+            } else if (method === "terminal.resize") {
+              const sessionId = params["sessionId"] as string | undefined
+              // Resize is best-effort with non-PTY processes
+              // Log it for now; a real PTY implementation would send SIGWINCH
+              if (sessionId) {
+                yield* Effect.log(`CommandHandler: resize session ${sessionId} to ${params["cols"]}x${params["rows"]}`)
+              }
+
+            } else if (method === "terminal.close") {
+              const sessionId = params["sessionId"] as string | undefined
+              if (!sessionId) return
+
+              const terminals = yield* Ref.get(activeTerminals)
+              const term = terminals.get(sessionId)
+              if (term) {
+                term.abort()
+                yield* Ref.update(activeTerminals, (m) => {
+                  const next = new Map(m)
+                  next.delete(sessionId)
+                  return next
+                })
+                yield* Effect.log(`CommandHandler: closed terminal session ${sessionId}`)
               }
 
             } else {
