@@ -58,69 +58,57 @@ function replyError(
 // ── Systemd management ────────────────────────────────────────────────────────
 
 function runSystemctl(args: string[]): Effect.Effect<string> {
-  return Effect.tryPromise({
-    try: async () => {
-      const proc = Bun.spawn(["sudo", "systemctl", ...args], {
-        stdout: "pipe",
-        stderr: "pipe",
-      })
-      const [stdout, _stderr, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ])
-      if (exitCode !== 0) {
-        throw new Error(`systemctl ${args[0]} exited with ${exitCode}`)
-      }
-      return stdout
-    },
-    catch: (e) => new Error(String(e)),
-  })
+  return Effect.tryPromise(async () => {
+    const proc = Bun.spawn(["sudo", "systemctl", ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const [stdout, _stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    if (exitCode !== 0) {
+      throw new Error(`systemctl ${args[0]} exited with ${exitCode}`)
+    }
+    return stdout
+  }).pipe(Effect.orDie)
 }
 
 // ── Docker management ─────────────────────────────────────────────────────────
 
 function dockerPost(path: string, body?: unknown): Effect.Effect<string> {
-  return Effect.tryPromise({
-    try: async () => {
-      const opts: RequestInit & { unix: string } = {
-        method: "POST",
-        unix: "/var/run/docker.sock",
-      } as RequestInit & { unix: string }
-      if (body !== undefined) {
-        ;(opts as Record<string, unknown>)["headers"] = { "Content-Type": "application/json" }
-        ;(opts as Record<string, unknown>)["body"] = JSON.stringify(body)
-      }
-      const res = await fetch(`http://localhost${path}`, opts as RequestInit)
-      return res.text()
-    },
-    catch: (e) => new Error(String(e)),
-  })
+  return Effect.tryPromise(async () => {
+    const opts: Record<string, unknown> = {
+      method: "POST",
+      unix: "/var/run/docker.sock",
+    }
+    if (body !== undefined) {
+      opts["headers"] = { "Content-Type": "application/json" }
+      opts["body"] = JSON.stringify(body)
+    }
+    const res = await fetch(`http://localhost${path}`, opts as RequestInit)
+    return res.text()
+  }).pipe(Effect.orDie)
 }
 
 function dockerDelete(path: string): Effect.Effect<string> {
-  return Effect.tryPromise({
-    try: async () => {
-      const res = await fetch(`http://localhost${path}`, {
-        method: "DELETE",
-        unix: "/var/run/docker.sock",
-      } as RequestInit)
-      return res.text()
-    },
-    catch: (e) => new Error(String(e)),
-  })
+  return Effect.tryPromise(async () => {
+    const res = await fetch(`http://localhost${path}`, {
+      method: "DELETE",
+      unix: "/var/run/docker.sock",
+    } as unknown as RequestInit)
+    return res.text()
+  }).pipe(Effect.orDie)
 }
 
 function dockerGet(path: string): Effect.Effect<string> {
-  return Effect.tryPromise({
-    try: async () => {
-      const res = await fetch(`http://localhost${path}`, {
-        unix: "/var/run/docker.sock",
-      } as RequestInit)
-      return res.text()
-    },
-    catch: (e) => new Error(String(e)),
-  })
+  return Effect.tryPromise(async () => {
+    const res = await fetch(`http://localhost${path}`, {
+      unix: "/var/run/docker.sock",
+    } as unknown as RequestInit)
+    return res.text()
+  }).pipe(Effect.orDie)
 }
 
 // ── K8s management ────────────────────────────────────────────────────────────
@@ -163,18 +151,15 @@ function k8sFetch(
   method = "GET",
   body?: unknown,
 ): Effect.Effect<string> {
-  return Effect.tryPromise({
-    try: async () => {
-      const opts: RequestInit = { method, headers: { ...cfg.headers } }
-      if (body !== undefined) {
-        ;(opts.headers as Record<string, string>)["Content-Type"] = "application/merge-patch+json"
-        opts.body = JSON.stringify(body)
-      }
-      const res = await fetch(`${cfg.baseUrl}${apiPath}`, opts)
-      return res.text()
-    },
-    catch: (e) => new Error(String(e)),
-  })
+  return Effect.tryPromise(async () => {
+    const opts: RequestInit = { method, headers: { ...cfg.headers } }
+    if (body !== undefined) {
+      ;(opts.headers as Record<string, string>)["Content-Type"] = "application/merge-patch+json"
+      opts.body = JSON.stringify(body)
+    }
+    const res = await fetch(`${cfg.baseUrl}${apiPath}`, opts)
+    return res.text()
+  }).pipe(Effect.orDie)
 }
 
 // ── Active stream tracking ────────────────────────────────────────────────────
@@ -865,14 +850,10 @@ export class CommandHandler extends ServiceMap.Service<CommandHandler, {
               const terminals = yield* Ref.get(activeTerminals)
               const term = terminals.get(sessionId)
               if (term && term.proc.stdin) {
-                yield* Effect.tryPromise({
-                  try: async () => {
-                    const data = Buffer.from(dataBase64, "base64")
-                    const writer = (term.proc.stdin as WritableStream<Uint8Array>).getWriter()
-                    await writer.write(data)
-                    writer.releaseLock()
-                  },
-                  catch: () => new Error("stdin write failed"),
+                yield* Effect.tryPromise(async () => {
+                  const data = Buffer.from(dataBase64, "base64")
+                  const stdin = term.proc.stdin as { write(data: Uint8Array): number }
+                  stdin.write(data)
                 }).pipe(Effect.ignore)
               }
 
