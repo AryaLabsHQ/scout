@@ -1,0 +1,27 @@
+{
+  "name": "scout-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260404.1",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.57.0",
+    "turbo": "^2.8.17",
+    "typescript": "^6.0.2"
+  },
+  "packageManager": "bun@1.3.11"
+}
