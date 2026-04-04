@@ -2,7 +2,7 @@ import { Config, Effect, Layer, PubSub, Ref } from "effect"
 import * as HttpRouter from "effect/unstable/http/HttpRouter"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
-import { desc, gte, or, eq } from "drizzle-orm"
+import { desc, gte, or, eq, count } from "drizzle-orm"
 import {
   isRpcRequest,
   isRpcResponse,
@@ -32,12 +32,43 @@ export const HealthRoute = HttpRouter.add(
   "/health",
   Effect.gen(function* () {
     const mgr = yield* AgentManager
+    const db = yield* Database
     const connected = yield* mgr.listConnected()
+
+    // Count total systems
+    const systemsCount = yield* Effect.sync(() => {
+      const rows = db.select({ c: count() }).from(schema.systems).all()
+      return rows[0]?.c ?? 0
+    })
+
+    // Count active alerts
+    const activeAlertsCount = yield* Effect.sync(() => {
+      const rows = db
+        .select({ c: count() })
+        .from(schema.alerts)
+        .where(eq(schema.alerts.state, "active"))
+        .all()
+      return rows[0]?.c ?? 0
+    })
+
+    // Get DB file size from config
+    const dbPath = yield* Config.withDefault(Config.string("SCOUT_DB_PATH"), "./scout.db")
+    const dbSizeBytes = yield* Effect.sync(() => {
+      try {
+        return Bun.file(dbPath).size
+      } catch {
+        return 0
+      }
+    })
+
     return yield* HttpServerResponse.json({
       status: "ok",
+      version: "0.0.1",
       uptime: (Date.now() - serverStartTime) / 1000,
       connectedAgents: connected.length,
-      version: "0.0.1",
+      dbSizeBytes,
+      totalSystems: systemsCount,
+      activeAlerts: activeAlertsCount,
     })
   }),
 )
@@ -95,6 +126,43 @@ export const GetSystemRoute = HttpRouter.add(
       createdAt: row.createdAt.getTime(),
       latestMetrics: latest,
     })
+  }),
+)
+
+// ── DELETE /api/systems/:id ───────────────────────────────────────────────────
+
+export const DeleteSystemRoute = HttpRouter.add(
+  "DELETE",
+  "/api/systems/:id",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const systemId = params["id"]!
+    const db = yield* Database
+    const mgr = yield* AgentManager
+
+    const rows = yield* Effect.sync(() =>
+      db.select().from(schema.systems).where(eq(schema.systems.id, systemId)).all(),
+    )
+    if (rows.length === 0) {
+      return HttpServerResponse.text("Not found", { status: 404 })
+    }
+
+    // Reject if agent is actively connected right now
+    const connected = yield* mgr.getConnected(systemId)
+    if (connected !== null) {
+      return yield* HttpServerResponse.json(
+        { error: "SYSTEM_ONLINE", message: "Cannot remove an online system" },
+        { status: 409 },
+      )
+    }
+
+    yield* Effect.sync(() => {
+      // Delete related data first (FK constraints)
+      db.delete(schema.systemMetrics).where(eq(schema.systemMetrics.systemId, systemId)).run()
+      db.delete(schema.systems).where(eq(schema.systems.id, systemId)).run()
+    })
+
+    return yield* HttpServerResponse.json({ ok: true })
   }),
 )
 
@@ -453,7 +521,9 @@ export const AgentWebSocketRoute = HttpRouter.add(
                 return Effect.void
               }),
             )
-            yield* Effect.log(`Agent connected: ${hostname}`)
+            yield* Effect.logInfo("Agent connected").pipe(
+              Effect.annotateLogs({ agentId: agentInfo.systemId, hostname }),
+            )
           } else if (msg.method === "metrics.report") {
             // Agent sending metrics
             const raw = msg.params ?? {}
@@ -469,7 +539,22 @@ export const AgentWebSocketRoute = HttpRouter.add(
             if (latestReport) {
               yield* broadcast.publishMetrics(latestReport)
               // Evaluate alert rules against the fresh report
-              yield* alertEngine.evaluate(reportSystemId, latestReport).pipe(Effect.ignore)
+              yield* alertEngine.evaluate(reportSystemId, latestReport).pipe(
+                Effect.tap((triggered) =>
+                  Effect.forEach(triggered, (alert) =>
+                    Effect.logWarning("Alert triggered").pipe(
+                      Effect.annotateLogs({
+                        alertId: alert.id,
+                        metric: alert.metric,
+                        severity: alert.severity,
+                        systemId: alert.systemId,
+                        value: String(alert.value),
+                      }),
+                    ),
+                  ),
+                ),
+                Effect.ignore,
+              )
             }
           }
         } else if (isRpcEvent(msg)) {
@@ -522,6 +607,7 @@ export const AgentWebSocketRoute = HttpRouter.add(
           // Find the agent connected through this socket — use the most recently connected
           // as a best-effort (the real mapping would require associating socket↔agentId)
           void connected
+          yield* Effect.logInfo("Agent disconnected")
         }),
       ),
       Effect.scoped,
@@ -1179,6 +1265,7 @@ export const AppRoutes = Layer.mergeAll(
   HealthRoute,
   ListSystemsRoute,
   GetSystemRoute,
+  DeleteSystemRoute,
   GetSystemMetricsRoute,
   GetSystemK8sRoute,
   GetSystemDockerRoute,

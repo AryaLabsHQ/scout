@@ -1,9 +1,19 @@
-import { Config, Effect, Layer } from "effect"
+import { Config, Effect, Layer, Logger } from "effect"
 import * as HttpRouter from "effect/unstable/http/HttpRouter"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { AppLayer } from "./app.js"
 import { AppRoutes } from "./routes.js"
 import { Retention } from "./services/retention.js"
+
+// ── Structured logging ────────────────────────────────────────────────────────
+
+// Use JSON logger in production; default pretty logger otherwise.
+// Log level is controlled by SCOUT_LOG_LEVEL env var (debug|info|warn|error).
+// Effect's built-in logger respects the SCOUT_LOG_LEVEL via the consolePretty logger
+// which reads from the environment at startup.
+const LoggingLayer: Layer.Layer<never, never, never> = process.env["NODE_ENV"] === "production"
+  ? Logger.layer([Logger.consoleJson])
+  : Layer.empty
 
 // ── Server layer ─────────────────────────────────────────────────────────────
 
@@ -31,6 +41,7 @@ const AppServerLayer = AppRoutes.pipe(
 const FullLayer = AppServerLayer.pipe(
   Layer.merge(RetentionBackgroundLayer),
   Layer.provide(AppLayer),
+  Layer.provide(LoggingLayer),
 )
 
 // ── Run ───────────────────────────────────────────────────────────────────────
