@@ -12,12 +12,14 @@ import {
   ThermometerIcon,
   ContainerIcon,
   Settings01Icon,
+  TerminalIcon,
 } from "@hugeicons/core-free-icons"
 
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
 import { fetchDockerContainers, fetchSystemdServices } from "@/server/workloads"
 import { systemdAction, dockerAction, dockerInspect, getUnitFile, editUnitFile } from "@/server/management"
 import { useSystemState } from "@/providers/scout-provider"
+import { useTerminalPanel } from "@/providers/terminal-provider"
 import { MetricsChart } from "@/components/charts/metrics-chart"
 import { ConfirmAction } from "@/components/confirm-action"
 import { Badge } from "@/components/ui/badge"
@@ -89,6 +91,7 @@ function SystemDetailPage() {
   const { systemId } = Route.useParams()
   const { detail, metrics: initialMetrics } = Route.useLoaderData()
   const wsState = useSystemState(systemId)
+  const { openSession } = useTerminalPanel()
 
   const [selectedRange, setSelectedRange] = useState<TimeRange>("1h")
   const [historicalMetrics, setHistoricalMetrics] =
@@ -302,13 +305,31 @@ function SystemDetailPage() {
             </div>
           </div>
 
-          {/* Capability badges */}
-          <div className="flex flex-wrap gap-1">
-            {capBadges.map((cap) => (
-              <Badge key={cap} variant="secondary" className="text-[10px]">
-                {cap}
-              </Badge>
-            ))}
+          {/* Capability badges + actions */}
+          <div className="flex flex-col gap-2 items-end">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1.5"
+              disabled={system.status !== "online"}
+              onClick={() =>
+                openSession({
+                  agentId: systemId,
+                  mode: "shell",
+                  label: system.hostname,
+                })
+              }
+            >
+              <HugeiconsIcon icon={TerminalIcon} size={12} />
+              Open Terminal
+            </Button>
+            <div className="flex flex-wrap gap-1 justify-end">
+              {capBadges.map((cap) => (
+                <Badge key={cap} variant="secondary" className="text-[10px]">
+                  {cap}
+                </Badge>
+              ))}
+            </div>
           </div>
         </div>
       </div>

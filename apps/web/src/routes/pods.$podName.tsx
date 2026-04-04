@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { toast } from "sonner"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons"
+import { ArrowLeft01Icon, TerminalIcon } from "@hugeicons/core-free-icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,11 +11,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { LogViewer } from "@/components/log-viewer"
 import { ConfirmAction } from "@/components/confirm-action"
 import { fetchK8sWorkloads } from "@/server/workloads"
 import { k8sRestartPod } from "@/server/management"
+import { useTerminalPanel } from "@/providers/terminal-provider"
 import { formatBytes, formatDuration } from "@/lib/format"
 import type { K8sPod } from "@scout/shared"
 
@@ -59,6 +59,7 @@ function PodDetailPage() {
   const [logContainer, setLogContainer] = useState<string | null>(null)
   const [logSheetOpen, setLogSheetOpen] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const { openSession } = useTerminalPanel()
 
   // Load on first render
   useState(() => {
@@ -149,20 +150,26 @@ function PodDetailPage() {
               >
                 View Logs
               </Button>
-              {/* Exec stub */}
-              <Tooltip>
-                <TooltipTrigger>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs"
-                    disabled
-                  >
-                    Exec Into Pod
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Coming in M6</TooltipContent>
-              </Tooltip>
+              {/* Exec Into Pod */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5"
+                disabled={!systemId || !pod}
+                onClick={() => {
+                  if (!systemId || !pod) return
+                  openSession({
+                    agentId: systemId,
+                    mode: "podExec",
+                    label: pod.name,
+                    podName: pod.name,
+                    namespace: pod.namespace,
+                  })
+                }}
+              >
+                <HugeiconsIcon icon={TerminalIcon} size={12} />
+                Exec Into Pod
+              </Button>
             </div>
           </div>
 

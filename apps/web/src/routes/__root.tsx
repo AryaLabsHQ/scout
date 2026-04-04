@@ -26,9 +26,12 @@ import {
   SidebarMenuButton,
   SidebarInset,
 } from "@/components/ui/sidebar"
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
 import { BottomNav } from "@/components/bottom-nav"
 import { ScoutProvider } from "@/providers/scout-provider"
 import { useScout } from "@/providers/scout-provider"
+import { TerminalProvider, useTerminalPanel } from "@/providers/terminal-provider"
+import { TerminalPanel } from "@/components/terminal/terminal-panel"
 import { cn } from "@/lib/utils"
 
 import appCss from "@/styles.css?url"
@@ -101,24 +104,48 @@ function AppSidebar() {
   )
 }
 
+// ── Terminal panel with resize handle ─────────────────────────────────────────
+
+function AppContent() {
+  const { isOpen } = useTerminalPanel()
+
+  return (
+    <SidebarInset className="pb-16 md:pb-0 overflow-hidden">
+      <header className="flex h-12 items-center justify-between border-b border-border px-4 md:hidden">
+        <span className="font-heading text-sm font-semibold tracking-wider">SCOUT</span>
+        <ConnectionStatus />
+      </header>
+      <PanelGroup orientation="vertical" className="flex-1 h-full">
+        <Panel defaultSize={isOpen ? 65 : 100} minSize={20}>
+          <main className="h-full overflow-auto">
+            <Outlet />
+          </main>
+        </Panel>
+        {isOpen && (
+          <>
+            <PanelResizeHandle className="h-1 bg-border hover:bg-primary/40 transition-colors cursor-row-resize" />
+            <Panel defaultSize={35} minSize={15} maxSize={70}>
+              <TerminalPanel className="h-full" />
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
+    </SidebarInset>
+  )
+}
+
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 function AppLayout() {
   return (
     <ScoutProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="pb-16 md:pb-0">
-          <header className="flex h-12 items-center justify-between border-b border-border px-4 md:hidden">
-            <span className="font-heading text-sm font-semibold tracking-wider">SCOUT</span>
-            <ConnectionStatus />
-          </header>
-          <main className="flex-1">
-            <Outlet />
-          </main>
-        </SidebarInset>
-        <BottomNav />
-      </SidebarProvider>
+      <TerminalProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <AppContent />
+          <BottomNav />
+        </SidebarProvider>
+      </TerminalProvider>
     </ScoutProvider>
   )
 }

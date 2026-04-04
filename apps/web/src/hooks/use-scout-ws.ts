@@ -198,12 +198,13 @@ export function useScoutWs(seedSystems?: System[]): ScoutWsExtended {
             return
           }
 
-          // Stream event (logs.data)
-          if (msg.event === "logs.data" && msg.streamId) {
+          // Stream event (logs.data or terminal.output)
+          if ((msg.event === "logs.data" || msg.event === "terminal.output") && msg.streamId) {
             const listeners = streamListeners.current.get(msg.streamId)
             if (listeners) {
               for (const cb of listeners) {
-                cb(msg.data)
+                // For terminal.output pass the whole msg so the hook can access dataBase64
+                cb(msg.event === "terminal.output" ? msg : msg.data)
               }
             }
             return
