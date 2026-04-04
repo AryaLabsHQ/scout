@@ -1,0 +1,24 @@
+{
+  "name": "@scout/hub",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/main.ts",
+    "build": "bun build --compile src/main.ts --outfile dist/scout-hub",
+    "typecheck": "tsgo --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.43",
+    "drizzle-orm": "^0.45.2",
+    "@scout/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.0.0-beta.43",
+    "@types/node": "^25.1.0",
+    "vitest": "^3.0.0",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^6.0.2"
+  }
+}
