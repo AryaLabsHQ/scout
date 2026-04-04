@@ -12,6 +12,22 @@
         "typescript": "^6.0.2",
       },
     },
+    "apps/agent": {
+      "name": "@scout/agent",
+      "version": "0.0.1",
+      "dependencies": {
+        "@effect/platform-bun": "4.0.0-beta.43",
+        "@scout/shared": "workspace:*",
+        "effect": "4.0.0-beta.43",
+      },
+      "devDependencies": {
+        "@effect/vitest": "4.0.0-beta.43",
+        "@types/node": "^25.1.0",
+        "bun-types": "^1.3.11",
+        "typescript": "^6.0.2",
+        "vitest": "^3.0.0",
+      },
+    },
     "apps/hub": {
       "name": "@scout/hub",
       "version": "0.0.1",
@@ -535,6 +551,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.60.1", "", { "os": "win32", "cpu": "x64" }, "sha512-k+600V9Zl1CM7eZxJgMyTUzmrmhB/0XZnF4pRypKAlAgxmedUA+1v9R+XOFv56W4SlHEzfeMtzujLJD22Uz5zg=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.1", "", { "os": "win32", "cpu": "x64" }, "sha512-lWMnixq/QzxyhTV6NjQJ4SFo1J6PvOX8vUx5Wb4bBPsEb+8xZ89Bz6kOXpfXj9ak9AHTQVQzlgzBEc1SyM27xQ=="],
+
+    "@scout/agent": ["@scout/agent@workspace:apps/agent"],
 
     "@scout/hub": ["@scout/hub@workspace:apps/hub"],
 
