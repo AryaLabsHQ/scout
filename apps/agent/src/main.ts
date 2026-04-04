@@ -1,9 +1,10 @@
 import { BunRuntime } from "@effect/platform-bun"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Layer } from "effect"
 import { AgentConfig } from "./config.js"
 import { CollectorRegistry } from "./services/collector-registry.js"
 import { HubConnection, AgentCapabilitiesCtx } from "./services/hub-connection.js"
 import { Reporter } from "./services/reporter.js"
+import { CommandHandler } from "./services/command-handler.js"
 
 const program = Effect.gen(function* () {
   // 1. Load config
@@ -22,7 +23,7 @@ const program = Effect.gen(function* () {
   yield* Effect.log("Discovered capabilities", capabilities)
 
   // 3. HubConnection (uses discovered capabilities via AgentCapabilitiesCtx in layer)
-  const hub = yield* HubConnection
+  yield* HubConnection
 
   yield* Effect.log("HubConnection initialized")
 
@@ -34,12 +35,9 @@ const program = Effect.gen(function* () {
 
   yield* Effect.log("Reporter started", { intervalSeconds: config.interval })
 
-  // 6. CommandHandler stub — log incoming commands from hub
-  yield* Stream.runForEach(hub.onMessage, (msg) =>
-    Effect.log("CommandHandler: received message", {
-      type: "method" in msg ? msg.method : "event" in msg ? msg.event : "response",
-    })
-  ).pipe(Effect.forkDetach)
+  // 6. CommandHandler — handle incoming commands from hub (log streaming, etc.)
+  const cmdHandler = yield* CommandHandler
+  yield* cmdHandler.run.pipe(Effect.forkDetach)
 
   yield* Effect.log("Agent running", {
     hostname: config.hostname,
@@ -69,14 +67,18 @@ const defaultCapabilitiesLayer = Layer.succeed(AgentCapabilitiesCtx)({
 //   CollectorRegistry ← (no extra deps)
 //   HubConnection ← AgentCapabilitiesCtx
 //   Reporter ← HubConnection + CollectorRegistry
+//   CommandHandler ← HubConnection
+const hubConnectionLayer = HubConnection.layer.pipe(Layer.provide(defaultCapabilitiesLayer))
+
 const baseLayer = Layer.mergeAll(
   CollectorRegistry.layer,
-  HubConnection.layer.pipe(Layer.provide(defaultCapabilitiesLayer)),
+  hubConnectionLayer,
 )
 
 const appLayer = Layer.mergeAll(
   baseLayer,
   Reporter.layer.pipe(Layer.provide(baseLayer)),
+  CommandHandler.layer.pipe(Layer.provide(hubConnectionLayer)),
 )
 
 BunRuntime.runMain(
