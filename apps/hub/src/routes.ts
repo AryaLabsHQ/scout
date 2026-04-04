@@ -569,8 +569,9 @@ export const AgentWebSocketRoute = HttpRouter.add(
               msg,
               (clientId, data) =>
                 Effect.gen(function* () {
-                  const writers = yield* clientWritersRef
-                  const writer = writers.get(clientId)
+                  const writersRef = yield* clientWritersRef
+                  const writersMap = yield* Ref.get(writersRef)
+                  const writer = writersMap.get(clientId)
                   if (writer) {
                     yield* writer(data).pipe(Effect.ignore)
                   }
@@ -586,8 +587,9 @@ export const AgentWebSocketRoute = HttpRouter.add(
                 dataBase64,
                 (clientId, data) =>
                   Effect.gen(function* () {
-                    const writers = yield* clientWritersRef
-                    const writer = writers.get(clientId)
+                    const writersRef = yield* clientWritersRef
+                    const writersMap = yield* Ref.get(writersRef)
+                    const writer = writersMap.get(clientId)
                     if (writer) {
                       yield* writer(data).pipe(Effect.ignore)
                     }
@@ -639,7 +641,8 @@ export const ClientWebSocketRoute = HttpRouter.add(
 
         // Register this client's writer so log events can be forwarded
         const writers = yield* clientWritersRef
-        yield* Ref.update(writers, (m) => new Map(m).set(clientId, write))
+        const wrappedWrite = (data: string): Effect.Effect<void> => write(data).pipe(Effect.orDie)
+        yield* Ref.update(writers, (m) => new Map(m).set(clientId, wrappedWrite))
 
         // Forward broadcast events to client
         const forwardFiber = yield* Effect.forkScoped(
@@ -887,7 +890,7 @@ export const ClientWebSocketRoute = HttpRouter.add(
 
 // ── Management error helper ────────────────────────────────────────────────────
 
-function handleManagementError(err: unknown): Effect.Effect<Response> {
+function handleManagementError(err: unknown) {
   if (err && typeof err === "object" && "_tag" in err) {
     const tagged = err as { _tag: string; agentId?: string; message?: string; code?: string }
     if (tagged._tag === "AgentNotConnected") {
