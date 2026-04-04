@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
+import { toast } from "sonner"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons"
 import { Badge } from "@/components/ui/badge"
@@ -10,8 +11,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { LogViewer } from "@/components/log-viewer"
+import { ConfirmAction } from "@/components/confirm-action"
 import { fetchK8sWorkloads } from "@/server/workloads"
+import { k8sRestartPod } from "@/server/management"
 import { formatBytes, formatDuration } from "@/lib/format"
 import type { K8sPod } from "@scout/shared"
 
@@ -54,6 +58,7 @@ function PodDetailPage() {
   const [loading, setLoading] = useState(false)
   const [logContainer, setLogContainer] = useState<string | null>(null)
   const [logSheetOpen, setLogSheetOpen] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
   // Load on first render
   useState(() => {
@@ -72,6 +77,19 @@ function PodDetailPage() {
   const openLogs = (containerName?: string) => {
     setLogContainer(containerName ?? pod?.containers[0]?.name ?? null)
     setLogSheetOpen(true)
+  }
+
+  async function handleRestartPod() {
+    if (!systemId || !pod) return
+    setRestarting(true)
+    try {
+      await k8sRestartPod({ data: { systemId, podName: pod.name, namespace: pod.namespace } })
+      toast.success(`Restarted pod ${pod.name}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Restart failed")
+    } finally {
+      setRestarting(false)
+    }
   }
 
   return (
@@ -104,6 +122,23 @@ function PodDetailPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              {/* Restart Pod */}
+              <ConfirmAction
+                title={`Restart ${pod.name}?`}
+                description={`This will delete the pod and Kubernetes will recreate it.`}
+                action="Restart"
+                variant="destructive"
+                onConfirm={handleRestartPod}
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={restarting || !systemId}
+                >
+                  {restarting ? "Restarting..." : "Restart Pod"}
+                </Button>
+              </ConfirmAction>
               {/* Log viewer button */}
               <Button
                 size="sm"
@@ -115,14 +150,19 @@ function PodDetailPage() {
                 View Logs
               </Button>
               {/* Exec stub */}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                disabled
-              >
-                Exec (M6)
-              </Button>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    disabled
+                  >
+                    Exec Into Pod
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Coming in M6</TooltipContent>
+              </Tooltip>
             </div>
           </div>
 

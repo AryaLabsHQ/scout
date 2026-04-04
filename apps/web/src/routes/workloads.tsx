@@ -1,8 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
+import { toast } from "sonner"
 import { useScout } from "@/providers/scout-provider"
 import { fetchK8sWorkloads } from "@/server/workloads"
+import { k8sScale, k8sRestartPod } from "@/server/management"
+import { ConfirmAction } from "@/components/confirm-action"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -66,12 +70,36 @@ function DeploymentStatusBadge({ ready, desired }: { ready: number; desired: num
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-function PodsTab({ pods, namespace, systemId }: { pods: K8sPod[]; namespace: string; systemId: string }) {
+function PodsTab({
+  pods,
+  namespace,
+  systemId,
+  onRefresh,
+}: {
+  pods: K8sPod[]
+  namespace: string
+  systemId: string
+  onRefresh: () => void
+}) {
   const navigate = useNavigate()
   const filtered = namespace === "__all__" ? pods : pods.filter((p) => p.namespace === namespace)
+  const [loadingPod, setLoadingPod] = useState<string | null>(null)
 
   if (filtered.length === 0) {
-    return <EmptyRow cols={7} message="No pods" />
+    return <EmptyRow cols={8} message="No pods" />
+  }
+
+  async function handleRestartPod(podName: string, ns: string) {
+    setLoadingPod(podName)
+    try {
+      await k8sRestartPod({ data: { systemId, podName, namespace: ns } })
+      toast.success(`Restarted pod ${podName}`)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Restart failed")
+    } finally {
+      setLoadingPod(null)
+    }
   }
 
   return (
@@ -85,6 +113,7 @@ function PodsTab({ pods, namespace, systemId }: { pods: K8sPod[]; namespace: str
           <TableHead>CPU</TableHead>
           <TableHead>Memory</TableHead>
           <TableHead>Age</TableHead>
+          <TableHead></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -107,6 +136,24 @@ function PodsTab({ pods, namespace, systemId }: { pods: K8sPod[]; namespace: str
             <TableCell>{pod.cpuMillicores !== null ? `${pod.cpuMillicores}m` : "—"}</TableCell>
             <TableCell>{pod.memBytes !== null ? formatBytes(pod.memBytes) : "—"}</TableCell>
             <TableCell>{formatDuration(pod.age)}</TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
+              <ConfirmAction
+                title={`Restart ${pod.name}?`}
+                description={`This will delete the pod and Kubernetes will recreate it.`}
+                action="Restart"
+                variant="destructive"
+                onConfirm={() => handleRestartPod(pod.name, pod.namespace)}
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  disabled={loadingPod === pod.name}
+                >
+                  {loadingPod === pod.name ? "..." : "Restart"}
+                </Button>
+              </ConfirmAction>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -114,9 +161,35 @@ function PodsTab({ pods, namespace, systemId }: { pods: K8sPod[]; namespace: str
   )
 }
 
-function DeploymentsTab({ deployments, namespace }: { deployments: K8sDeployment[]; namespace: string }) {
+function DeploymentsTab({
+  deployments,
+  namespace,
+  systemId,
+  onRefresh,
+}: {
+  deployments: K8sDeployment[]
+  namespace: string
+  systemId: string
+  onRefresh: () => void
+}) {
   const filtered = namespace === "__all__" ? deployments : deployments.filter((d) => d.namespace === namespace)
-  if (filtered.length === 0) return <EmptyRow cols={5} message="No deployments" />
+  const [scaleValues, setScaleValues] = useState<Record<string, number>>({})
+  const [loadingDeploy, setLoadingDeploy] = useState<string | null>(null)
+
+  if (filtered.length === 0) return <EmptyRow cols={6} message="No deployments" />
+
+  async function handleScale(deployment: string, ns: string, replicas: number) {
+    setLoadingDeploy(deployment)
+    try {
+      await k8sScale({ data: { systemId, deployment, namespace: ns, replicas } })
+      toast.success(`Scaled ${deployment} to ${replicas} replica${replicas !== 1 ? "s" : ""}`)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Scale failed")
+    } finally {
+      setLoadingDeploy(null)
+    }
+  }
 
   return (
     <Table>
@@ -127,20 +200,46 @@ function DeploymentsTab({ deployments, namespace }: { deployments: K8sDeployment
           <TableHead>Ready</TableHead>
           <TableHead>Updated</TableHead>
           <TableHead>Age</TableHead>
+          <TableHead>Scale</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {filtered.map((d) => (
-          <TableRow key={`${d.namespace}/${d.name}`}>
-            <TableCell className="font-mono text-[11px]">{d.name}</TableCell>
-            <TableCell>{d.namespace}</TableCell>
-            <TableCell>
-              <DeploymentStatusBadge ready={d.readyReplicas} desired={d.desiredReplicas} />
-            </TableCell>
-            <TableCell>{d.updatedReplicas}</TableCell>
-            <TableCell>{formatDuration(d.age)}</TableCell>
-          </TableRow>
-        ))}
+        {filtered.map((d) => {
+          const key = `${d.namespace}/${d.name}`
+          const scaleVal = scaleValues[key] ?? d.desiredReplicas
+          return (
+            <TableRow key={key}>
+              <TableCell className="font-mono text-[11px]">{d.name}</TableCell>
+              <TableCell>{d.namespace}</TableCell>
+              <TableCell>
+                <DeploymentStatusBadge ready={d.readyReplicas} desired={d.desiredReplicas} />
+              </TableCell>
+              <TableCell>{d.updatedReplicas}</TableCell>
+              <TableCell>{formatDuration(d.age)}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={99}
+                    value={scaleVal}
+                    onChange={(e) => setScaleValues((prev) => ({ ...prev, [key]: Number(e.target.value) }))}
+                    className="w-14 h-6 rounded-none border border-border bg-background px-1.5 text-[11px] font-mono text-center focus:outline-none focus:ring-1 focus:ring-foreground/20"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={loadingDeploy === d.name || scaleVal === d.desiredReplicas}
+                    onClick={() => handleScale(d.name, d.namespace, scaleVal)}
+                  >
+                    Scale
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -402,10 +501,20 @@ function WorkloadsPage() {
           </TabsList>
 
           <TabsContent value="pods">
-            <PodsTab pods={workloads.pods} namespace={namespace} systemId={effectiveSystemId} />
+            <PodsTab
+              pods={workloads.pods}
+              namespace={namespace}
+              systemId={effectiveSystemId}
+              onRefresh={() => loadWorkloads(effectiveSystemId)}
+            />
           </TabsContent>
           <TabsContent value="deployments">
-            <DeploymentsTab deployments={workloads.deployments} namespace={namespace} />
+            <DeploymentsTab
+              deployments={workloads.deployments}
+              namespace={namespace}
+              systemId={effectiveSystemId}
+              onRefresh={() => loadWorkloads(effectiveSystemId)}
+            />
           </TabsContent>
           <TabsContent value="services">
             <ServicesTab services={workloads.services} namespace={namespace} />

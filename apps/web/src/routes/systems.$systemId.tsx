@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
+import { toast } from "sonner"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArrowLeft01Icon,
@@ -15,8 +16,10 @@ import {
 
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
 import { fetchDockerContainers, fetchSystemdServices } from "@/server/workloads"
+import { systemdAction, dockerAction, dockerInspect, getUnitFile, editUnitFile } from "@/server/management"
 import { useSystemState } from "@/providers/scout-provider"
 import { MetricsChart } from "@/components/charts/metrics-chart"
+import { ConfirmAction } from "@/components/confirm-action"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -41,7 +44,7 @@ import {
   formatPercent,
   formatTimeAgo,
 } from "@/lib/format"
-import type { AgentReport, DockerContainerMetrics, SystemdServiceMetrics } from "@scout/shared"
+import type { AgentReport, DockerContainerMetrics, SystemdServiceMetrics, UnitFile } from "@scout/shared"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -99,6 +102,16 @@ function SystemDetailPage() {
   const [logTarget, setLogTarget] = useState<string>("")
   const [logSource, setLogSource] = useState<"k8s" | "systemd">("systemd")
 
+  // Unit file editor sheet
+  const [unitFileSheetOpen, setUnitFileSheetOpen] = useState(false)
+  const [unitFileData, setUnitFileData] = useState<UnitFile | null>(null)
+  const [unitFileContent, setUnitFileContent] = useState("")
+  const [unitFileLoading, setUnitFileLoading] = useState(false)
+
+  // Docker inspect sheet
+  const [inspectSheetOpen, setInspectSheetOpen] = useState(false)
+  const [inspectData, setInspectData] = useState<unknown>(null)
+
   const system = wsState?.system ?? detail
   const latestMetrics = wsState?.latestMetrics ?? null
 
@@ -117,6 +130,51 @@ function SystemDetailPage() {
     setLogTarget(target)
     setLogSource(source)
     setLogSheetOpen(true)
+  }
+
+  async function openUnitFileEditor(unit: string) {
+    setUnitFileLoading(true)
+    setUnitFileSheetOpen(true)
+    setUnitFileData(null)
+    setUnitFileContent("")
+    try {
+      const file = await getUnitFile({ data: { systemId, unit } })
+      setUnitFileData(file)
+      setUnitFileContent(file.content)
+    } catch {
+      toast.error(`Could not load unit file for ${unit}`)
+      setUnitFileSheetOpen(false)
+    } finally {
+      setUnitFileLoading(false)
+    }
+  }
+
+  async function saveUnitFile() {
+    if (!unitFileData) return
+    setUnitFileLoading(true)
+    try {
+      await editUnitFile({ data: { systemId, unit: unitFileData.path.split("/").pop() ?? "", content: unitFileContent } })
+      toast.success("Unit file saved")
+      setUnitFileSheetOpen(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed")
+    } finally {
+      setUnitFileLoading(false)
+    }
+  }
+
+  async function openDockerInspect(containerId: string, containerName: string) {
+    try {
+      const text = await dockerInspect({ data: { systemId, containerId } })
+      try {
+        setInspectData(JSON.parse(text))
+      } catch {
+        setInspectData(text)
+      }
+      setInspectSheetOpen(true)
+    } catch {
+      toast.error(`Could not inspect container ${containerName}`)
+    }
   }
 
   async function handleRangeChange(range: TimeRange) {
@@ -457,7 +515,14 @@ function SystemDetailPage() {
               </span>
             </div>
             {dockerContainers && dockerContainers.length > 0 ? (
-              <DockerSection containers={dockerContainers} />
+              <DockerSection
+                containers={dockerContainers}
+                systemId={systemId}
+                onRefresh={() => {
+                  fetchDockerContainers({ data: { systemId } }).then(setDockerContainers).catch(() => {})
+                }}
+                onInspect={openDockerInspect}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">No containers found.</p>
             )}
@@ -477,7 +542,15 @@ function SystemDetailPage() {
               </span>
             </div>
             {systemdServices && systemdServices.length > 0 ? (
-              <SystemdSection services={systemdServices} systemId={systemId} onViewLogs={openLogViewer} />
+              <SystemdSection
+                services={systemdServices}
+                systemId={systemId}
+                onViewLogs={openLogViewer}
+                onEditUnit={openUnitFileEditor}
+                onRefresh={() => {
+                  fetchSystemdServices({ data: { systemId } }).then(setSystemdServices).catch(() => {})
+                }}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">No services found.</p>
             )}
@@ -502,6 +575,53 @@ function SystemDetailPage() {
         )}
       </SheetContent>
     </Sheet>
+
+    {/* Unit file editor sheet */}
+    <Sheet open={unitFileSheetOpen} onOpenChange={setUnitFileSheetOpen}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col gap-0 p-0">
+        <SheetHeader className="border-b border-border px-4 py-3">
+          <SheetTitle className="font-heading text-sm">
+            {unitFileData ? `Edit: ${unitFileData.path}` : "Loading unit file..."}
+          </SheetTitle>
+        </SheetHeader>
+        <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3">
+          {unitFileLoading && !unitFileData ? (
+            <p className="text-xs text-muted-foreground">Loading...</p>
+          ) : (
+            <>
+              <textarea
+                className="flex-1 w-full resize-none rounded-none border border-border bg-background font-mono text-[11px] p-3 focus:outline-none focus:ring-1 focus:ring-foreground/20"
+                value={unitFileContent}
+                onChange={(e) => setUnitFileContent(e.target.value)}
+                spellCheck={false}
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setUnitFileSheetOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled={unitFileLoading} onClick={saveUnitFile}>
+                  {unitFileLoading ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+
+    {/* Docker inspect sheet */}
+    <Sheet open={inspectSheetOpen} onOpenChange={setInspectSheetOpen}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col gap-0 p-0">
+        <SheetHeader className="border-b border-border px-4 py-3">
+          <SheetTitle className="font-heading text-sm">Container Inspect</SheetTitle>
+        </SheetHeader>
+        <div className="flex-1 overflow-auto p-4">
+          <pre className="font-mono text-[11px] text-foreground whitespace-pre-wrap break-all">
+            {JSON.stringify(inspectData, null, 2)}
+          </pre>
+        </div>
+      </SheetContent>
+    </Sheet>
   </>
   )
 }
@@ -524,7 +644,32 @@ function DockerStateBadge({ state }: { state: DockerContainerMetrics["state"] })
   )
 }
 
-function DockerSection({ containers }: { containers: DockerContainerMetrics[] }) {
+function DockerSection({
+  containers,
+  systemId,
+  onRefresh,
+  onInspect,
+}: {
+  containers: DockerContainerMetrics[]
+  systemId: string
+  onRefresh: () => void
+  onInspect: (containerId: string, name: string) => void
+}) {
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  async function handleDockerAction(containerId: string, name: string, action: "start" | "stop" | "restart" | "remove") {
+    setLoadingId(`${containerId}-${action}`)
+    try {
+      await dockerAction({ data: { systemId, containerId, action } })
+      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}ed ${name}`)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `${action} failed`)
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -536,6 +681,7 @@ function DockerSection({ containers }: { containers: DockerContainerMetrics[] })
           <TableHead>Memory</TableHead>
           <TableHead>Network</TableHead>
           <TableHead>Uptime</TableHead>
+          <TableHead></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -556,6 +702,66 @@ function DockerSection({ containers }: { containers: DockerContainerMetrics[] })
               ↓{formatBytes(c.netRx)} ↑{formatBytes(c.netTx)}
             </TableCell>
             <TableCell>{formatDuration(c.uptime)}</TableCell>
+            <TableCell>
+              <div className="flex gap-1">
+                <ConfirmAction
+                  title={`Restart ${c.name}?`}
+                  description={`This will restart the container on the agent.`}
+                  action="Restart"
+                  variant="default"
+                  onConfirm={() => handleDockerAction(c.id, c.name, "restart")}
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={!!loadingId}
+                  >
+                    Restart
+                  </Button>
+                </ConfirmAction>
+                <ConfirmAction
+                  title={`Stop ${c.name}?`}
+                  description={`This will stop the running container.`}
+                  action="Stop"
+                  variant="destructive"
+                  onConfirm={() => handleDockerAction(c.id, c.name, "stop")}
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={!!loadingId || c.state !== "running"}
+                  >
+                    Stop
+                  </Button>
+                </ConfirmAction>
+                <ConfirmAction
+                  title={`Remove ${c.name}?`}
+                  description={`This will permanently remove the container. This action cannot be undone.`}
+                  action="Remove"
+                  variant="destructive"
+                  onConfirm={() => handleDockerAction(c.id, c.name, "remove")}
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                    disabled={!!loadingId}
+                  >
+                    Remove
+                  </Button>
+                </ConfirmAction>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => onInspect(c.id, c.name)}
+                >
+                  Inspect
+                </Button>
+              </div>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -584,11 +790,30 @@ function SystemdSection({
   services,
   systemId,
   onViewLogs,
+  onEditUnit,
+  onRefresh,
 }: {
   services: SystemdServiceMetrics[]
   systemId: string
   onViewLogs: (target: string, source: "k8s" | "systemd") => void
+  onEditUnit: (unit: string) => void
+  onRefresh: () => void
 }) {
+  const [loadingUnit, setLoadingUnit] = useState<string | null>(null)
+
+  async function handleSystemdAction(unit: string, action: "start" | "stop" | "restart" | "enable" | "disable") {
+    setLoadingUnit(`${unit}-${action}`)
+    try {
+      await systemdAction({ data: { systemId, unit, action } })
+      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}ed ${unit}`)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `${action} failed`)
+    } finally {
+      setLoadingUnit(null)
+    }
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -612,15 +837,69 @@ function SystemdSection({
               {svc.memoryBytes !== null ? formatBytes(svc.memoryBytes) : "—"}
             </TableCell>
             <TableCell>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-[10px]"
-                onClick={() => onViewLogs(svc.unit, "systemd")}
-                disabled={!systemId}
-              >
-                Logs
-              </Button>
+              <div className="flex gap-1">
+                <ConfirmAction
+                  title={`Restart ${svc.unit}?`}
+                  description={`This will restart the service on the agent.`}
+                  action="Restart"
+                  variant="default"
+                  onConfirm={() => handleSystemdAction(svc.unit, "restart")}
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={!!loadingUnit}
+                  >
+                    Restart
+                  </Button>
+                </ConfirmAction>
+                {svc.activeState === "active" ? (
+                  <ConfirmAction
+                    title={`Stop ${svc.unit}?`}
+                    description={`This will stop the running service.`}
+                    action="Stop"
+                    variant="destructive"
+                    onConfirm={() => handleSystemdAction(svc.unit, "stop")}
+                  >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={!!loadingUnit}
+                    >
+                      Stop
+                    </Button>
+                  </ConfirmAction>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={!!loadingUnit || svc.loadState === "masked"}
+                    onClick={() => handleSystemdAction(svc.unit, "start")}
+                  >
+                    Start
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => onViewLogs(svc.unit, "systemd")}
+                  disabled={!systemId}
+                >
+                  Logs
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => onEditUnit(svc.unit)}
+                >
+                  Edit Unit
+                </Button>
+              </div>
             </TableCell>
           </TableRow>
         ))}
