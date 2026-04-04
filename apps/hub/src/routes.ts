@@ -19,6 +19,7 @@ import { SystemdService } from "./services/systemd-service.js"
 import { DockerService } from "./services/docker-service.js"
 import { K8sService } from "./services/k8s-service.js"
 import { TerminalService } from "./services/terminal.js"
+import { AlertEngine } from "./services/alert-engine.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -402,6 +403,7 @@ export const AgentWebSocketRoute = HttpRouter.add(
     const mgr = yield* AgentManager
     const ingestion = yield* MetricsIngestion
     const broadcast = yield* MetricsBroadcast
+    const alertEngine = yield* AlertEngine
     const logSvc = yield* LogService
     const termSvc = yield* TerminalService
 
@@ -460,15 +462,15 @@ export const AgentWebSocketRoute = HttpRouter.add(
               yield* Effect.logWarning("Agent WS: invalid metrics report")
               return
             }
-            const report = ingestResult.value
+            void ingestResult.value
             // Also publish to broadcast — get the AgentReport
-            const latestReport = yield* ingestion.queryLatest(
-              (msg.params as Record<string, unknown>)["systemId"] as string ?? "unknown",
-            )
+            const reportSystemId = (msg.params as Record<string, unknown>)["systemId"] as string ?? "unknown"
+            const latestReport = yield* ingestion.queryLatest(reportSystemId)
             if (latestReport) {
               yield* broadcast.publishMetrics(latestReport)
+              // Evaluate alert rules against the fresh report
+              yield* alertEngine.evaluate(reportSystemId, latestReport).pipe(Effect.ignore)
             }
-            void report
           }
         } else if (isRpcEvent(msg)) {
           if (msg.event === "heartbeat") {
