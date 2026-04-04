@@ -18,6 +18,12 @@ import { AgentManager } from "../src/services/agent-manager.js"
 import { MetricsIngestion } from "../src/services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../src/services/metrics-broadcast.js"
 import { Retention } from "../src/services/retention.js"
+import { AlertEngine } from "../src/services/alert-engine.js"
+import { DockerService } from "../src/services/docker-service.js"
+import { K8sService } from "../src/services/k8s-service.js"
+import { LogService } from "../src/services/log-service.js"
+import { SystemdService } from "../src/services/systemd-service.js"
+import { TerminalService } from "../src/services/terminal.js"
 import { TestDatabaseLayer } from "./helpers/test-database.js"
 import { makeAgentReport } from "./helpers/fixtures.js"
 import { AppRoutes } from "../src/routes.js"
@@ -34,6 +40,14 @@ const TestAppLayer = Layer.mergeAll(
   MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
   AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)),
   Retention.layer.pipe(Layer.provide(TestDatabaseLayer)),
+  AlertEngine.layer.pipe(
+    Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
+  ),
+  DockerService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
+  K8sService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
+  LogService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
+  SystemdService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
+  TerminalService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
 )
 
 // ── Mock socket factory ───────────────────────────────────────────────────────
