@@ -1,6 +1,8 @@
 import { Effect, Layer, Ref } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import { AgentManager } from "./agent-manager.js"
+import { AgentNotConnected } from "../lib/errors.js"
+import type { SocketError } from "effect/unstable/socket/Socket"
 import type { TerminalMode, TerminalSession } from "@scout/shared"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ export class TerminalService extends ServiceMap.Service<TerminalService, {
    * Create a new terminal session. Sends terminal.open RPC to the agent.
    * Returns the TerminalSession descriptor.
    */
-  readonly createSession: (params: CreateSessionParams) => Effect.Effect<TerminalSession>
+  readonly createSession: (params: CreateSessionParams) => Effect.Effect<TerminalSession, AgentNotConnected | SocketError>
   /**
    * Close a terminal session. Sends terminal.close RPC to the agent, removes from tracking.
    */
@@ -71,7 +73,7 @@ export class TerminalService extends ServiceMap.Service<TerminalService, {
 
       // ── createSession ────────────────────────────────────────────────────────
 
-      const createSession = (params: CreateSessionParams): Effect.Effect<TerminalSession> =>
+      const createSession = (params: CreateSessionParams): Effect.Effect<TerminalSession, AgentNotConnected | SocketError> =>
         Effect.gen(function* () {
           const sessionId = crypto.randomUUID()
           const now = Date.now()

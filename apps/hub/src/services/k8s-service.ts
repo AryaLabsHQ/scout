@@ -1,10 +1,11 @@
 import { Effect, Layer } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
+import type { RpcResponse } from "@scout/shared"
 import { AgentManager } from "./agent-manager.js"
 import { AgentNotConnected, RpcCallError, TimeoutError } from "../lib/errors.js"
-import type { Socket } from "effect/unstable/socket/Socket"
+import type { SocketError } from "effect/unstable/socket/Socket"
 
-type K8sError = AgentNotConnected | RpcCallError | TimeoutError | Socket.SocketError
+type K8sError = AgentNotConnected | RpcCallError | TimeoutError | SocketError
 
 // ── invoke helper ─────────────────────────────────────────────────────────────
 
@@ -14,18 +15,15 @@ function invokeAgent(
   method: string,
   params: Record<string, unknown>,
 ): Effect.Effect<unknown, K8sError> {
-  return Effect.gen(function* () {
-    const connected = yield* mgr.getConnected(agentId)
-    if (!connected) {
-      return yield* Effect.fail(new AgentNotConnected({ agentId }))
-    }
-    const resp = yield* mgr.call(
-      agentId,
-      { id: crypto.randomUUID(), method, params },
-      30_000,
-    )
-    return resp.result
-  })
+  return mgr.getConnected(agentId).pipe(
+    Effect.flatMap((connected) =>
+      connected
+        ? mgr.call(agentId, { id: crypto.randomUUID(), method, params }, 30_000).pipe(
+            Effect.map((resp) => (resp as RpcResponse).result),
+          )
+        : Effect.fail(new AgentNotConnected({ agentId })),
+    ),
+  )
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

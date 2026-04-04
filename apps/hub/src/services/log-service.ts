@@ -2,6 +2,7 @@ import { Effect, Layer, Ref } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import { AgentManager } from "./agent-manager.js"
 import { AgentNotConnected } from "../lib/errors.js"
+import type { SocketError } from "effect/unstable/socket/Socket"
 import type { RpcEvent } from "@scout/shared"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ export class LogService extends ServiceMap.Service<LogService, {
    * Start a log stream. Sends logs.start RPC to agent.
    * Returns streamId.
    */
-  readonly startStream: (params: StartStreamParams) => Effect.Effect<string, AgentNotConnected>
+  readonly startStream: (params: StartStreamParams) => Effect.Effect<string, AgentNotConnected | SocketError>
   /**
    * Stop a log stream. Sends logs.stop RPC to agent, removes tracking.
    */
@@ -56,51 +57,51 @@ export class LogService extends ServiceMap.Service<LogService, {
 
       // ── startStream ─────────────────────────────────────────────────────────
 
-      const startStream = (params: StartStreamParams): Effect.Effect<string, AgentNotConnected> =>
-        Effect.gen(function* () {
-          const streamId = crypto.randomUUID()
+      const startStream = (params: StartStreamParams): Effect.Effect<string, AgentNotConnected | SocketError> => {
+        const streamId = crypto.randomUUID()
 
-          // Verify agent is connected before tracking
-          const agent = yield* mgr.getConnected(params.agentId)
-          if (!agent) {
-            return yield* Effect.fail(new AgentNotConnected({ agentId: params.agentId }))
-          }
+        // Build RPC params upfront
+        const rpcParams: Record<string, unknown> = {
+          streamId,
+          source: params.source,
+          target: params.target,
+          tail: params.tail,
+        }
+        if (params.namespace) rpcParams["namespace"] = params.namespace
+        if (params.container) rpcParams["container"] = params.container
 
-          // Track the stream
-          yield* Ref.update(streams, (m) =>
-            new Map(m).set(streamId, {
-              agentId: params.agentId,
-              clientId: params.clientId,
-            })
-          )
-
-          // Send logs.start RPC to agent (fire-and-forget, agent responds with events)
-          const rpcParams: Record<string, unknown> = {
-            streamId,
-            source: params.source,
-            target: params.target,
-            tail: params.tail,
-          }
-          if (params.namespace) rpcParams["namespace"] = params.namespace
-          if (params.container) rpcParams["container"] = params.container
-
-          yield* mgr.sendToAgent(params.agentId, {
-            id: crypto.randomUUID(),
-            method: "logs.start",
-            params: rpcParams,
-          }).pipe(
-            Effect.tapError(() =>
-              // Clean up tracking on send failure
-              Ref.update(streams, (m) => {
-                const next = new Map(m)
-                next.delete(streamId)
-                return next
-              })
-            )
-          )
-
-          return streamId
-        })
+        return mgr.getConnected(params.agentId).pipe(
+          Effect.flatMap((connected) =>
+            connected
+              ? Effect.void
+              : Effect.fail(new AgentNotConnected({ agentId: params.agentId })),
+          ),
+          Effect.flatMap(() =>
+            Ref.update(streams, (m) =>
+              new Map(m).set(streamId, {
+                agentId: params.agentId,
+                clientId: params.clientId,
+              }),
+            ),
+          ),
+          Effect.flatMap(() =>
+            mgr.sendToAgent(params.agentId, {
+              id: crypto.randomUUID(),
+              method: "logs.start",
+              params: rpcParams,
+            }).pipe(
+              Effect.tapError(() =>
+                Ref.update(streams, (m) => {
+                  const next = new Map(m)
+                  next.delete(streamId)
+                  return next
+                }),
+              ),
+            ),
+          ),
+          Effect.as(streamId),
+        )
+      }
 
       // ── stopStream ──────────────────────────────────────────────────────────
 
