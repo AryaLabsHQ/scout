@@ -16,6 +16,7 @@ import { Route as OverviewRouteImport } from './routes/overview'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SystemsSystemIdRouteImport } from './routes/systems.$systemId'
+import { Route as PodsPodNameRouteImport } from './routes/pods.$podName'
 
 const WorkloadsRoute = WorkloadsRouteImport.update({
   id: '/workloads',
@@ -52,6 +53,11 @@ const SystemsSystemIdRoute = SystemsSystemIdRouteImport.update({
   path: '/systems/$systemId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PodsPodNameRoute = PodsPodNameRouteImport.update({
+  id: '/pods/$podName',
+  path: '/pods/$podName',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/pods/$podName': typeof PodsPodNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/pods/$podName': typeof PodsPodNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/pods/$podName': typeof PodsPodNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/terminal'
     | '/workloads'
     | '/systems/$systemId'
+    | '/pods/$podName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/terminal'
     | '/workloads'
     | '/systems/$systemId'
+    | '/pods/$podName'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/terminal'
     | '/workloads'
     | '/systems/$systemId'
+    | '/pods/$podName'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   TerminalRoute: typeof TerminalRoute
   WorkloadsRoute: typeof WorkloadsRoute
   SystemsSystemIdRoute: typeof SystemsSystemIdRoute
+  PodsPodNameRoute: typeof PodsPodNameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SystemsSystemIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pods/$podName': {
+      id: '/pods/$podName'
+      path: '/pods/$podName'
+      fullPath: '/pods/$podName'
+      preLoaderRoute: typeof PodsPodNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   TerminalRoute: TerminalRoute,
   WorkloadsRoute: WorkloadsRoute,
   SystemsSystemIdRoute: SystemsSystemIdRoute,
+  PodsPodNameRoute: PodsPodNameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
