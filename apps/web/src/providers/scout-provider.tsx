@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react"
-import { useScoutWs, type ScoutState, type SystemState } from "@/hooks/use-scout-ws"
+import { useScoutWs, type ScoutWsExtended, type SystemState } from "@/hooks/use-scout-ws"
 import type { System } from "@scout/shared"
 
-const ScoutContext = createContext<ScoutState>({
+const ScoutContext = createContext<ScoutWsExtended>({
   systems: {},
   isConnected: false,
   error: null,
+  invoke: () => Promise.reject(new Error("Not connected")),
+  onStreamEvent: () => () => {},
 })
 
 interface ScoutProviderProps {
@@ -18,7 +20,7 @@ export function ScoutProvider({ children, initialSystems }: ScoutProviderProps) 
   return <ScoutContext.Provider value={state}>{children}</ScoutContext.Provider>
 }
 
-export function useScout(): ScoutState {
+export function useScout(): ScoutWsExtended {
   return useContext(ScoutContext)
 }
 

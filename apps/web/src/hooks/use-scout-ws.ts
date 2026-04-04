@@ -112,7 +112,17 @@ const INITIAL_STATE: ScoutState = {
 
 const MAX_BACKOFF = 30_000
 
-export function useScoutWs(seedSystems?: System[]): ScoutState {
+// ── RPC invoke / stream event types ──────────────────────────────────────────
+
+export type WsInvoke = (method: string, params?: Record<string, unknown>) => Promise<unknown>
+export type OnStreamEvent = (streamId: string, callback: (data: unknown) => void) => () => void
+
+export interface ScoutWsExtended extends ScoutState {
+  invoke: WsInvoke
+  onStreamEvent: OnStreamEvent
+}
+
+export function useScoutWs(seedSystems?: System[]): ScoutWsExtended {
   const [state, setState] = useState<ScoutState>(INITIAL_STATE)
   const stateRef = useRef<ScoutState>(INITIAL_STATE)
   const dispatch = useCallback((action: ScoutAction) => {
@@ -127,6 +137,16 @@ export function useScoutWs(seedSystems?: System[]): ScoutState {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const backoffRef = useRef(1000)
   const unmounted = useRef(false)
+
+  // Pending RPC calls: id → { resolve, reject, timer }
+  const pendingCalls = useRef<Map<string, {
+    resolve: (value: unknown) => void
+    reject: (reason: unknown) => void
+    timer: ReturnType<typeof setTimeout>
+  }>>(new Map())
+
+  // Stream event listeners: streamId → Set<callback>
+  const streamListeners = useRef<Map<string, Set<(data: unknown) => void>>>(new Map())
 
   // Seed from SSR data on first mount
   useEffect(() => {
@@ -156,9 +176,48 @@ export function useScoutWs(seedSystems?: System[]): ScoutState {
       ws.onmessage = (evt) => {
         if (unmounted.current) return
         try {
-          const msg = JSON.parse(String(evt.data)) as RpcEvent
+          const msg = JSON.parse(String(evt.data)) as RpcEvent & {
+            id?: string
+            ok?: boolean
+            result?: unknown
+            error?: { code: string; message: string }
+          }
+
+          // RPC response (for invoke calls)
+          if (typeof msg.id === "string" && typeof msg.ok === "boolean") {
+            const pending = pendingCalls.current.get(msg.id)
+            if (pending) {
+              clearTimeout(pending.timer)
+              pendingCalls.current.delete(msg.id)
+              if (msg.ok) {
+                pending.resolve(msg.result)
+              } else {
+                pending.reject(msg.error ?? { code: "UNKNOWN", message: "RPC error" })
+              }
+            }
+            return
+          }
+
+          // Stream event (logs.data)
+          if (msg.event === "logs.data" && msg.streamId) {
+            const listeners = streamListeners.current.get(msg.streamId)
+            if (listeners) {
+              for (const cb of listeners) {
+                cb(msg.data)
+              }
+            }
+            return
+          }
+
+          // Standard broadcast events
           if (msg.event === "metrics.report" && msg.data) {
             dispatch({ type: "UPDATE_METRICS", payload: msg.data as AgentReport })
+          } else if (msg.event === "metrics.data" && Array.isArray(msg.data)) {
+            // Batch of reports — take the latest
+            const reports = msg.data as AgentReport[]
+            if (reports.length > 0) {
+              dispatch({ type: "UPDATE_METRICS", payload: reports[reports.length - 1]! })
+            }
           } else if (msg.event === "system.update" && msg.data) {
             dispatch({ type: "UPDATE_SYSTEM", payload: msg.data as System })
           }
@@ -195,8 +254,55 @@ export function useScoutWs(seedSystems?: System[]): ScoutState {
         wsRef.current.close()
         wsRef.current = null
       }
+      // Reject all pending calls
+      for (const [, pending] of pendingCalls.current) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error("WebSocket closed"))
+      }
+      pendingCalls.current.clear()
     }
   }, [dispatch])
 
-  return state
+  // ── invoke ──────────────────────────────────────────────────────────────────
+
+  const invoke = useCallback<WsInvoke>((method, params) => {
+    return new Promise((resolve, reject) => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        reject(new Error("WebSocket not connected"))
+        return
+      }
+
+      const id = crypto.randomUUID()
+
+      const timer = setTimeout(() => {
+        pendingCalls.current.delete(id)
+        reject(new Error(`RPC timeout: ${method}`))
+      }, 30_000)
+
+      pendingCalls.current.set(id, { resolve, reject, timer })
+      ws.send(JSON.stringify({ id, method, params: params ?? {} }))
+    })
+  }, [])
+
+  // ── onStreamEvent ────────────────────────────────────────────────────────────
+
+  const onStreamEvent = useCallback<OnStreamEvent>((streamId, callback) => {
+    if (!streamListeners.current.has(streamId)) {
+      streamListeners.current.set(streamId, new Set())
+    }
+    streamListeners.current.get(streamId)!.add(callback)
+
+    return () => {
+      const set = streamListeners.current.get(streamId)
+      if (set) {
+        set.delete(callback)
+        if (set.size === 0) {
+          streamListeners.current.delete(streamId)
+        }
+      }
+    }
+  }, [])
+
+  return { ...state, invoke, onStreamEvent }
 }
