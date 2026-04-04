@@ -4,7 +4,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022"],
-    "types": ["node"],
+    "types": ["node", "bun-types"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
