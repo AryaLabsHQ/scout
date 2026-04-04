@@ -9,13 +9,31 @@ import {
   ServerStack01Icon,
   GpuIcon,
   ThermometerIcon,
+  ContainerIcon,
+  Settings01Icon,
 } from "@hugeicons/core-free-icons"
 
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
+import { fetchDockerContainers, fetchSystemdServices } from "@/server/workloads"
 import { useSystemState } from "@/providers/scout-provider"
 import { MetricsChart } from "@/components/charts/metrics-chart"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { LogViewer } from "@/components/log-viewer"
 import {
   formatBytes,
   formatBytesPerSec,
@@ -23,7 +41,7 @@ import {
   formatPercent,
   formatTimeAgo,
 } from "@/lib/format"
-import type { AgentReport } from "@scout/shared"
+import type { AgentReport, DockerContainerMetrics, SystemdServiceMetrics } from "@scout/shared"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,8 +92,32 @@ function SystemDetailPage() {
     useState<AgentReport[]>(initialMetrics)
   const [loadingRange, setLoadingRange] = useState(false)
 
+  // Docker / Systemd data
+  const [dockerContainers, setDockerContainers] = useState<DockerContainerMetrics[] | null>(null)
+  const [systemdServices, setSystemdServices] = useState<SystemdServiceMetrics[] | null>(null)
+  const [logSheetOpen, setLogSheetOpen] = useState(false)
+  const [logTarget, setLogTarget] = useState<string>("")
+  const [logSource, setLogSource] = useState<"k8s" | "systemd">("systemd")
+
   const system = wsState?.system ?? detail
   const latestMetrics = wsState?.latestMetrics ?? null
+
+  // Load Docker/Systemd data when system is loaded
+  useState(() => {
+    if (!systemId) return
+    if (system?.capabilities?.docker) {
+      fetchDockerContainers({ data: { systemId } }).then(setDockerContainers).catch(() => {})
+    }
+    if (system?.capabilities?.systemd) {
+      fetchSystemdServices({ data: { systemId } }).then(setSystemdServices).catch(() => {})
+    }
+  })
+
+  function openLogViewer(target: string, source: "k8s" | "systemd") {
+    setLogTarget(target)
+    setLogSource(source)
+    setLogSheetOpen(true)
+  }
 
   async function handleRangeChange(range: TimeRange) {
     setSelectedRange(range)
@@ -167,6 +209,7 @@ function SystemDetailPage() {
     .map(([k]) => k)
 
   return (
+    <>
     <div className="p-4 md:p-6">
       {/* Back + Header */}
       <div className="mb-4">
@@ -400,7 +443,188 @@ function SystemDetailPage() {
             />
           </section>
         )}
+
+        {/* Docker containers */}
+        {system?.capabilities?.docker && (
+          <section>
+            <div className="mb-2 flex items-center gap-2">
+              <HugeiconsIcon icon={ContainerIcon} size={14} className="text-blue-400" />
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Docker Containers
+              </h2>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {dockerContainers ? `${dockerContainers.length} containers` : "Loading..."}
+              </span>
+            </div>
+            {dockerContainers && dockerContainers.length > 0 ? (
+              <DockerSection containers={dockerContainers} />
+            ) : (
+              <p className="text-xs text-muted-foreground">No containers found.</p>
+            )}
+          </section>
+        )}
+
+        {/* Systemd services */}
+        {system?.capabilities?.systemd && (
+          <section>
+            <div className="mb-2 flex items-center gap-2">
+              <HugeiconsIcon icon={Settings01Icon} size={14} className="text-orange-400" />
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Systemd Services
+              </h2>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {systemdServices ? `${systemdServices.length} units` : "Loading..."}
+              </span>
+            </div>
+            {systemdServices && systemdServices.length > 0 ? (
+              <SystemdSection services={systemdServices} systemId={systemId} onViewLogs={openLogViewer} />
+            ) : (
+              <p className="text-xs text-muted-foreground">No services found.</p>
+            )}
+          </section>
+        )}
       </div>
     </div>
+
+    {/* Log viewer sheet */}
+    <Sheet open={logSheetOpen} onOpenChange={setLogSheetOpen}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col" showCloseButton={false}>
+        <SheetHeader className="sr-only">
+          <SheetTitle>Logs — {logTarget}</SheetTitle>
+        </SheetHeader>
+        {logSheetOpen && (
+          <LogViewer
+            agentId={systemId}
+            source={logSource}
+            target={logTarget}
+            onClose={() => setLogSheetOpen(false)}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  </>
+  )
+}
+
+// ── DockerSection ─────────────────────────────────────────────────────────────
+
+function DockerStateBadge({ state }: { state: DockerContainerMetrics["state"] }) {
+  const map: Record<DockerContainerMetrics["state"], string> = {
+    running: "bg-green-500/20 text-green-400 border-green-500/30",
+    paused: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    exited: "bg-muted text-muted-foreground border-border",
+    restarting: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    dead: "bg-red-500/20 text-red-400 border-red-500/30",
+    created: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  }
+  return (
+    <span className={`inline-flex items-center rounded-none border px-1.5 py-0 text-[10px] font-medium ${map[state]}`}>
+      {state}
+    </span>
+  )
+}
+
+function DockerSection({ containers }: { containers: DockerContainerMetrics[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Image</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>CPU%</TableHead>
+          <TableHead>Memory</TableHead>
+          <TableHead>Network</TableHead>
+          <TableHead>Uptime</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {containers.map((c) => (
+          <TableRow key={c.id}>
+            <TableCell className="font-mono text-[11px]">{c.name}</TableCell>
+            <TableCell className="max-w-[200px] truncate font-mono text-[10px] text-muted-foreground">
+              {c.image}
+            </TableCell>
+            <TableCell><DockerStateBadge state={c.state} /></TableCell>
+            <TableCell>{c.cpuPercent.toFixed(1)}%</TableCell>
+            <TableCell>
+              {c.memLimit > 0
+                ? `${formatBytes(c.memUsed)} / ${formatBytes(c.memLimit)}`
+                : formatBytes(c.memUsed)}
+            </TableCell>
+            <TableCell className="text-[10px]">
+              ↓{formatBytes(c.netRx)} ↑{formatBytes(c.netTx)}
+            </TableCell>
+            <TableCell>{formatDuration(c.uptime)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+// ── SystemdSection ────────────────────────────────────────────────────────────
+
+function SystemdStateBadge({ state }: { state: SystemdServiceMetrics["activeState"] }) {
+  const map: Record<SystemdServiceMetrics["activeState"], string> = {
+    active: "bg-green-500/20 text-green-400 border-green-500/30",
+    inactive: "bg-muted text-muted-foreground border-border",
+    failed: "bg-red-500/20 text-red-400 border-red-500/30",
+    activating: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    deactivating: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  }
+  return (
+    <span className={`inline-flex items-center rounded-none border px-1.5 py-0 text-[10px] font-medium ${map[state]}`}>
+      {state}
+    </span>
+  )
+}
+
+function SystemdSection({
+  services,
+  systemId,
+  onViewLogs,
+}: {
+  services: SystemdServiceMetrics[]
+  systemId: string
+  onViewLogs: (target: string, source: "k8s" | "systemd") => void
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Unit</TableHead>
+          <TableHead>State</TableHead>
+          <TableHead>Sub</TableHead>
+          <TableHead>PID</TableHead>
+          <TableHead>Memory</TableHead>
+          <TableHead></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {services.map((svc) => (
+          <TableRow key={svc.unit} className={svc.loadState === "masked" ? "opacity-40 line-through" : ""}>
+            <TableCell className="font-mono text-[11px]">{svc.unit}</TableCell>
+            <TableCell><SystemdStateBadge state={svc.activeState} /></TableCell>
+            <TableCell className="text-[10px] text-muted-foreground">{svc.subState}</TableCell>
+            <TableCell className="font-mono text-[11px]">{svc.pid ?? "—"}</TableCell>
+            <TableCell>
+              {svc.memoryBytes !== null ? formatBytes(svc.memoryBytes) : "—"}
+            </TableCell>
+            <TableCell>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => onViewLogs(svc.unit, "systemd")}
+                disabled={!systemId}
+              >
+                Logs
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
