@@ -130,11 +130,14 @@ const BASE_REPORT: AgentReport = {
   network: [],
 }
 
-const r = (overrides: Partial<AgentReport> & { system?: Partial<AgentReport["system"]> }): AgentReport => ({
-  ...BASE_REPORT,
-  ...overrides,
-  system: { ...BASE_REPORT.system, ...overrides.system },
-})
+const r = (overrides: Omit<Partial<AgentReport>, "system"> & { system?: Partial<AgentReport["system"]> }): AgentReport => {
+  const merged = {
+    ...BASE_REPORT,
+    ...overrides,
+    system: { ...BASE_REPORT.system, ...(overrides.system ?? {}) },
+  }
+  return merged as AgentReport
+}
 
 function withCpu(cpu: number): AgentReport {
   return r({ system: { cpu: { ...BASE_REPORT.system.cpu, usage: cpu } } })
@@ -146,7 +149,7 @@ function withMemory(usedPct: number): AgentReport {
 }
 
 function withDisk(usedPct: number): AgentReport {
-  return r({ system: { disks: [{ mount: "/", device: "/dev/sda1", used: usedPct, total: 100, readBytesPerSec: 0, writeBytesPerSec: 0 }] } })
+  return r({ system: { disks: [{ mount: "/", device: "/dev/sda1", used: usedPct, total: 100, readBytesPerSec: 0, writeBytesPerSec: 0 }] } as Partial<AgentReport["system"]> })
 }
 
 function withGpu(temp: number): AgentReport {
