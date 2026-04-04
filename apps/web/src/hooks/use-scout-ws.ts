@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import type { System, AgentReport, RpcEvent } from "@scout/shared"
+import type { System, AgentReport, Alert, RpcEvent } from "@scout/shared"
 
 export interface SystemState {
   system: System
@@ -9,6 +9,8 @@ export interface SystemState {
 
 export interface ScoutState {
   systems: Record<string, SystemState>
+  alerts: Alert[]
+  activeAlertCount: number
   isConnected: boolean
   error: string | null
 }
@@ -29,6 +31,8 @@ type ScoutAction =
   | { type: "UPDATE_METRICS"; payload: AgentReport }
   | { type: "UPDATE_SYSTEM"; payload: System }
   | { type: "SEED_SYSTEMS"; payload: System[] }
+  | { type: "ALERT_TRIGGERED"; payload: Alert }
+  | { type: "ALERT_RESOLVED"; payload: Alert }
 
 function reducer(state: ScoutState, action: ScoutAction): ScoutState {
   switch (action.type) {
@@ -99,6 +103,21 @@ function reducer(state: ScoutState, action: ScoutAction): ScoutState {
         },
       }
     }
+    case "ALERT_TRIGGERED": {
+      const alert = action.payload
+      const existing = state.alerts.find((a) => a.id === alert.id)
+      const alerts = existing
+        ? state.alerts.map((a) => (a.id === alert.id ? alert : a))
+        : [alert, ...state.alerts]
+      const activeAlertCount = alerts.filter((a) => a.state === "active" || a.state === "acknowledged").length
+      return { ...state, alerts, activeAlertCount }
+    }
+    case "ALERT_RESOLVED": {
+      const alert = action.payload
+      const alerts = state.alerts.map((a) => (a.id === alert.id ? alert : a))
+      const activeAlertCount = alerts.filter((a) => a.state === "active" || a.state === "acknowledged").length
+      return { ...state, alerts, activeAlertCount }
+    }
     default:
       return state
   }
@@ -106,6 +125,8 @@ function reducer(state: ScoutState, action: ScoutAction): ScoutState {
 
 const INITIAL_STATE: ScoutState = {
   systems: {},
+  alerts: [],
+  activeAlertCount: 0,
   isConnected: false,
   error: null,
 }
@@ -221,6 +242,18 @@ export function useScoutWs(seedSystems?: System[]): ScoutWsExtended {
             }
           } else if (msg.event === "system.update" && msg.data) {
             dispatch({ type: "UPDATE_SYSTEM", payload: msg.data as System })
+          } else if (msg.event === "alert.triggered" && msg.data) {
+            const alert = msg.data as Alert
+            dispatch({ type: "ALERT_TRIGGERED", payload: alert })
+            // Toast notification
+            import("sonner").then(({ toast }) => {
+              const hostname = stateRef.current.systems[alert.systemId]?.system.hostname ?? alert.systemId
+              toast.error(`${alert.severity.toUpperCase()}: ${alert.metric} on ${hostname}`, {
+                duration: 5000,
+              })
+            }).catch(() => {})
+          } else if (msg.event === "alert.resolved" && msg.data) {
+            dispatch({ type: "ALERT_RESOLVED", payload: msg.data as Alert })
           }
         } catch {
           // ignore parse errors

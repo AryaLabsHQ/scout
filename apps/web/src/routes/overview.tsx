@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { fetchSystems } from "@/server/systems"
 import { useScout } from "@/providers/scout-provider"
 import { SystemCard } from "@/components/system-card"
@@ -28,7 +28,7 @@ function EmptyState() {
 
 function OverviewPage() {
   const { systems: loaderData } = Route.useLoaderData()
-  const { systems: wsState } = useScout()
+  const { systems: wsState, alerts, activeAlertCount } = useScout()
 
   // Merge SSR seed with WS live state
   // WS state takes precedence for online systems
@@ -51,10 +51,28 @@ function OverviewPage() {
     return null
   }).filter(Boolean)
 
+  // Build per-system active alert count from WS alerts
+  const alertCountBySystem: Record<string, number> = {}
+  for (const alert of alerts) {
+    if (alert.state === "active" || alert.state === "acknowledged") {
+      alertCountBySystem[alert.systemId] = (alertCountBySystem[alert.systemId] ?? 0) + 1
+    }
+  }
+
   return (
     <div className="p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="font-heading text-base font-semibold">Systems</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-heading text-base font-semibold">Systems</h1>
+          {activeAlertCount > 0 && (
+            <Link to="/alerts" className="flex items-center gap-1">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-medium text-destructive-foreground">
+                {activeAlertCount}
+              </span>
+              <span className="text-[10px] text-destructive hidden sm:inline">active alerts</span>
+            </Link>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">
           {mergedSystems.length} {mergedSystems.length === 1 ? "server" : "servers"}
         </span>
@@ -66,7 +84,11 @@ function OverviewPage() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {mergedSystems.map((entry) =>
             entry ? (
-              <SystemCard key={entry.system.id} systemState={entry} />
+              <SystemCard
+                key={entry.system.id}
+                systemState={entry}
+                alertCount={alertCountBySystem[entry.system.id] ?? 0}
+              />
             ) : null
           )}
         </div>

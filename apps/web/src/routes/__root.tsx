@@ -33,6 +33,7 @@ import { useScout } from "@/providers/scout-provider"
 import { TerminalProvider, useTerminalPanel } from "@/providers/terminal-provider"
 import { TerminalPanel } from "@/components/terminal/terminal-panel"
 import { cn } from "@/lib/utils"
+import { Toaster } from "@/components/ui/sonner"
 
 import appCss from "@/styles.css?url"
 
@@ -144,6 +145,7 @@ function AppLayout() {
           <AppSidebar />
           <AppContent />
           <BottomNav />
+          <Toaster />
         </SidebarProvider>
       </TerminalProvider>
     </ScoutProvider>

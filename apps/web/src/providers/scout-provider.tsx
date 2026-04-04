@@ -4,6 +4,8 @@ import type { System } from "@scout/shared"
 
 const ScoutContext = createContext<ScoutWsExtended>({
   systems: {},
+  alerts: [],
+  activeAlertCount: 0,
   isConnected: false,
   error: null,
   invoke: () => Promise.reject(new Error("Not connected")),
