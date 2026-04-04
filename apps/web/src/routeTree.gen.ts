@@ -9,38 +9,155 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkloadsRouteImport } from './routes/workloads'
+import { Route as TerminalRouteImport } from './routes/terminal'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as OverviewRouteImport } from './routes/overview'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SystemsSystemIdRouteImport } from './routes/systems.$systemId'
 
+const WorkloadsRoute = WorkloadsRouteImport.update({
+  id: '/workloads',
+  path: '/workloads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerminalRoute = TerminalRouteImport.update({
+  id: '/terminal',
+  path: '/terminal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OverviewRoute = OverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemsSystemIdRoute = SystemsSystemIdRouteImport.update({
+  id: '/systems/$systemId',
+  path: '/systems/$systemId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/overview': typeof OverviewRoute
+  '/settings': typeof SettingsRoute
+  '/terminal': typeof TerminalRoute
+  '/workloads': typeof WorkloadsRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/overview': typeof OverviewRoute
+  '/settings': typeof SettingsRoute
+  '/terminal': typeof TerminalRoute
+  '/workloads': typeof WorkloadsRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
+  '/overview': typeof OverviewRoute
+  '/settings': typeof SettingsRoute
+  '/terminal': typeof TerminalRoute
+  '/workloads': typeof WorkloadsRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/alerts'
+    | '/overview'
+    | '/settings'
+    | '/terminal'
+    | '/workloads'
+    | '/systems/$systemId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/alerts'
+    | '/overview'
+    | '/settings'
+    | '/terminal'
+    | '/workloads'
+    | '/systems/$systemId'
+  id:
+    | '__root__'
+    | '/'
+    | '/alerts'
+    | '/overview'
+    | '/settings'
+    | '/terminal'
+    | '/workloads'
+    | '/systems/$systemId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlertsRoute: typeof AlertsRoute
+  OverviewRoute: typeof OverviewRoute
+  SettingsRoute: typeof SettingsRoute
+  TerminalRoute: typeof TerminalRoute
+  WorkloadsRoute: typeof WorkloadsRoute
+  SystemsSystemIdRoute: typeof SystemsSystemIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workloads': {
+      id: '/workloads'
+      path: '/workloads'
+      fullPath: '/workloads'
+      preLoaderRoute: typeof WorkloadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terminal': {
+      id: '/terminal'
+      path: '/terminal'
+      fullPath: '/terminal'
+      preLoaderRoute: typeof TerminalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/overview': {
+      id: '/overview'
+      path: '/overview'
+      fullPath: '/overview'
+      preLoaderRoute: typeof OverviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +165,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/systems/$systemId': {
+      id: '/systems/$systemId'
+      path: '/systems/$systemId'
+      fullPath: '/systems/$systemId'
+      preLoaderRoute: typeof SystemsSystemIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlertsRoute: AlertsRoute,
+  OverviewRoute: OverviewRoute,
+  SettingsRoute: SettingsRoute,
+  TerminalRoute: TerminalRoute,
+  WorkloadsRoute: WorkloadsRoute,
+  SystemsSystemIdRoute: SystemsSystemIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

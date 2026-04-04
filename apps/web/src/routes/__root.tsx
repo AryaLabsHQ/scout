@@ -1,34 +1,146 @@
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Scripts,
+  createRootRoute,
+  Outlet,
+} from "@tanstack/react-router"
+import { Link, useRouterState } from "@tanstack/react-router"
+import { HugeiconsIcon } from "@hugeicons/react"
+import {
+  DashboardCircleIcon,
+  ServerStack01Icon,
+  Alert01Icon,
+  TerminalIcon,
+  Settings01Icon,
+  WifiConnected01Icon,
+  WifiDisconnected01Icon,
+} from "@hugeicons/core-free-icons"
 
-import appCss from "@/styles.css?url";
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarInset,
+} from "@/components/ui/sidebar"
+import { BottomNav } from "@/components/bottom-nav"
+import { ScoutProvider } from "@/providers/scout-provider"
+import { useScout } from "@/providers/scout-provider"
+import { cn } from "@/lib/utils"
+
+import appCss from "@/styles.css?url"
+
+// ── Nav items ─────────────────────────────────────────────────────────────────
+
+const NAV_ITEMS = [
+  { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
+  { to: "/workloads", label: "Workloads", icon: ServerStack01Icon },
+  { to: "/alerts", label: "Alerts", icon: Alert01Icon },
+  { to: "/terminal", label: "Terminal", icon: TerminalIcon },
+  { to: "/settings", label: "Settings", icon: Settings01Icon },
+] as const
+
+// ── Connection status ─────────────────────────────────────────────────────────
+
+function ConnectionStatus() {
+  const { isConnected } = useScout()
+  return (
+    <div className="flex items-center gap-1.5">
+      <HugeiconsIcon
+        icon={isConnected ? WifiConnected01Icon : WifiDisconnected01Icon}
+        size={14}
+        className={cn(isConnected ? "text-green-500" : "text-muted-foreground")}
+      />
+      <span className={cn("text-xs", isConnected ? "text-green-500" : "text-muted-foreground")}>
+        {isConnected ? "Live" : "Offline"}
+      </span>
+    </div>
+  )
+}
+
+// ── Desktop sidebar nav ───────────────────────────────────────────────────────
+
+function AppSidebar() {
+  const routerState = useRouterState()
+  const currentPath = routerState.location.pathname
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b border-sidebar-border px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="font-heading text-sm font-semibold tracking-wider text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+            SCOUT
+          </span>
+          <ConnectionStatus />
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="pt-2">
+        <SidebarMenu>
+          {NAV_ITEMS.map((item) => {
+            const isActive =
+              currentPath === item.to || currentPath.startsWith(item.to + "/")
+            return (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton
+                  render={<Link to={item.to} />}
+                  isActive={isActive}
+                  tooltip={item.label}
+                >
+                  <HugeiconsIcon icon={item.icon} size={18} />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
+      </SidebarContent>
+    </Sidebar>
+  )
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+function AppLayout() {
+  return (
+    <ScoutProvider>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset className="pb-16 md:pb-0">
+          <header className="flex h-12 items-center justify-between border-b border-border px-4 md:hidden">
+            <span className="font-heading text-sm font-semibold tracking-wider">SCOUT</span>
+            <ConnectionStatus />
+          </header>
+          <main className="flex-1">
+            <Outlet />
+          </main>
+        </SidebarInset>
+        <BottomNav />
+      </SidebarProvider>
+    </ScoutProvider>
+  )
+}
+
+// ── Root route ────────────────────────────────────────────────────────────────
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
-      {
-        charSet: "utf-8",
-      },
-      {
-        name: "viewport",
-        content: "width=device-width, initial-scale=1",
-      },
-      {
-        title: "TanStack Start Starter",
-      },
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { title: "Scout" },
     ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-    ],
+    links: [{ rel: "stylesheet", href: appCss }],
   }),
   shellComponent: RootDocument,
-});
+  component: AppLayout,
+})
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
@@ -37,5 +149,5 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Scripts />
       </body>
     </html>
-  );
+  )
 }
