@@ -18,6 +18,7 @@ import { LogService } from "./services/log-service.js"
 import { SystemdService } from "./services/systemd-service.js"
 import { DockerService } from "./services/docker-service.js"
 import { K8sService } from "./services/k8s-service.js"
+import { TerminalService } from "./services/terminal.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -402,6 +403,7 @@ export const AgentWebSocketRoute = HttpRouter.add(
     const ingestion = yield* MetricsIngestion
     const broadcast = yield* MetricsBroadcast
     const logSvc = yield* LogService
+    const termSvc = yield* TerminalService
 
     // client writers registry: clientId → write function
     // (managed at ClientWebSocketRoute level; log forwarding uses a PubSub detour via MetricsBroadcast)
@@ -487,6 +489,24 @@ export const AgentWebSocketRoute = HttpRouter.add(
                   }
                 }),
             )
+          } else if (msg.event === "terminal.output" && msg.streamId) {
+            // Forward terminal output to the client that owns this session
+            const sessionId = msg.streamId
+            const dataBase64 = msg.dataBase64 as string | undefined
+            if (dataBase64) {
+              yield* termSvc.routeOutput(
+                sessionId,
+                dataBase64,
+                (clientId, data) =>
+                  Effect.gen(function* () {
+                    const writers = yield* clientWritersRef
+                    const writer = writers.get(clientId)
+                    if (writer) {
+                      yield* writer(data).pipe(Effect.ignore)
+                    }
+                  }),
+              )
+            }
           }
         } else if (isRpcResponse(msg)) {
           yield* mgr.handleResponse(msg)
@@ -707,6 +727,54 @@ export const ClientWebSocketRoute = HttpRouter.add(
                 } else {
                   yield* write(JSON.stringify({ id, ok: true, result: result.value ?? null })).pipe(Effect.ignore)
                 }
+              } else if (method === "terminal.open") {
+                const termSvcC = yield* TerminalService
+                const agentId = params["agentId"] as string | undefined
+                const mode = params["mode"] as "shell" | "podExec" | undefined
+                const cols = typeof params["cols"] === "number" ? params["cols"] : 80
+                const rows = typeof params["rows"] === "number" ? params["rows"] : 24
+                if (!agentId || !mode) {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "BAD_REQUEST", message: "Missing agentId or mode" } })).pipe(Effect.ignore)
+                  return
+                }
+                const result = yield* Effect.exit(termSvcC.createSession({
+                  agentId,
+                  clientId,
+                  mode,
+                  cols,
+                  rows,
+                  podName: params["podName"] as string | undefined,
+                  namespace: params["namespace"] as string | undefined,
+                }))
+                if (result._tag === "Failure") {
+                  yield* write(JSON.stringify({ id, ok: false, error: { code: "AGENT_NOT_CONNECTED", message: "Agent not connected" } })).pipe(Effect.ignore)
+                } else {
+                  yield* write(JSON.stringify({ id, ok: true, result: { sessionId: result.value.id } })).pipe(Effect.ignore)
+                }
+              } else if (method === "terminal.input") {
+                const termSvcC = yield* TerminalService
+                const sessionId = params["sessionId"] as string | undefined
+                const dataBase64 = params["dataBase64"] as string | undefined
+                if (sessionId && dataBase64) {
+                  yield* termSvcC.sendInput(sessionId, dataBase64)
+                }
+                yield* write(JSON.stringify({ id, ok: true, result: null })).pipe(Effect.ignore)
+              } else if (method === "terminal.resize") {
+                const termSvcC = yield* TerminalService
+                const sessionId = params["sessionId"] as string | undefined
+                const cols = typeof params["cols"] === "number" ? params["cols"] : 80
+                const rows = typeof params["rows"] === "number" ? params["rows"] : 24
+                if (sessionId) {
+                  yield* termSvcC.resize(sessionId, cols, rows)
+                }
+                yield* write(JSON.stringify({ id, ok: true, result: null })).pipe(Effect.ignore)
+              } else if (method === "terminal.close") {
+                const termSvcC = yield* TerminalService
+                const sessionId = params["sessionId"] as string | undefined
+                if (sessionId) {
+                  yield* termSvcC.closeSession(sessionId)
+                }
+                yield* write(JSON.stringify({ id, ok: true, result: null })).pipe(Effect.ignore)
               } else {
                 yield* Effect.log(`Client WS message: ${method}`)
               }
