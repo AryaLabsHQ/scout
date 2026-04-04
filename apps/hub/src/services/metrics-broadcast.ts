@@ -15,8 +15,14 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
   readonly publishMetrics: (report: AgentReport) => Effect.Effect<void>
   /**
    * Publish an alert immediately — bypasses the coalescing queue.
+   * Uses "alert.triggered" event type.
    */
   readonly publishAlert: (alert: Alert) => Effect.Effect<void>
+  /**
+   * Publish an alert resolved event immediately — bypasses the coalescing queue.
+   * Uses "alert.resolved" event type.
+   */
+  readonly publishAlertResolved: (alert: Alert) => Effect.Effect<void>
   /**
    * Subscribe to the fan-out PubSub.
    * The returned subscription is scoped — it auto-unsubscribes when the
@@ -59,6 +65,11 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
 
         publishAlert: (alert: Alert) => {
           const event: RpcEvent = { event: "alert.triggered", data: alert }
+          return PubSub.publish(hub, event).pipe(Effect.asVoid)
+        },
+
+        publishAlertResolved: (alert: Alert) => {
+          const event: RpcEvent = { event: "alert.resolved", data: alert }
           return PubSub.publish(hub, event).pipe(Effect.asVoid)
         },
 
