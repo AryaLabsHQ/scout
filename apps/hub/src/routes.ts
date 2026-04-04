@@ -1,4 +1,4 @@
-import { Config, Effect, Layer, PubSub } from "effect"
+import { Config, Effect, Layer, PubSub, Ref } from "effect"
 import * as HttpRouter from "effect/unstable/http/HttpRouter"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
@@ -14,6 +14,7 @@ import { Database } from "./services/database.js"
 import { MetricsIngestion } from "./services/metrics-ingestion.js"
 import { MetricsBroadcast } from "./services/metrics-broadcast.js"
 import { AgentManager } from "./services/agent-manager.js"
+import { LogService } from "./services/log-service.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -317,6 +318,73 @@ export const ResolveAlertRoute = HttpRouter.add(
   }),
 )
 
+// ── GET /api/systems/:id/k8s ──────────────────────────────────────────────────
+
+export const GetSystemK8sRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/k8s",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const systemId = params["id"]!
+    const ingestion = yield* MetricsIngestion
+    const latest = yield* ingestion.queryLatest(systemId)
+    if (!latest || !latest.k8s) {
+      return yield* HttpServerResponse.json(null)
+    }
+    return yield* HttpServerResponse.json(latest.k8s)
+  }),
+)
+
+// ── GET /api/systems/:id/docker ───────────────────────────────────────────────
+
+export const GetSystemDockerRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/docker",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const systemId = params["id"]!
+    const ingestion = yield* MetricsIngestion
+    const latest = yield* ingestion.queryLatest(systemId)
+    if (!latest || !latest.docker) {
+      return yield* HttpServerResponse.json(null)
+    }
+    return yield* HttpServerResponse.json(latest.docker)
+  }),
+)
+
+// ── GET /api/systems/:id/systemd ──────────────────────────────────────────────
+
+export const GetSystemSystemdRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/systemd",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const systemId = params["id"]!
+    const ingestion = yield* MetricsIngestion
+    const latest = yield* ingestion.queryLatest(systemId)
+    if (!latest || !latest.systemd) {
+      return yield* HttpServerResponse.json(null)
+    }
+    return yield* HttpServerResponse.json(latest.systemd)
+  }),
+)
+
+// ── Client writer registry (module-level, shared between Agent and Client WS handlers)
+
+// We store a Ref lazily — initialised once per process.
+// Each ClientWebSocketRoute handler registers/deregisters its write function.
+let _clientWritersRef: Effect.Effect<Ref.Ref<Map<string, (data: string) => Effect.Effect<void>>>> | null = null
+
+const clientWritersRef: Effect.Effect<Ref.Ref<Map<string, (data: string) => Effect.Effect<void>>>> =
+  Effect.gen(function* () {
+    if (_clientWritersRef === null) {
+      const ref = yield* Ref.make(new Map<string, (data: string) => Effect.Effect<void>>())
+      _clientWritersRef = Effect.succeed(ref)
+      return ref
+    }
+    return yield* _clientWritersRef
+  })
+
 // ── GET /ws/agent ─────────────────────────────────────────────────────────────
 
 export const AgentWebSocketRoute = HttpRouter.add(
@@ -330,6 +398,11 @@ export const AgentWebSocketRoute = HttpRouter.add(
     const mgr = yield* AgentManager
     const ingestion = yield* MetricsIngestion
     const broadcast = yield* MetricsBroadcast
+    const logSvc = yield* LogService
+
+    // client writers registry: clientId → write function
+    // (managed at ClientWebSocketRoute level; log forwarding uses a PubSub detour via MetricsBroadcast)
+    // For log events, we route via clientWriters Ref stored at module scope below.
 
     // Run the WebSocket message loop
     yield* socket.runRaw((raw) =>
@@ -396,6 +469,21 @@ export const AgentWebSocketRoute = HttpRouter.add(
           if (msg.event === "heartbeat") {
             // Update lastSeen via re-registering is not needed — the DB is updated on ingest
             yield* Effect.log(`Heartbeat from agent`)
+          } else if (msg.event === "logs.data" && msg.streamId) {
+            // Forward log data to the client that requested this stream
+            const streamId = msg.streamId
+            yield* logSvc.routeLogEvent(
+              streamId,
+              msg,
+              (clientId, data) =>
+                Effect.gen(function* () {
+                  const writers = yield* clientWritersRef
+                  const writer = writers.get(clientId)
+                  if (writer) {
+                    yield* writer(data).pipe(Effect.ignore)
+                  }
+                }),
+            )
           }
         } else if (isRpcResponse(msg)) {
           yield* mgr.handleResponse(msg)
@@ -428,12 +516,19 @@ export const ClientWebSocketRoute = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest
     const socket = yield* request.upgrade
     const broadcast = yield* MetricsBroadcast
+    const logSvc = yield* LogService
+
+    const clientId = crypto.randomUUID()
 
     // Run writer and subscription concurrently in a scoped fiber
     yield* Effect.scoped(
       Effect.gen(function* () {
         const sub = yield* broadcast.subscribe()
         const write = yield* socket.writer
+
+        // Register this client's writer so log events can be forwarded
+        const writers = yield* clientWritersRef
+        yield* Ref.update(writers, (m) => new Map(m).set(clientId, write))
 
         // Forward broadcast events to client
         const forwardFiber = yield* Effect.forkScoped(
@@ -446,10 +541,82 @@ export const ClientWebSocketRoute = HttpRouter.add(
           ),
         )
 
-        // Handle incoming messages from client (stub: just log)
-        yield* socket.runRaw((raw) => {
-          const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
-          return Effect.log(`Client WS message: ${text}`)
+        // Handle incoming messages from client
+        yield* socket.runRaw((raw) =>
+          Effect.gen(function* () {
+            const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+            let parsed: unknown
+            try {
+              parsed = JSON.parse(text)
+            } catch {
+              yield* Effect.logWarning("Client WS: failed to parse message")
+              return
+            }
+
+            const msg = parsed as Record<string, unknown>
+
+            // Handle RPC requests from client for log streaming
+            if (typeof msg["id"] === "string" && typeof msg["method"] === "string") {
+              const id = msg["id"] as string
+              const method = msg["method"] as string
+              const params = (msg["params"] ?? {}) as Record<string, unknown>
+
+              if (method === "logs.start") {
+                const agentId = params["agentId"] as string | undefined
+                const source = params["source"] as "k8s" | "systemd" | undefined
+                const target = params["target"] as string | undefined
+                const tail = typeof params["tail"] === "number" ? params["tail"] : 100
+
+                if (!agentId || !source || !target) {
+                  yield* write(JSON.stringify({
+                    id,
+                    ok: false,
+                    error: { code: "BAD_REQUEST", message: "Missing agentId, source, or target" },
+                  })).pipe(Effect.ignore)
+                  return
+                }
+
+                const result = yield* Effect.exit(logSvc.startStream({
+                  clientId,
+                  agentId,
+                  source,
+                  target,
+                  namespace: params["namespace"] as string | undefined,
+                  container: params["container"] as string | undefined,
+                  tail,
+                }))
+
+                if (result._tag === "Failure") {
+                  yield* write(JSON.stringify({
+                    id,
+                    ok: false,
+                    error: { code: "AGENT_NOT_CONNECTED", message: "Agent not connected" },
+                  })).pipe(Effect.ignore)
+                } else {
+                  yield* write(JSON.stringify({
+                    id,
+                    ok: true,
+                    result: { streamId: result.value },
+                  })).pipe(Effect.ignore)
+                }
+              } else if (method === "logs.stop") {
+                const streamId = params["streamId"] as string | undefined
+                if (streamId) {
+                  yield* logSvc.stopStream(streamId)
+                }
+                yield* write(JSON.stringify({ id, ok: true, result: null })).pipe(Effect.ignore)
+              } else {
+                yield* Effect.log(`Client WS message: ${method}`)
+              }
+            }
+          })
+        )
+
+        // Cleanup on disconnect
+        yield* Ref.update(writers, (m) => {
+          const next = new Map(m)
+          next.delete(clientId)
+          return next
         })
 
         void forwardFiber
@@ -467,6 +634,9 @@ export const AppRoutes = Layer.mergeAll(
   ListSystemsRoute,
   GetSystemRoute,
   GetSystemMetricsRoute,
+  GetSystemK8sRoute,
+  GetSystemDockerRoute,
+  GetSystemSystemdRoute,
   ListAlertsRoute,
   ListAlertRulesRoute,
   UpdateAlertRuleRoute,
