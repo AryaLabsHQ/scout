@@ -42,6 +42,8 @@ import { TerminalPanel } from "@/components/terminal/terminal-panel"
 import { CommandPalette } from "@/components/command-palette"
 import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
+import { fetchSystems } from "@/server/systems"
+import { fetchAlerts } from "@/server/alerts"
 
 import appCss from "@/styles.css?url"
 
@@ -177,8 +179,9 @@ function AppContent() {
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 function AppLayout() {
+  const { systems, alerts } = Route.useLoaderData()
   return (
-    <ScoutProvider>
+    <ScoutProvider initialSystems={systems} initialAlerts={alerts}>
       <TerminalProvider>
         <CommandPaletteProvider>
           <SidebarProvider>
@@ -205,6 +208,10 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  loader: async () => {
+    const [systems, alerts] = await Promise.all([fetchSystems(), fetchAlerts()])
+    return { systems, alerts }
+  },
   shellComponent: RootDocument,
   component: AppLayout,
 })

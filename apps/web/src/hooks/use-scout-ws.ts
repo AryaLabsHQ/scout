@@ -31,6 +31,7 @@ type ScoutAction =
   | { type: "UPDATE_METRICS"; payload: AgentReport }
   | { type: "UPDATE_SYSTEM"; payload: System }
   | { type: "SEED_SYSTEMS"; payload: System[] }
+  | { type: "SEED_ALERTS"; payload: Alert[] }
   | { type: "ALERT_TRIGGERED"; payload: Alert }
   | { type: "ALERT_RESOLVED"; payload: Alert }
 
@@ -50,6 +51,18 @@ function reducer(state: ScoutState, action: ScoutAction): ScoutState {
         }
       }
       return { ...state, systems: next }
+    }
+    case "SEED_ALERTS": {
+      // Merge seeded alerts with any already received via WS, deduped by id.
+      // Existing entries win over seed data (WS is authoritative for live state).
+      const byId = new Map<string, Alert>()
+      for (const a of action.payload) byId.set(a.id, a)
+      for (const a of state.alerts) byId.set(a.id, a)
+      const alerts = Array.from(byId.values())
+      const activeAlertCount = alerts.filter(
+        (a) => a.state === "active" || a.state === "acknowledged",
+      ).length
+      return { ...state, alerts, activeAlertCount }
     }
     case "UPDATE_SYSTEM": {
       const existing = state.systems[action.payload.id]
@@ -143,7 +156,10 @@ export interface ScoutWsExtended extends ScoutState {
   onStreamEvent: OnStreamEvent
 }
 
-export function useScoutWs(seedSystems?: System[]): ScoutWsExtended {
+export function useScoutWs(
+  seedSystems?: System[],
+  seedAlerts?: Alert[],
+): ScoutWsExtended {
   const [state, setState] = useState<ScoutState>(INITIAL_STATE)
   const stateRef = useRef<ScoutState>(INITIAL_STATE)
   const dispatch = useCallback((action: ScoutAction) => {
@@ -173,6 +189,9 @@ export function useScoutWs(seedSystems?: System[]): ScoutWsExtended {
   useEffect(() => {
     if (seedSystems && seedSystems.length > 0) {
       dispatch({ type: "SEED_SYSTEMS", payload: seedSystems })
+    }
+    if (seedAlerts && seedAlerts.length > 0) {
+      dispatch({ type: "SEED_ALERTS", payload: seedAlerts })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

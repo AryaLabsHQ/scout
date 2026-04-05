@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react"
 import { useScoutWs, type ScoutWsExtended, type SystemState } from "@/hooks/use-scout-ws"
-import type { System } from "@scout/shared"
+import type { Alert, System } from "@scout/shared"
 
 const ScoutContext = createContext<ScoutWsExtended>({
   systems: {},
@@ -15,10 +15,11 @@ const ScoutContext = createContext<ScoutWsExtended>({
 interface ScoutProviderProps {
   children: React.ReactNode
   initialSystems?: System[]
+  initialAlerts?: Alert[]
 }
 
-export function ScoutProvider({ children, initialSystems }: ScoutProviderProps) {
-  const state = useScoutWs(initialSystems)
+export function ScoutProvider({ children, initialSystems, initialAlerts }: ScoutProviderProps) {
+  const state = useScoutWs(initialSystems, initialAlerts)
   return <ScoutContext.Provider value={state}>{children}</ScoutContext.Provider>
 }
 
