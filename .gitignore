@@ -34,3 +34,6 @@ npm-debug.log*
 *.pem
 
 *.db*
+
+# Scout runtime state (PIDs, logs from e2e harness)
+.scout/

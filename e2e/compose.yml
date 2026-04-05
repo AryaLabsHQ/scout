@@ -1,0 +1,105 @@
+# Scout E2E test harness
+#
+# Topology: hub runs on the host (localhost:3001), all nodes connect out via
+# host.docker.internal. Each node mounts the scout source tree read-only at
+# /opt/scout so the agent can be started from source with `bun run dev`.
+#
+# Bring up with: ./scripts/up.sh
+# Tear down:    ./scripts/down.sh
+
+# Shared configuration for all nodes
+x-node-common: &node-common
+  # systemd needs these
+  privileged: true
+  tty: true
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    # Mount scout source so the agent can be run directly (read-only)
+    - ../:/opt/scout:ro
+    # Overlay .scout/ as read-write so containers can write PID files + logs
+    # that are visible to the host. This sits on top of the ro mount above.
+    - ../.scout:/opt/scout/.scout:rw
+  tmpfs:
+    - /run
+    - /run/lock
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  # Host-level env defaults — per-service env adds hostname
+  environment: &node-env
+    SCOUT_HUB_URL: ws://host.docker.internal:3001
+    SCOUT_TOKEN: test-token-123
+    SCOUT_INTERVAL: "15"
+
+services:
+  # ── Shared base image (built once, reused by all nodes) ────────────────────
+  base:
+    build:
+      context: .
+      dockerfile: nodes/base.Dockerfile
+    image: scout-e2e-base:latest
+    # This service only exists to build the shared base image. It never runs.
+    command: ["true"]
+    profiles: ["build"]
+
+  # ── node-server: systemd + nginx + redis ────────────────────────────────────
+  node-server:
+    <<: *node-common
+    build:
+      context: .
+      dockerfile: nodes/server.Dockerfile
+    image: scout-e2e-server:latest
+    container_name: scout-node-server
+    hostname: node-server
+    environment:
+      <<: *node-env
+      SCOUT_HOSTNAME: node-server
+
+  # ── node-k3s: single-node k3s ──────────────────────────────────────────────
+  node-k3s:
+    <<: *node-common
+    build:
+      context: .
+      dockerfile: nodes/k3s.Dockerfile
+    image: scout-e2e-k3s:latest
+    container_name: scout-node-k3s
+    hostname: node-k3s
+    environment:
+      <<: *node-env
+      SCOUT_HOSTNAME: node-k3s
+      # Point the agent's k8s collector at k3s's kubeconfig
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    # k3s needs its own volume; overrides the shared volumes block
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ../:/opt/scout:ro
+      - ../.scout:/opt/scout/.scout:rw
+      - k3s-data:/var/lib/rancher/k3s
+
+  # ── node-docker: Docker-in-Docker ──────────────────────────────────────────
+  node-docker:
+    <<: *node-common
+    build:
+      context: .
+      dockerfile: nodes/docker.Dockerfile
+    image: scout-e2e-docker:latest
+    container_name: scout-node-docker
+    hostname: node-docker
+    environment:
+      <<: *node-env
+      SCOUT_HOSTNAME: node-docker
+
+  # ── node-minimal: bare Ubuntu, no extras ────────────────────────────────────
+  node-minimal:
+    <<: *node-common
+    build:
+      context: .
+      dockerfile: nodes/minimal.Dockerfile
+    image: scout-e2e-minimal:latest
+    container_name: scout-node-minimal
+    hostname: node-minimal
+    environment:
+      <<: *node-env
+      SCOUT_HOSTNAME: node-minimal
+
+volumes:
+  k3s-data:

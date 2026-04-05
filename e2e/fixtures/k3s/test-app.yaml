@@ -1,0 +1,77 @@
+# Sample workload for node-k3s. Gives the k8s collector something to
+# discover: a Deployment (2 replicas), a Service, and a StatefulSet.
+# Apply with: kubectl apply -f /opt/scout/e2e/fixtures/k3s/test-app.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scout-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: scout-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: scout-test
+spec:
+  selector:
+    app: web
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cache
+  namespace: scout-test
+spec:
+  serviceName: cache
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
