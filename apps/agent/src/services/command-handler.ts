@@ -59,7 +59,8 @@ function replyError(
 
 function runSystemctl(args: string[]): Effect.Effect<string> {
   return Effect.tryPromise(async () => {
-    const proc = Bun.spawn(["sudo", "systemctl", ...args], {
+    const cmd = process.getuid?.() === 0 ? ["systemctl", ...args] : ["sudo", "systemctl", ...args]
+    const proc = Bun.spawn(cmd, {
       stdout: "pipe",
       stderr: "pipe",
     })
