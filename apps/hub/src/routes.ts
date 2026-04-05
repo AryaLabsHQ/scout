@@ -475,11 +475,15 @@ export const AgentWebSocketRoute = HttpRouter.add(
     const logSvc = yield* LogService
     const termSvc = yield* TerminalService
 
-    // client writers registry: clientId → write function
-    // (managed at ClientWebSocketRoute level; log forwarding uses a PubSub detour via MetricsBroadcast)
-    // For log events, we route via clientWriters Ref stored at module scope below.
+    // Track which agent is connected through this socket for cleanup
+    const agentIdRef = yield* Ref.make<string | null>(null)
+
+    // Acquire a writer for sending responses to the agent
+    const writer = yield* Effect.scoped(socket.writer)
+    const sendJson = (data: unknown) => writer(JSON.stringify(data)).pipe(Effect.ignore)
 
     // Run the WebSocket message loop
+    yield* Effect.logInfo("Agent WS: socket upgraded, entering message loop")
     yield* socket.runRaw((raw) =>
       Effect.gen(function* () {
         const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
@@ -487,7 +491,7 @@ export const AgentWebSocketRoute = HttpRouter.add(
         const msgResult = yield* Effect.exit(decodeScoutMessage(JSON.parse(text)))
         if (msgResult._tag === "Failure") {
           yield* Effect.logWarning("Agent WS: failed to parse message").pipe(
-            Effect.annotateLogs({ raw: text }),
+            Effect.annotateLogs({ raw: text.slice(0, 200) }),
           )
           return
         }
@@ -503,6 +507,7 @@ export const AgentWebSocketRoute = HttpRouter.add(
 
             if (token !== "" && incomingToken !== token) {
               yield* Effect.logWarning("Agent WS: invalid token, closing")
+              yield* sendJson({ id: msg.id, ok: false, error: { code: "AUTH", message: "invalid token" } })
               return
             }
 
@@ -513,14 +518,33 @@ export const AgentWebSocketRoute = HttpRouter.add(
               platform: (params["platform"] as string | undefined) ?? "unknown",
             }
 
-            // Merge capabilities into system record after registration
-            yield* mgr.register(agentInfo, socket).pipe(
-              Effect.tap((system) => {
-                void capabilities
-                void system
-                return Effect.void
-              }),
+            const registerResult = yield* Effect.exit(
+              mgr.register(agentInfo, socket),
             )
+            if (registerResult._tag === "Failure") {
+              yield* Effect.logError("Agent WS: register FAILED").pipe(
+                Effect.annotateLogs({ cause: String(registerResult.cause) }),
+              )
+              yield* sendJson({ id: msg.id, ok: false, error: { code: "REGISTER", message: "registration failed" } })
+              return
+            }
+            const system = registerResult.value
+            yield* Ref.set(agentIdRef, agentInfo.systemId)
+
+            // Store capabilities in the DB
+            if (capabilities) {
+              const db = yield* Database
+              yield* Effect.sync(() => {
+                db.update(schema.systems)
+                  .set({ capabilities: capabilities as unknown })
+                  .where(eq(schema.systems.id, agentInfo.systemId))
+                  .run()
+              }).pipe(Effect.ignore)
+            }
+
+            // Send connect acknowledgment
+            yield* sendJson({ id: msg.id, ok: true, result: { systemId: system.id } })
+
             yield* Effect.logInfo("Agent connected").pipe(
               Effect.annotateLogs({ agentId: agentInfo.systemId, hostname }),
             )
@@ -559,7 +583,6 @@ export const AgentWebSocketRoute = HttpRouter.add(
           }
         } else if (isRpcEvent(msg)) {
           if (msg.event === "heartbeat") {
-            // Update lastSeen via re-registering is not needed — the DB is updated on ingest
             yield* Effect.log(`Heartbeat from agent`)
           } else if (msg.event === "logs.data" && msg.streamId) {
             // Forward log data to the client that requested this stream
@@ -571,9 +594,9 @@ export const AgentWebSocketRoute = HttpRouter.add(
                 Effect.gen(function* () {
                   const writersRef = yield* clientWritersRef
                   const writersMap = yield* Ref.get(writersRef)
-                  const writer = writersMap.get(clientId)
-                  if (writer) {
-                    yield* writer(data).pipe(Effect.ignore)
+                  const writerFn = writersMap.get(clientId)
+                  if (writerFn) {
+                    yield* writerFn(data).pipe(Effect.ignore)
                   }
                 }),
             )
@@ -589,9 +612,9 @@ export const AgentWebSocketRoute = HttpRouter.add(
                   Effect.gen(function* () {
                     const writersRef = yield* clientWritersRef
                     const writersMap = yield* Ref.get(writersRef)
-                    const writer = writersMap.get(clientId)
-                    if (writer) {
-                      yield* writer(data).pipe(Effect.ignore)
+                    const writerFn = writersMap.get(clientId)
+                    if (writerFn) {
+                      yield* writerFn(data).pipe(Effect.ignore)
                     }
                   }),
               )
@@ -603,13 +626,14 @@ export const AgentWebSocketRoute = HttpRouter.add(
       }),
     ).pipe(
       Effect.onExit(() =>
-        // Unregister on socket close
         Effect.gen(function* () {
-          const connected = yield* mgr.listConnected()
-          // Find the agent connected through this socket — use the most recently connected
-          // as a best-effort (the real mapping would require associating socket↔agentId)
-          void connected
-          yield* Effect.logInfo("Agent disconnected")
+          const agentId = yield* Ref.get(agentIdRef)
+          if (agentId) {
+            yield* mgr.unregister(agentId)
+            yield* Effect.logInfo("Agent disconnected").pipe(
+              Effect.annotateLogs({ agentId }),
+            )
+          }
         }),
       ),
       Effect.scoped,
@@ -890,7 +914,11 @@ export const ClientWebSocketRoute = HttpRouter.add(
 
 // ── Management error helper ────────────────────────────────────────────────────
 
-function handleManagementError(err: unknown) {
+function handleManagementError(cause: unknown) {
+  // Extract the error from the Cause wrapper
+  const err = (cause && typeof cause === "object" && "_tag" in cause && (cause as { _tag: string })._tag === "Fail" && "error" in cause)
+    ? (cause as { error: unknown }).error
+    : cause
   if (err && typeof err === "object" && "_tag" in err) {
     const tagged = err as { _tag: string; agentId?: string; message?: string; code?: string }
     if (tagged._tag === "AgentNotConnected") {
@@ -913,7 +941,7 @@ function handleManagementError(err: unknown) {
     }
   }
   return HttpServerResponse.json(
-    { error: "INTERNAL_ERROR", message: "Internal server error" },
+    { error: "INTERNAL_ERROR", message: String(err) },
     { status: 500 },
   )
 }
