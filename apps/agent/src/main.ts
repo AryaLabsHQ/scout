@@ -41,15 +41,7 @@ const program = Effect.gen(function* () {
     }),
   )
 
-  // 2. Build CollectorRegistry and discover capabilities
-  const registry = yield* CollectorRegistry
-  const capabilities = yield* registry.discover()
-
-  yield* Effect.logInfo("Discovered capabilities").pipe(
-    Effect.annotateLogs({ capabilities: JSON.stringify(capabilities) }),
-  )
-
-  // 3. HubConnection (uses discovered capabilities via AgentCapabilitiesCtx in layer)
+  // 2. HubConnection (discovers capabilities + connects as part of layer construction)
   yield* HubConnection
 
   yield* Effect.logInfo("Connected to hub").pipe(
@@ -80,25 +72,19 @@ const program = Effect.gen(function* () {
 
 // ── Layer stack ───────────────────────────────────────────────────────────────
 
-// Default capabilities for the layer graph. HubConnection needs this context at startup.
-const defaultCapabilitiesLayer = Layer.succeed(AgentCapabilitiesCtx)({
-  system: true,
-  network: true,
-  process: false,
-  temperature: false,
-  gpu: false,
-  smart: false,
-  systemd: false,
-  docker: false,
-  k8s: false,
-})
-
-// Layer dependencies:
-//   CollectorRegistry ← (no extra deps)
-//   HubConnection ← AgentCapabilitiesCtx
-//   Reporter ← HubConnection + CollectorRegistry
-//   CommandHandler ← HubConnection
-const hubConnectionLayer = HubConnection.layer.pipe(Layer.provide(defaultCapabilitiesLayer))
+// HubConnection needs discovered capabilities at startup.
+// Use Layer.unwrap to run discovery as part of layer construction.
+const hubConnectionLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const registry = yield* CollectorRegistry
+    const capabilities = yield* registry.discover()
+    yield* Effect.logInfo("Discovered capabilities").pipe(
+      Effect.annotateLogs({ capabilities: JSON.stringify(capabilities) }),
+    )
+    const capsLayer = Layer.succeed(AgentCapabilitiesCtx)(capabilities)
+    return HubConnection.layer.pipe(Layer.provide(capsLayer))
+  }),
+).pipe(Layer.provide(CollectorRegistry.layer))
 
 const baseLayer = Layer.mergeAll(
   CollectorRegistry.layer,

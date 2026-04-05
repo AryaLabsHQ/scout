@@ -144,24 +144,7 @@ export class HubConnection extends ServiceMap.Service<HubConnection, {
             )
           )
 
-          // Acquire writer (scoped to connection lifetime)
-          const writer = yield* Effect.scoped(socket.writer)
-          yield* Ref.set(writerRef, (data: string) => writer(data))
-
-          // Send connect RPC request
           const connectId = crypto.randomUUID()
-          const connectMsg: ScoutMessage = {
-            id: connectId,
-            method: "connect",
-            params: {
-              token: config.token,
-              hostname: config.hostname,
-              version: "0.0.1",
-              platform: process.platform,
-              capabilities,
-            },
-          }
-          yield* writer(JSON.stringify(connectMsg))
 
           // Deferred for connect acknowledgment
           const connectDeferred = yield* Deferred.make<void, HubConnectError>()
@@ -169,48 +152,73 @@ export class HubConnection extends ServiceMap.Service<HubConnection, {
           // Last tick time for watchdog
           const lastTickRef = yield* Ref.make(Date.now())
 
-          // Message receive loop
-          const receiveLoop = socket.runRaw((raw) =>
-            Effect.gen(function* () {
-              const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
-              let msg: ScoutMessage
-              try {
-                msg = JSON.parse(text) as ScoutMessage
-              } catch {
-                yield* Effect.logWarning("HubConnection: failed to parse message")
-                return
-              }
-
-              if (isRpcEvent(msg)) {
-                if (msg.event === "tick") {
-                  yield* Ref.set(lastTickRef, Date.now())
+          // Message receive loop — also sends the connect handshake on open
+          const receiveLoop = socket.runRaw(
+            (raw) =>
+              Effect.gen(function* () {
+                const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw)
+                let msg: ScoutMessage
+                try {
+                  msg = JSON.parse(text) as ScoutMessage
+                } catch {
+                  yield* Effect.logWarning("HubConnection: failed to parse message")
                   return
                 }
-                yield* Queue.offer(messageQueue, msg)
-                return
-              }
 
-              if (isRpcResponse(msg)) {
-                if (msg.id === connectId) {
-                  if (!msg.ok) {
-                    yield* Deferred.fail(
-                      connectDeferred,
-                      new HubConnectError({ reason: msg.error?.message ?? "connect rejected" })
-                    )
-                  } else {
-                    yield* Ref.set(statusRef, "connected")
-                    yield* Effect.log("HubConnection: connected as " + config.hostname)
-                    yield* Deferred.succeed(connectDeferred, void 0)
+                if (isRpcEvent(msg)) {
+                  if (msg.event === "tick") {
+                    yield* Ref.set(lastTickRef, Date.now())
+                    return
                   }
+                  yield* Queue.offer(messageQueue, msg)
                   return
                 }
-                yield* resolveCall(msg.id, msg.ok, msg.result, msg.error)
-                return
-              }
 
-              // RpcRequest (hub → agent command) — forward to message stream
-              yield* Queue.offer(messageQueue, msg)
-            })
+                if (isRpcResponse(msg)) {
+                  if (msg.id === connectId) {
+                    if (!msg.ok) {
+                      yield* Deferred.fail(
+                        connectDeferred,
+                        new HubConnectError({ reason: msg.error?.message ?? "connect rejected" })
+                      )
+                    } else {
+                      yield* Ref.set(statusRef, "connected")
+                      yield* Effect.log("HubConnection: connected as " + config.hostname)
+                      yield* Deferred.succeed(connectDeferred, void 0)
+                    }
+                    return
+                  }
+                  yield* resolveCall(msg.id, msg.ok, msg.result, msg.error)
+                  return
+                }
+
+                // RpcRequest (hub → agent command) — forward to message stream
+                yield* Queue.offer(messageQueue, msg)
+              }),
+            {
+              // onOpen fires once the WebSocket is connected and the writer is ready
+              onOpen: Effect.gen(function* () {
+                // Acquire writer — use Effect.scoped since socket.writer requires Scope in its type
+                // (the WebSocket impl doesn't actually need it, but the interface demands it)
+                const write = yield* Effect.scoped(socket.writer)
+                yield* Ref.set(writerRef, (data: string) => write(data))
+
+                // Send connect RPC handshake
+                const connectMsg: ScoutMessage = {
+                  id: connectId,
+                  method: "connect",
+                  params: {
+                    token: config.token,
+                    hostname: config.hostname,
+                    version: "0.0.1",
+                    platform: process.platform,
+                    capabilities,
+                  },
+                }
+                yield* write(JSON.stringify(connectMsg)).pipe(Effect.orDie)
+                yield* Effect.log("HubConnection: connect handshake sent")
+              }),
+            },
           )
 
           // Tick watchdog: fail if no tick in 60s after connect
