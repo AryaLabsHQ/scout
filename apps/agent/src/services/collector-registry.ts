@@ -84,23 +84,27 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
             k8s: false,
           }
 
+          const mutable: { -readonly [K in keyof AgentCapabilities]: boolean } = {
+            ...caps,
+          }
+
           for (const { capability, detected } of results) {
-            caps[capability] = detected
+            mutable[capability] = detected
           }
 
           // Apply config overrides
           for (const cap of config.collectorsDisable) {
-            if (cap in caps) {
-              caps[cap as keyof AgentCapabilities] = false
+            if (cap in mutable) {
+              mutable[cap as keyof AgentCapabilities] = false
             }
           }
           for (const cap of config.collectorsEnable) {
-            if (cap in caps) {
-              caps[cap as keyof AgentCapabilities] = true
+            if (cap in mutable) {
+              mutable[cap as keyof AgentCapabilities] = true
             }
           }
 
-          return caps
+          return mutable as AgentCapabilities
         })
 
       // ── getActive ────────────────────────────────────────────────────────────
