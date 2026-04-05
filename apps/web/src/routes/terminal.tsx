@@ -10,11 +10,14 @@ export const Route = createFileRoute("/terminal")({ component: TerminalPage })
 
 function TerminalPage() {
   const { systems } = useScout()
-  const { openSession } = useTerminalPanel()
+  const { sessions, openSession } = useTerminalPanel()
 
   const systemList = Object.values(systems)
   const onlineAgents = systemList.filter((s) => s.system.status === "online")
   const offlineAgents = systemList.filter((s) => s.system.status !== "online")
+
+  const sessionCountFor = (agentId: string) =>
+    sessions.filter((t) => t.agentId === agentId).length
 
   return (
     <div className="p-4 md:p-6">
@@ -49,6 +52,7 @@ function TerminalPage() {
                     key={s.system.id}
                     hostname={s.system.hostname}
                     status="online"
+                    sessionCount={sessionCountFor(s.system.id)}
                     onConnect={() =>
                       openSession({
                         agentId: s.system.id,
@@ -73,6 +77,7 @@ function TerminalPage() {
                     key={s.system.id}
                     hostname={s.system.hostname}
                     status={s.system.status}
+                    sessionCount={sessionCountFor(s.system.id)}
                     onConnect={() =>
                       openSession({
                         agentId: s.system.id,
@@ -95,14 +100,17 @@ function TerminalPage() {
 function AgentCard({
   hostname,
   status,
+  sessionCount,
   onConnect,
   disabled = false,
 }: {
   hostname: string
   status: string
+  sessionCount: number
   onConnect: () => void
   disabled?: boolean
 }) {
+  const hasSessions = sessionCount > 0
   return (
     <div className="flex items-center gap-3 rounded-none border border-border bg-card p-3 ring-1 ring-foreground/5">
       <div className="flex-1 min-w-0">
@@ -114,12 +122,24 @@ function AgentCard({
           />
           <p className="font-mono text-sm font-medium truncate">{hostname}</p>
         </div>
-        <Badge
-          variant={status === "online" ? "secondary" : "outline"}
-          className={`mt-1 text-[9px] ${status === "online" ? "bg-green-500/10 text-green-500 border-green-500/20" : ""}`}
-        >
-          {status}
-        </Badge>
+        <div className="mt-1 flex items-center gap-1">
+          <Badge
+            variant={status === "online" ? "secondary" : "outline"}
+            className={`text-[9px] ${status === "online" ? "bg-green-500/10 text-green-500 border-green-500/20" : ""}`}
+          >
+            {status}
+          </Badge>
+          {hasSessions && (
+            <Badge
+              variant="outline"
+              className="text-[9px] gap-1"
+              title={`${sessionCount} open terminal session${sessionCount === 1 ? "" : "s"}`}
+            >
+              <HugeiconsIcon icon={TerminalIcon} size={9} />
+              {sessionCount}
+            </Badge>
+          )}
+        </div>
       </div>
       <Button
         size="sm"
@@ -129,7 +149,7 @@ function AgentCard({
         onClick={onConnect}
       >
         <HugeiconsIcon icon={TerminalIcon} size={11} />
-        Connect
+        {hasSessions ? "New terminal" : "Connect"}
       </Button>
     </div>
   )

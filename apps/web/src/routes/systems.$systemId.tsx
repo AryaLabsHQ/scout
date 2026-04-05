@@ -91,7 +91,7 @@ function SystemDetailPage() {
   const { systemId } = Route.useParams()
   const { detail, metrics: initialMetrics } = Route.useLoaderData()
   const wsState = useSystemState(systemId)
-  const { openSession } = useTerminalPanel()
+  const { sessions, openSession } = useTerminalPanel()
 
   const [selectedRange, setSelectedRange] = useState<TimeRange>("1h")
   const [historicalMetrics, setHistoricalMetrics] =
@@ -307,22 +307,28 @@ function SystemDetailPage() {
 
           {/* Capability badges + actions */}
           <div className="flex flex-col gap-2 items-end">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1.5"
-              disabled={system.status !== "online"}
-              onClick={() =>
-                openSession({
-                  agentId: systemId,
-                  mode: "shell",
-                  label: system.hostname,
-                })
-              }
-            >
-              <HugeiconsIcon icon={TerminalIcon} size={12} />
-              Open Terminal
-            </Button>
+            {(() => {
+              const sessionCount = sessions.filter((t) => t.agentId === systemId).length
+              const hasSessions = sessionCount > 0
+              return (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  disabled={system.status !== "online"}
+                  onClick={() =>
+                    openSession({
+                      agentId: systemId,
+                      mode: "shell",
+                      label: system.hostname,
+                    })
+                  }
+                >
+                  <HugeiconsIcon icon={TerminalIcon} size={12} />
+                  {hasSessions ? `New terminal (${sessionCount})` : "Open Terminal"}
+                </Button>
+              )
+            })()}
             <div className="flex flex-wrap gap-1 justify-end">
               {capBadges.map((cap) => (
                 <Badge key={cap} variant="secondary" className="text-[10px]">
