@@ -4,7 +4,7 @@ import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { AppLayer } from "./app.js"
 import { AppRoutes } from "./routes.js"
 import { Retention } from "./services/retention.js"
-import { ClientRpcServerLayer } from "./rpc/server.js"
+import { RpcLayer } from "./rpc/server.js"
 
 // ── Structured logging ────────────────────────────────────────────────────────
 
@@ -34,8 +34,9 @@ const RetentionBackgroundLayer = Layer.effectDiscard(
 
 // ── Full application ──────────────────────────────────────────────────────────
 
-// Merge RPC routes alongside existing routes so both use the same HttpRouter
-const AllRoutes = Layer.merge(AppRoutes, ClientRpcServerLayer)
+// Merge RPC routes alongside existing routes so both use the same HttpRouter.
+// RpcLayer bundles the client-facing /ws/rpc server + AgentRegistry + /ws/rpc/agent route.
+const AllRoutes = Layer.merge(AppRoutes, RpcLayer)
 
 const AppServerLayer = AllRoutes.pipe(
   HttpRouter.serve,

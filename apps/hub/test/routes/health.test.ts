@@ -1,5 +1,9 @@
 /**
- * Tests for GET /health and DELETE /api/systems/:id routes.
+ * Tests for GET /health route.
+ *
+ * DELETE /api/systems/:id REST route was removed in the M9 cleanup pass —
+ * its replacement is the `systems.remove` RPC mutation in ClientHubRpcs,
+ * covered by the upcoming RPC-level e2e test.
  */
 
 import { describe, expect, it } from "@effect/vitest"
@@ -7,21 +11,15 @@ import { Effect, Layer } from "effect"
 import { BunHttpServer } from "@effect/platform-bun"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpRouter from "effect/unstable/http/HttpRouter"
-import { AgentManager } from "../../src/services/agent-manager.js"
+import { AgentRegistry, type HubAgentClient } from "../../src/rpc/agent-bridge.js"
 import { MetricsIngestion } from "../../src/services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
 import { Retention } from "../../src/services/retention.js"
 import { AlertEngine } from "../../src/services/alert-engine.js"
-import { DockerService } from "../../src/services/docker-service.js"
-import { K8sService } from "../../src/services/k8s-service.js"
-import { LogService } from "../../src/services/log-service.js"
-import { SystemdService } from "../../src/services/systemd-service.js"
-import { TerminalService } from "../../src/services/terminal.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
 import { makeAgentReport } from "../helpers/fixtures.js"
 import { AppRoutes } from "../../src/routes.js"
-import * as Socket from "effect/unstable/socket/Socket"
-import type { AgentInfo } from "@scout/shared"
+import type { AgentCapabilities, AgentInfo } from "@scout/shared"
 
 // ── Test AppLayer ─────────────────────────────────────────────────────────────
 
@@ -29,35 +27,35 @@ const TestAppLayer = Layer.mergeAll(
   TestDatabaseLayer,
   MetricsBroadcast.layer,
   MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
-  AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)),
+  AgentRegistry.layer.pipe(Layer.provide(TestDatabaseLayer)),
   Retention.layer.pipe(Layer.provide(TestDatabaseLayer)),
   AlertEngine.layer.pipe(
     Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
   ),
-  DockerService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
-  K8sService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
-  LogService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
-  SystemdService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
-  TerminalService.layer.pipe(Layer.provide(AgentManager.layer.pipe(Layer.provide(TestDatabaseLayer)))),
 )
+
+// ── Fixtures ──────────────────────────────────────────────────────────────────
+
+const DEFAULT_CAPABILITIES: AgentCapabilities = {
+  system: true,
+  network: true,
+  process: false,
+  temperature: false,
+  gpu: false,
+  smart: false,
+  systemd: false,
+  docker: false,
+  k8s: false,
+}
+
+// Minimal mock — tests exercising /health never call through the typed
+// HubAgentClient; an empty object satisfies the type at the
+// registry.register() boundary.
+const MOCK_HUB_AGENT_CLIENT = {} as HubAgentClient
 
 const HttpInfraLayer = BunHttpServer.layerTest.pipe(
   Layer.provideMerge(TestAppLayer),
 )
-
-// ── Mock socket ───────────────────────────────────────────────────────────────
-
-function createMockSocket() {
-  return Socket.Socket.of({
-    ["~effect/socket/Socket"]: "~effect/socket/Socket" as const,
-    run: () => Effect.never,
-    runRaw: () => Effect.never,
-    writer: Effect.succeed(
-      (_chunk: Uint8Array | string | Socket.CloseEvent): Effect.Effect<void, Socket.SocketError> =>
-        Effect.void,
-    ),
-  })
-}
 
 function makeAgentInfo(id: string): AgentInfo {
   return {
@@ -101,9 +99,13 @@ describe("GET /health", () => {
       const bodyBefore = (yield* before.json) as Record<string, unknown>
       expect(bodyBefore["connectedAgents"]).toBe(0)
 
-      // Register an agent
-      const mgr = yield* AgentManager
-      yield* mgr.register(makeAgentInfo("health-test-agent"), createMockSocket())
+      // Register an agent via AgentRegistry
+      const registry = yield* AgentRegistry
+      yield* registry.register(
+        makeAgentInfo("health-test-agent"),
+        DEFAULT_CAPABILITIES,
+        MOCK_HUB_AGENT_CLIENT,
+      )
 
       const after = yield* HttpClient.get("/health")
       const bodyAfter = (yield* after.json) as Record<string, unknown>
@@ -126,61 +128,6 @@ describe("GET /health", () => {
       const response = yield* HttpClient.get("/health")
       const body = (yield* response.json) as Record<string, unknown>
       expect((body["totalSystems"] as number) >= 2).toBe(true)
-    }).pipe(Effect.provide(HttpInfraLayer)),
-  )
-})
-
-// ── DELETE /api/systems/:id ───────────────────────────────────────────────────
-
-describe("DELETE /api/systems/:id", () => {
-  it.effect("removes an offline system", () =>
-    Effect.gen(function* () {
-      yield* AppRoutes.pipe(HttpRouter.serve, Layer.build)
-
-      // Create an offline system via ingestion
-      const ingestion = yield* MetricsIngestion
-      const systemId = "del-test-offline"
-      yield* ingestion.ingest(makeAgentReport({ systemId, timestamp: Date.now() }))
-
-      // System exists initially
-      const listBefore = yield* HttpClient.get("/api/systems")
-      const bodyBefore = (yield* listBefore.json) as Array<Record<string, unknown>>
-      expect(bodyBefore.some((s) => s["id"] === systemId)).toBe(true)
-
-      // Delete it
-      const del = yield* HttpClient.del(`/api/systems/${systemId}`)
-      expect(del.status).toBe(200)
-
-      const delBody = (yield* del.json) as Record<string, unknown>
-      expect(delBody["ok"]).toBe(true)
-
-      // System is gone
-      const listAfter = yield* HttpClient.get("/api/systems")
-      const bodyAfter = (yield* listAfter.json) as Array<Record<string, unknown>>
-      expect(bodyAfter.some((s) => s["id"] === systemId)).toBe(false)
-    }).pipe(Effect.provide(HttpInfraLayer)),
-  )
-
-  it.effect("returns 404 for unknown system", () =>
-    Effect.gen(function* () {
-      yield* AppRoutes.pipe(HttpRouter.serve, Layer.build)
-
-      const response = yield* HttpClient.del("/api/systems/does-not-exist")
-      expect(response.status).toBe(404)
-    }).pipe(Effect.provide(HttpInfraLayer)),
-  )
-
-  it.effect("rejects deleting an online system with 409", () =>
-    Effect.gen(function* () {
-      yield* AppRoutes.pipe(HttpRouter.serve, Layer.build)
-
-      // Register as online
-      const mgr = yield* AgentManager
-      const systemId = "del-test-online"
-      yield* mgr.register(makeAgentInfo(systemId), createMockSocket())
-
-      const response = yield* HttpClient.del(`/api/systems/${systemId}`)
-      expect(response.status).toBe(409)
     }).pipe(Effect.provide(HttpInfraLayer)),
   )
 })

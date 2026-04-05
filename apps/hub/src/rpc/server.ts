@@ -17,7 +17,7 @@ import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 import { ClientHubRpcs } from "@scout/shared"
 import { AuthMiddlewareLive } from "./auth.js"
 import { ClientHandlersLive } from "./client-handlers.js"
-import { AgentRpcRegistry, handleAgentRpcWebSocket } from "./agent-bridge.js"
+import { AgentRegistry, handleAgentRpcWebSocket } from "./agent-bridge.js"
 
 // ── ClientHubRpcs server at /ws/rpc ──────────────────────────────────────────
 
@@ -34,13 +34,15 @@ export const ClientRpcServerLayer = RpcServer.layer(ClientHubRpcs, {
   Layer.provide(RpcSerialization.layerNdjson),
 )
 
-// ── AgentRpcRegistry ──────────────────────────────────────────────────────────
+// ── AgentRegistry ─────────────────────────────────────────────────────────────
 
 /**
- * The registry of per-agent HubAgentRpcs clients.
+ * Single source of truth for connected agents: owns DB lifecycle (online/
+ * offline status + 5-second grace period + capabilities persistence) and
+ * stores the per-agent typed HubAgentRpcs client used by management calls.
  * Populated by the WS bridge when an agent connects via /ws/rpc/agent.
  */
-export const AgentRegistryLayer = AgentRpcRegistry.layer
+export const AgentRegistryLayer = AgentRegistry.layer
 
 // ── /ws/rpc/agent route ───────────────────────────────────────────────────────
 

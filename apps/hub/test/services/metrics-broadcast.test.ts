@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, PubSub } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import type { AgentReport, Alert, RpcEvent } from "@scout/shared"
-import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
+import type { AgentReport, Alert } from "@scout/shared"
+import { MetricsBroadcast, type BroadcastEvent } from "../../src/services/metrics-broadcast.js"
 
 // ---------------------------------------------------------------------------
 // Minimal fixtures
@@ -89,7 +89,7 @@ describe("MetricsBroadcast", () => {
             }),
           )
 
-          const event = sub as RpcEvent
+          const event = sub as BroadcastEvent
           expect(event.event).toBe("metrics.data")
           const reports = event.data as AgentReport[]
           expect(reports).toHaveLength(3)

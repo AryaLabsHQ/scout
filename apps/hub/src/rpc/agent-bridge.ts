@@ -1,22 +1,24 @@
 /**
- * Agent RPC bridge — the /ws/rpc/agent endpoint.
+ * Agent RPC bridge — the /ws/rpc/agent endpoint, AgentRegistry, and
+ * the agent.connect handler.
  *
  * On each WS upgrade:
  *   1. Wrap the socket with makeDuplexRpcProtocols
  *   2. Build an RpcClient<HubAgentRpcs> for hub-initiated commands
  *   3. Run an RpcServer<AgentHubRpcs> so agents can call agent.connect
  *      and agent.report
- *   4. When agent.connect succeeds, store the HubAgentClient in
- *      AgentRpcRegistry keyed by systemId
- *   5. On disconnect, remove the entry
+ *   4. When agent.connect succeeds, store the ConnectedAgent entry in
+ *      AgentRegistry (DB upsert, "online" status, capabilities persist)
+ *      along with the typed HubAgentClient
+ *   5. On disconnect, unregister with a 5-second grace period
  *
- * The `AgentRpcRegistry` maps agentId → RpcClient<HubAgentRpcs> so that
- * management handlers in client-handlers.ts can look up an agent's new-
- * protocol RPC client (replacing the AgentManager.call() bridge).
+ * AgentRegistry is the single source of truth for connected agents,
+ * owning both lifecycle (DB state) and typed client storage.
  */
 
-import { Config, Effect, Layer, Ref } from "effect"
+import { Config, Effect, Fiber, Layer, Ref } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
+import { eq } from "drizzle-orm"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as RpcClient from "effect/unstable/rpc/RpcClient"
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
@@ -24,11 +26,14 @@ import * as RpcServer from "effect/unstable/rpc/RpcServer"
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
 import {
+  AgentConnectError,
   AgentHubRpcs,
   HubAgentRpcs,
-  AgentConnectError,
   makeDuplexRpcProtocols,
 } from "@scout/shared"
+import type { AgentCapabilities, AgentInfo, System } from "@scout/shared"
+import { Database } from "../services/database.js"
+import * as schema from "../../drizzle/schema.js"
 import { AgentHandlersLive } from "./agent-handlers.js"
 
 // ── RPC client type alias ─────────────────────────────────────────────────────
@@ -38,45 +43,226 @@ export type HubAgentClient = RpcClient.RpcClient<
   RpcClientError
 >
 
-// ── AgentRpcRegistry service ──────────────────────────────────────────────────
+// ── Public connected-agent summary ────────────────────────────────────────────
+
+export interface ConnectedAgent {
+  readonly agentId: string
+  readonly info: AgentInfo
+  readonly connectedAt: number
+}
+
+// ── Internal per-connection entry ─────────────────────────────────────────────
+
+interface AgentEntry {
+  readonly agentId: string
+  readonly info: AgentInfo
+  readonly connectedAt: number
+  readonly client: HubAgentClient
+}
+
+// ── AgentRegistry service ──────────────────────────────────────────────────────
 
 /**
- * Registry of active agent RPC clients keyed by agentId.
- * Populated by the bridge when an agent connects via /ws/rpc/agent.
+ * Single source of truth for connected agents. Owns DB lifecycle (online/
+ * offline status, capabilities persistence, 5-second grace period on
+ * disconnect) AND the typed RPC client used by hub-initiated management
+ * calls.
  */
-export class AgentRpcRegistry extends ServiceMap.Service<
-  AgentRpcRegistry,
+export class AgentRegistry extends ServiceMap.Service<
+  AgentRegistry,
   {
-    /** Look up a connected agent's HubAgentRpcs client by agentId. */
-    readonly get: (agentId: string) => Effect.Effect<HubAgentClient | null>
-    /** Register a new agent client (called by the WS upgrade handler). */
-    readonly set: (agentId: string, client: HubAgentClient) => Effect.Effect<void>
-    /** Remove an agent client (called on disconnect). */
-    readonly delete: (agentId: string) => Effect.Effect<void>
+    /**
+     * Register a freshly connected agent. Upserts the `systems` row,
+     * persists capabilities, marks status = "online", stores the typed
+     * RPC client, and interrupts any in-flight grace fiber if this agent
+     * is reconnecting quickly. Returns the canonical System record.
+     */
+    readonly register: (
+      info: AgentInfo,
+      capabilities: AgentCapabilities,
+      client: HubAgentClient,
+    ) => Effect.Effect<System>
+
+    /**
+     * Mark an agent as disconnected. Removes from in-memory state and
+     * forks a 5-second grace fiber; if no re-register arrives by then,
+     * the `systems` row is marked "offline".
+     */
+    readonly unregister: (agentId: string) => Effect.Effect<void>
+
+    /** List all currently connected agents. */
+    readonly listConnected: () => Effect.Effect<ReadonlyArray<ConnectedAgent>>
+
+    /** Look up a single connected agent by id, or null. */
+    readonly getConnected: (agentId: string) => Effect.Effect<ConnectedAgent | null>
+
+    /** Look up the typed RPC client for a connected agent, or null. */
+    readonly getClient: (agentId: string) => Effect.Effect<HubAgentClient | null>
   }
 >()(
-  "@scout/AgentRpcRegistry",
+  "@scout/AgentRegistry",
   {
     make: Effect.gen(function* () {
-      const ref = yield* Ref.make(new Map<string, HubAgentClient>())
+      const db = yield* Database
+      const entries = yield* Ref.make(new Map<string, AgentEntry>())
+      const graceFibers = yield* Ref.make(new Map<string, Fiber.Fiber<void, never>>())
 
-      return {
-        get: (agentId: string) =>
-          Ref.get(ref).pipe(Effect.map((m) => m.get(agentId) ?? null)),
-
-        set: (agentId: string, client: HubAgentClient) =>
-          Ref.update(ref, (m) => {
+      const register = (
+        info: AgentInfo,
+        capabilities: AgentCapabilities,
+        client: HubAgentClient,
+      ): Effect.Effect<System> =>
+        Effect.gen(function* () {
+          // Interrupt any pending grace fiber for this agent (fast reconnect)
+          const pending = yield* Ref.modify(graceFibers, (m) => {
+            const fiber = m.get(info.systemId) ?? null
             const next = new Map(m)
-            next.set(agentId, client)
-            return next
-          }),
+            next.delete(info.systemId)
+            return [fiber, next] as const
+          })
+          if (pending !== null) {
+            yield* Fiber.interrupt(pending).pipe(Effect.asVoid)
+          }
 
-        delete: (agentId: string) =>
-          Ref.update(ref, (m) => {
+          const now = Date.now()
+          const entry: AgentEntry = {
+            agentId: info.systemId,
+            info,
+            connectedAt: now,
+            client,
+          }
+          yield* Ref.update(entries, (m) => new Map(m).set(info.systemId, entry))
+
+          // DB upsert: mark online, persist capabilities, update lastSeen
+          const system = yield* Effect.sync(() => {
+            const nowDate = new Date(now)
+            db.insert(schema.systems)
+              .values({
+                id: info.systemId,
+                hostname: info.hostname,
+                status: "online",
+                capabilities: capabilities as unknown,
+                lastSeen: nowDate,
+                createdAt: nowDate,
+              })
+              .onConflictDoUpdate({
+                target: schema.systems.id,
+                set: {
+                  hostname: info.hostname,
+                  status: "online",
+                  capabilities: capabilities as unknown,
+                  lastSeen: nowDate,
+                },
+              })
+              .run()
+
+            const rows = db
+              .select()
+              .from(schema.systems)
+              .where(eq(schema.systems.id, info.systemId))
+              .all()
+            const row = rows[0]!
+            return {
+              id: row.id,
+              hostname: row.hostname,
+              tailscaleIp: row.tailscaleIp,
+              status: row.status,
+              capabilities: (row.capabilities as System["capabilities"]) ?? {
+                system: false,
+                network: false,
+                process: false,
+                temperature: false,
+                gpu: false,
+                smart: false,
+                systemd: false,
+                docker: false,
+                k8s: false,
+              },
+              lastSeen: row.lastSeen?.getTime() ?? now,
+              createdAt: row.createdAt.getTime(),
+            } satisfies System
+          })
+
+          return system
+        })
+
+      const unregister = (agentId: string): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          // Pop the entry first so listConnected immediately reflects the
+          // disconnect. The grace fiber will mark the DB row offline if the
+          // agent doesn't reconnect within 5 s.
+          const existed = yield* Ref.modify(entries, (m) => {
+            const had = m.has(agentId)
             const next = new Map(m)
             next.delete(agentId)
-            return next
+            return [had, next] as const
+          })
+
+          if (!existed) return
+
+          const graceFiber = yield* Effect.forkChild(
+            Effect.gen(function* () {
+              yield* Effect.sleep("5 seconds")
+              const stillGone = yield* Ref.get(entries).pipe(
+                Effect.map((m) => !m.has(agentId)),
+              )
+              if (stillGone) {
+                yield* Effect.sync(() => {
+                  db.update(schema.systems)
+                    .set({ status: "offline" })
+                    .where(eq(schema.systems.id, agentId))
+                    .run()
+                })
+              }
+              yield* Ref.update(graceFibers, (m) => {
+                const next = new Map(m)
+                next.delete(agentId)
+                return next
+              })
+            }),
+          )
+
+          yield* Ref.update(graceFibers, (m) =>
+            new Map(m).set(agentId, graceFiber),
+          )
+        })
+
+      const listConnected = (): Effect.Effect<ReadonlyArray<ConnectedAgent>> =>
+        Ref.get(entries).pipe(
+          Effect.map((m) =>
+            Array.from(m.values()).map(
+              (e): ConnectedAgent => ({
+                agentId: e.agentId,
+                info: e.info,
+                connectedAt: e.connectedAt,
+              }),
+            ),
+          ),
+        )
+
+      const getConnected = (agentId: string): Effect.Effect<ConnectedAgent | null> =>
+        Ref.get(entries).pipe(
+          Effect.map((m) => {
+            const e = m.get(agentId)
+            return e
+              ? {
+                  agentId: e.agentId,
+                  info: e.info,
+                  connectedAt: e.connectedAt,
+                }
+              : null
           }),
+        )
+
+      const getClient = (agentId: string): Effect.Effect<HubAgentClient | null> =>
+        Ref.get(entries).pipe(Effect.map((m) => m.get(agentId)?.client ?? null))
+
+      return {
+        register,
+        unregister,
+        listConnected,
+        getConnected,
+        getClient,
       }
     }),
   },
@@ -87,35 +273,34 @@ export class AgentRpcRegistry extends ServiceMap.Service<
 // ── Per-connection RegisterAgent service ──────────────────────────────────────
 
 /**
- * Per-connection service injected into the AgentHubRpcs handler so that
- * agent.connect can record the systemId back to the bridge.
- *
- * Returns void; the bridge reads the agentIdRef after agent.connect runs.
+ * Per-connection callback injected into the `agent.connect` handler so
+ * the bridge can record the new agent in AgentRegistry. Takes the
+ * decoded info + capabilities from the RPC payload; the bridge closure
+ * has already captured the typed HubAgentClient for this socket.
  */
 export class RegisterAgent extends ServiceMap.Service<
   RegisterAgent,
-  (systemId: string) => Effect.Effect<void>
->()(
-  "@scout/RegisterAgent",
-) {}
+  (
+    info: AgentInfo,
+    capabilities: AgentCapabilities,
+  ) => Effect.Effect<{ readonly systemId: string }>
+>()("@scout/RegisterAgent") {}
 
-// ── Per-connection override for agent.connect ─────────────────────────────────
+// ── agent.connect handler override ────────────────────────────────────────────
 
 /**
- * Replaces the Phase-B agent.connect handler with one that:
- *   1. Validates the SCOUT_TOKEN
- *   2. Records the systemId via RegisterAgent
- *
- * This is provided via toLayerHandler so it replaces only agent.connect
- * (agent.report continues to come from AgentHandlersLive).
+ * Validates the SCOUT_TOKEN and delegates to the per-connection
+ * RegisterAgent callback. This layer overrides the scaffold `agent.connect`
+ * in AgentHandlersLive — Effect Layer composition resolves later-provided
+ * handlers over earlier ones.
  */
 const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.connect",
   Effect.gen(function* () {
-    const register = yield* RegisterAgent
+    const registerFn = yield* RegisterAgent
     const expectedToken = yield* Config.string("SCOUT_TOKEN")
 
-    return ({ hostname, token, version: _version, platform: _platform, capabilities: _capabilities }) =>
+    return ({ token, hostname, version, platform, capabilities }) =>
       Effect.gen(function* () {
         if (token !== expectedToken) {
           return yield* Effect.fail(
@@ -126,10 +311,15 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
           )
         }
 
-        yield* Effect.logInfo("agent.connect: accepted", { hostname })
-        yield* register(hostname)
+        const info: AgentInfo = {
+          systemId: hostname,
+          hostname,
+          version,
+          platform,
+        }
 
-        return { systemId: hostname }
+        yield* Effect.logInfo("agent.connect: accepted", { hostname })
+        return yield* registerFn(info, capabilities)
       })
   }),
 )
@@ -137,41 +327,46 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
 // ── WS handler for /ws/rpc/agent ─────────────────────────────────────────────
 
 /**
- * Handle one agent WebSocket connection.
- * Must be called from a route handler with an active Scope and
- * HttpServerRequest + AgentRpcRegistry in context.
+ * Handle one agent WebSocket connection. Must run with HttpServerRequest
+ * and AgentRegistry available in the context.
  */
 export const handleAgentRpcWebSocket = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest
-  const registry = yield* AgentRpcRegistry
+  const registry = yield* AgentRegistry
 
   const socket = yield* Effect.orDie(request.upgrade)
 
-  // Per-connection agentId slot — set by agent.connect handler
+  // Per-connection slot — set by the agent.connect handler below
   const agentIdRef = yield* Ref.make<string | null>(null)
 
   yield* Effect.scoped(
     Effect.gen(function* () {
-      const { serverProtocol, clientProtocol } = yield* makeDuplexRpcProtocols(socket)
+      const { serverProtocol, clientProtocol } =
+        yield* makeDuplexRpcProtocols(socket)
 
-      // Build the hub→agent RPC client
+      // Build the hub→agent typed RPC client on this socket
       const hubAgentClient = yield* RpcClient.make(HubAgentRpcs).pipe(
         Effect.provide(clientProtocol),
       )
 
-      // Per-connection RegisterAgent: stores agentId in the agentIdRef and registry
-      const registerAgentFn = (systemId: string): Effect.Effect<void> =>
+      // Per-connection RegisterAgent closure: captures hubAgentClient so
+      // agent.connect's handler can register it in one shot.
+      const registerAgentFn = (
+        info: AgentInfo,
+        capabilities: AgentCapabilities,
+      ): Effect.Effect<{ readonly systemId: string }> =>
         Effect.gen(function* () {
-          yield* Ref.set(agentIdRef, systemId)
-          yield* registry.set(systemId, hubAgentClient)
-          yield* Effect.logInfo("agent registered in registry", { systemId })
+          yield* Ref.set(agentIdRef, info.systemId)
+          yield* registry.register(info, capabilities, hubAgentClient)
+          return { systemId: info.systemId }
         })
 
       const RegisterAgentLive = Layer.succeed(RegisterAgent)(registerAgentFn)
 
       // Run the agent→hub RpcServer
       // - AgentHandlersLive handles agent.report
-      // - AgentConnectHandlerLive overrides agent.connect (validates token, registers)
+      // - AgentConnectHandlerLive overrides agent.connect with token
+      //   validation + registration
       yield* RpcServer.make(AgentHubRpcs, {
         disableFatalDefects: true,
       }).pipe(
@@ -186,8 +381,8 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         Effect.gen(function* () {
           const agentId = yield* Ref.get(agentIdRef)
           if (agentId !== null) {
-            yield* registry.delete(agentId)
-            yield* Effect.logInfo("agent removed from registry", { agentId })
+            yield* registry.unregister(agentId)
+            yield* Effect.logInfo("agent unregistered", { agentId })
           }
         }),
       ),

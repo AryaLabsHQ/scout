@@ -1,31 +1,35 @@
 /**
  * ClientHubRpcs handler implementations.
  *
- * Phase C:
- *   - Management mutations (systemd.*, docker.*, k8s.*) now prefer the typed
- *     HubAgentRpcs client from AgentRpcRegistry; if the agent hasn't migrated
- *     yet, falls back to the old-protocol AgentManager.call() bridge.
- *   - terminal.open, terminal.input/resize/close, and logs.tail are now wired
- *     through to the per-agent HubAgentRpcs client.
+ * Cleanup pass:
+ *   - All management mutations (systemd.*, docker.*, k8s.*) now call the
+ *     typed HubAgentRpcs client directly via AgentRegistry.getClient. No
+ *     fallback to old AgentManager.call() — if an agent isn't connected,
+ *     the mutation fails with ManagementError({code: "not-connected"}).
+ *   - logs.tail, terminal.open, terminal.input/resize/close all wire
+ *     through the per-agent HubAgentClient the same way.
+ *   - alertRules.update and systems.remove are new RPCs added in the
+ *     cleanup pass to replace REST server functions for the settings page.
  */
 
 import { Effect, PubSub, Queue, Ref, Stream } from "effect"
 import type { Scope } from "effect/Scope"
 import { eq } from "drizzle-orm"
-import type { AgentReport, Alert, LogBatch, RpcEvent, TerminalOutput } from "@scout/shared"
+import type { AgentReport, Alert, LogBatch, TerminalOutput } from "@scout/shared"
+import type { BroadcastEvent } from "../services/metrics-broadcast.js"
 import {
   ClientHubRpcs,
   ManagementError,
   SystemUpdateSchema,
   type AlertEvent,
+  type AlertRule,
 } from "@scout/shared"
 import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
 import { Database } from "../services/database.js"
 import { MetricsIngestion } from "../services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../services/metrics-broadcast.js"
 import { AlertEngine } from "../services/alert-engine.js"
-import { AgentManager } from "../services/agent-manager.js"
-import { AgentRpcRegistry, type HubAgentClient } from "./agent-bridge.js"
+import { AgentRegistry, type HubAgentClient } from "./agent-bridge.js"
 import * as schema from "../../drizzle/schema.js"
 
 // ── Type alias ────────────────────────────────────────────────────────────────
@@ -86,78 +90,41 @@ const mapRpcClientError = (e: RpcClientError): ManagementError =>
 // ── Agent client lookup helper ────────────────────────────────────────────────
 
 const getAgentClient = (
-  registry: typeof AgentRpcRegistry.Service,
+  registry: typeof AgentRegistry.Service,
   agentId: string,
 ): Effect.Effect<HubAgentClient, ManagementError> =>
-  registry.get(agentId).pipe(
+  registry.getClient(agentId).pipe(
     Effect.flatMap((client) =>
       client === null
         ? Effect.fail(
             new ManagementError({
               code: "not-connected",
-              message: `Agent ${agentId} is not connected via new RPC protocol`,
+              message: `Agent ${agentId} is not connected`,
             }),
           )
         : Effect.succeed(client),
     ),
   )
 
-// ── Bridge: forward a management call to the old-protocol agent ───────────────
+// ── Run a typed RPC call against a connected agent ───────────────────────────
 
-const forwardToAgent = (
-  agentMgr: typeof AgentManager.Service,
+/**
+ * Resolve the agent's typed HubAgentClient and run the provided RPC call.
+ * Any `RpcClientError` from the wire is coerced into a `ManagementError`
+ * so the web client sees a single error shape.
+ */
+const withAgent = <A>(
+  registry: typeof AgentRegistry.Service,
   agentId: string,
-  method: string,
-  params: Record<string, unknown>,
-): Effect.Effect<unknown, ManagementError> =>
-  Effect.gen(function* () {
-    const request = { id: crypto.randomUUID(), method, params }
-    const response = yield* agentMgr.call(agentId, request).pipe(
-      Effect.mapError((err): ManagementError => {
-        if (err._tag === "AgentNotConnected") {
-          return new ManagementError({ code: "not-connected", message: "Agent not connected" })
-        }
-        if (err._tag === "TimeoutError") {
-          return new ManagementError({ code: "timeout", message: `RPC call timed out: ${err.method}` })
-        }
-        if (err._tag === "RpcCallError") {
-          return new ManagementError({ code: err.code, message: err.message })
-        }
-        return new ManagementError({ code: "socket-error", message: "Socket error communicating with agent" })
-      }),
-    )
-    if (!response.ok) {
-      return yield* Effect.fail(
-        new ManagementError({
-          code: response.error?.code ?? "agent-error",
-          message: response.error?.message ?? "Unknown agent error",
-        }),
-      )
-    }
-    return response.result
-  })
-
-// ── Try new RPC registry first, fall back to old-protocol bridge ──────────────
-
-const withAgentFallback = <A>(
-  registry: typeof AgentRpcRegistry.Service,
-  agentMgr: typeof AgentManager.Service,
-  agentId: string,
-  fallbackMethod: string,
-  fallbackParams: Record<string, unknown>,
-  newRpcCall: (client: HubAgentClient) => Effect.Effect<A, ManagementError | RpcClientError>,
+  call: (client: HubAgentClient) => Effect.Effect<A, ManagementError | RpcClientError>,
 ): Effect.Effect<A, ManagementError> =>
-  registry.get(agentId).pipe(
+  getAgentClient(registry, agentId).pipe(
     Effect.flatMap((client) =>
-      client !== null
-        ? newRpcCall(client).pipe(
-            Effect.mapError((e) =>
-              e instanceof ManagementError
-                ? e
-                : mapRpcClientError(e as RpcClientError),
-            ),
-          )
-        : forwardToAgent(agentMgr, agentId, fallbackMethod, fallbackParams) as Effect.Effect<A, ManagementError>,
+      call(client).pipe(
+        Effect.mapError((e) =>
+          e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
+        ),
+      ),
     ),
   )
 
@@ -166,7 +133,7 @@ const withAgentFallback = <A>(
 function subscribeToBroadcast<T>(
   broadcast: typeof MetricsBroadcast.Service,
   eventNames: string | ReadonlyArray<string>,
-  transform: (event: RpcEvent) => ReadonlyArray<T>,
+  transform: (event: BroadcastEvent) => ReadonlyArray<T>,
 ): Effect.Effect<Queue.Queue<T>, never, Scope> {
   const names = typeof eventNames === "string" ? [eventNames] : (eventNames as ReadonlyArray<string>)
   return Effect.gen(function* () {
@@ -223,8 +190,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
     const broadcast = yield* MetricsBroadcast
     const alerts = yield* AlertEngine
     const db = yield* Database
-    const agentMgr = yield* AgentManager
-    const registry = yield* AgentRpcRegistry
+    const registry = yield* AgentRegistry
 
     // sessionId → agentId mapping for terminal mutations (no agentId in params)
     const sessionRegistry = yield* Ref.make(new Map<string, string>())
@@ -334,98 +300,150 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       // ── Systemd mutations ─────────────────────────────────────────────────
 
       "systemd.start": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.start", { unit },
-          (client) => client["systemd.start"]({ unit }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.start"]({ unit }).pipe(Effect.asVoid),
         ),
 
       "systemd.stop": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.stop", { unit },
-          (client) => client["systemd.stop"]({ unit }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.stop"]({ unit }).pipe(Effect.asVoid),
         ),
 
       "systemd.restart": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.restart", { unit },
-          (client) => client["systemd.restart"]({ unit }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.restart"]({ unit }).pipe(Effect.asVoid),
         ),
 
       "systemd.enable": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.enable", { unit },
-          (client) => client["systemd.enable"]({ unit }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.enable"]({ unit }).pipe(Effect.asVoid),
         ),
 
       "systemd.disable": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.disable", { unit },
-          (client) => client["systemd.disable"]({ unit }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.disable"]({ unit }).pipe(Effect.asVoid),
         ),
 
       "systemd.reload": ({ agentId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.reload", {},
-          (client) => client["systemd.reload"]({}).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.reload"]({}).pipe(Effect.asVoid),
         ),
 
       "systemd.unitFile": ({ agentId, unit }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.unitFile", { unit },
-          (client) => client["systemd.unitFile"]({ unit }),
-        ).pipe(
-          Effect.flatMap((result) => {
-            if (result && typeof result === "object" && "path" in result && "content" in result) {
-              const r = result as { path: string; content: string }
-              return Effect.succeed({ path: r.path, content: r.content })
-            }
-            return Effect.fail(
-              new ManagementError({ code: "invalid-response", message: "Invalid unitFile response" }),
-            )
-          }),
-        ),
+        withAgent(registry, agentId, (client) => client["systemd.unitFile"]({ unit })),
 
       "systemd.unitFileEdit": ({ agentId, unit, content }) =>
-        withAgentFallback(registry, agentMgr, agentId, "systemd.unitFileEdit", { unit, content },
-          (client) => client["systemd.unitFileEdit"]({ unit, content }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["systemd.unitFileEdit"]({ unit, content }).pipe(Effect.asVoid),
         ),
 
       // ── Docker mutations ──────────────────────────────────────────────────
 
       "docker.start": ({ agentId, containerId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "docker.start", { containerId },
-          (client) => client["docker.start"]({ containerId }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["docker.start"]({ containerId }).pipe(Effect.asVoid),
         ),
 
       "docker.stop": ({ agentId, containerId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "docker.stop", { containerId },
-          (client) => client["docker.stop"]({ containerId }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["docker.stop"]({ containerId }).pipe(Effect.asVoid),
         ),
 
       "docker.restart": ({ agentId, containerId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "docker.restart", { containerId },
-          (client) => client["docker.restart"]({ containerId }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["docker.restart"]({ containerId }).pipe(Effect.asVoid),
         ),
 
       "docker.remove": ({ agentId, containerId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "docker.remove", { containerId },
-          (client) => client["docker.remove"]({ containerId }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["docker.remove"]({ containerId }).pipe(Effect.asVoid),
         ),
 
       "docker.inspect": ({ agentId, containerId }) =>
-        withAgentFallback(registry, agentMgr, agentId, "docker.inspect", { containerId },
-          (client) => client["docker.inspect"]({ containerId }),
-        ),
+        withAgent(registry, agentId, (client) => client["docker.inspect"]({ containerId })),
 
       // ── K8s mutations ─────────────────────────────────────────────────────
 
       "k8s.scale": ({ agentId, namespace, deployment, replicas }) =>
-        withAgentFallback(registry, agentMgr, agentId, "k8s.scale", { namespace, deployment, replicas },
-          (client) => client["k8s.scale"]({ namespace, deployment, replicas }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["k8s.scale"]({ namespace, deployment, replicas }).pipe(Effect.asVoid),
         ),
 
       "k8s.restartPod": ({ agentId, namespace, pod }) =>
-        withAgentFallback(registry, agentMgr, agentId, "k8s.restartPod", { namespace, pod },
-          (client) => client["k8s.restartPod"]({ namespace, pod }).pipe(Effect.asVoid),
+        withAgent(registry, agentId, (client) =>
+          client["k8s.restartPod"]({ namespace, pod }).pipe(Effect.asVoid),
         ),
 
       "k8s.describe": ({ agentId, resource, name, namespace }) =>
-        withAgentFallback(registry, agentMgr, agentId, "k8s.describe", { resource, name, namespace },
-          (client) => client["k8s.describe"]({ resource, name, namespace }),
+        withAgent(registry, agentId, (client) =>
+          client["k8s.describe"]({ resource, name, namespace }),
         ),
+
+      // ── Alert rule + system management (settings page) ────────────────────
+
+      "alertRules.update": ({ id, threshold, consecutiveCount, severity, enabled }) =>
+        Effect.gen(function* () {
+          const patch: Partial<{
+            threshold: number
+            consecutiveCount: number
+            severity: "warning" | "critical"
+            enabled: boolean
+          }> = {}
+          if (threshold !== undefined) patch.threshold = threshold
+          if (consecutiveCount !== undefined) patch.consecutiveCount = consecutiveCount
+          if (severity !== undefined) patch.severity = severity
+          if (enabled !== undefined) patch.enabled = enabled
+
+          yield* Effect.sync(() => {
+            db.update(schema.alertRules).set(patch).where(eq(schema.alertRules.id, id)).run()
+          })
+
+          const rows = yield* Effect.sync(() =>
+            db.select().from(schema.alertRules).where(eq(schema.alertRules.id, id)).all(),
+          )
+          const row = rows[0]
+          if (!row) {
+            return yield* Effect.fail(
+              new ManagementError({ code: "not-found", message: `Alert rule ${id} not found` }),
+            )
+          }
+          const updated: AlertRule = {
+            id: row.id,
+            metric: row.metric,
+            operator: row.operator,
+            threshold: row.threshold,
+            consecutiveCount: row.consecutiveCount,
+            severity: row.severity,
+            enabled: row.enabled,
+            createdAt: row.createdAt.getTime(),
+          }
+          return updated
+        }),
+
+      "systems.remove": ({ id }) =>
+        Effect.gen(function* () {
+          const connected = yield* registry.getConnected(id)
+          if (connected !== null) {
+            return yield* Effect.fail(
+              new ManagementError({
+                code: "system-online",
+                message: `System ${id} is online; cannot remove`,
+              }),
+            )
+          }
+          const rows = yield* Effect.sync(() =>
+            db.select().from(schema.systems).where(eq(schema.systems.id, id)).all(),
+          )
+          if (rows.length === 0) {
+            return yield* Effect.fail(
+              new ManagementError({ code: "not-found", message: `System ${id} not found` }),
+            )
+          }
+          yield* Effect.sync(() => {
+            db.delete(schema.systemMetrics).where(eq(schema.systemMetrics.systemId, id)).run()
+            db.delete(schema.systems).where(eq(schema.systems.id, id)).run()
+          })
+        }),
 
       // ── Terminal — wired through AgentRpcRegistry ─────────────────────────
 

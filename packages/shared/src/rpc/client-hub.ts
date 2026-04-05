@@ -99,6 +99,25 @@ export const ClientHubRpcs = RpcGroup.make(
     error: ManagementError,
   }),
 
+  // Alert rule edits (settings page)
+  Rpc.make("alertRules.update", {
+    payload: Schema.Struct({
+      id: Schema.String,
+      threshold: Schema.optional(Schema.Number),
+      consecutiveCount: Schema.optional(Schema.Number),
+      severity: Schema.optional(Schema.Literals(["warning", "critical"])),
+      enabled: Schema.optional(Schema.Boolean),
+    }),
+    success: AlertRuleSchema,
+    error: ManagementError,
+  }),
+
+  // System removal (settings page; fails if agent is currently connected)
+  Rpc.make("systems.remove", {
+    payload: Schema.Struct({ id: Schema.String }),
+    error: ManagementError,
+  }),
+
   // Systemd management (forwarded to target agent)
   Rpc.make("systemd.start", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
   Rpc.make("systemd.stop", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),

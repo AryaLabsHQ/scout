@@ -1,11 +1,22 @@
 import { Effect, Layer, PubSub, Queue, Ref, Schedule } from "effect"
 import type * as Scope from "effect/Scope"
 import * as ServiceMap from "effect/ServiceMap"
-import type { Alert, AgentReport, RpcEvent } from "@scout/shared"
+import type { Alert, AgentReport } from "@scout/shared"
 
 // PubSub fan-out for real-time metrics and alerts.
 // Metrics are coalesced over a 100ms window before being published.
 // Alerts bypass coalescing and are published immediately.
+
+/**
+ * Envelope for every broadcast event. Stream handlers in
+ * `rpc/client-handlers.ts` match on `event` and pull typed values out of
+ * `data`. Kept loosely-typed here because the producers below emit many
+ * different shapes (AgentReport[], Alert, system rows, etc.).
+ */
+export interface BroadcastEvent {
+  readonly event: string
+  readonly data?: unknown
+}
 
 export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
   /**
@@ -28,7 +39,7 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
    * The returned subscription is scoped — it auto-unsubscribes when the
    * caller's Scope closes.
    */
-  readonly subscribe: () => Effect.Effect<PubSub.Subscription<RpcEvent>, never, Scope.Scope>
+  readonly subscribe: () => Effect.Effect<PubSub.Subscription<BroadcastEvent>, never, Scope.Scope>
   /**
    * Current number of active subscribers.
    */
@@ -38,7 +49,7 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
   {
     make: Effect.gen(function* () {
       // Main fan-out channel
-      const hub = yield* PubSub.bounded<RpcEvent>(256)
+      const hub = yield* PubSub.bounded<BroadcastEvent>(256)
       // Coalescing buffer — sliding so the newest reports survive overflow
       const buffer = yield* Queue.sliding<AgentReport>(16)
       // Track subscriber count manually (PubSub has no public API for this)
@@ -49,7 +60,7 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
         Effect.gen(function* () {
           const reports = yield* Queue.clear(buffer)
           if (reports.length > 0) {
-            const event: RpcEvent = { event: "metrics.data", data: reports }
+            const event: BroadcastEvent = { event: "metrics.data", data: reports }
             yield* PubSub.publish(hub, event)
           }
         }),
@@ -64,12 +75,12 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
           Queue.offer(buffer, report).pipe(Effect.asVoid),
 
         publishAlert: (alert: Alert) => {
-          const event: RpcEvent = { event: "alert.triggered", data: alert }
+          const event: BroadcastEvent = { event: "alert.triggered", data: alert }
           return PubSub.publish(hub, event).pipe(Effect.asVoid)
         },
 
         publishAlertResolved: (alert: Alert) => {
-          const event: RpcEvent = { event: "alert.resolved", data: alert }
+          const event: BroadcastEvent = { event: "alert.resolved", data: alert }
           return PubSub.publish(hub, event).pipe(Effect.asVoid)
         },
 
