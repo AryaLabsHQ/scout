@@ -2,12 +2,35 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useAtomValue } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
 import { SystemCard } from "@/components/system-card"
-import type { System } from "@scout/shared"
-import type { AgentReport } from "@scout/shared"
+import type { System, AgentReport } from "@scout/shared"
 
 export const Route = createFileRoute("/overview")({
   component: OverviewPage,
 })
+
+function SystemCardWithMetrics({
+  system,
+  alertCount,
+}: {
+  system: System
+  alertCount: number
+}) {
+  const metricsResult = useAtomValue(
+    HubClient.query("systems.metrics", { id: system.id, range: "1h" }),
+  )
+  const reports =
+    metricsResult._tag === "Success" ? metricsResult.value : []
+  const latestMetrics =
+    (reports.length > 0 ? (reports[reports.length - 1] as AgentReport) : null)
+  const cpuHistory = reports.map((r) => r.system.cpu.usage)
+
+  return (
+    <SystemCard
+      systemState={{ system, latestMetrics, cpuHistory }}
+      alertCount={alertCount}
+    />
+  )
+}
 
 function EmptyState() {
   return (
@@ -40,13 +63,6 @@ function OverviewPage() {
 
   const activeAlertCount = Object.values(alertCountBySystem).reduce((s, n) => s + n, 0)
 
-  // Build system state entries compatible with SystemCard
-  const systemEntries = systems.map((system) => ({
-    system,
-    latestMetrics: null as AgentReport | null,
-    cpuHistory: [] as number[],
-  }))
-
   return (
     <div className="p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between">
@@ -62,7 +78,7 @@ function OverviewPage() {
           )}
         </div>
         <span className="text-xs text-muted-foreground">
-          {systemEntries.length} {systemEntries.length === 1 ? "server" : "servers"}
+          {systems.length} {systems.length === 1 ? "server" : "servers"}
         </span>
       </div>
 
@@ -74,15 +90,15 @@ function OverviewPage() {
         <div className="flex items-center justify-center py-24 text-sm text-destructive">
           Failed to load systems
         </div>
-      ) : systemEntries.length === 0 ? (
+      ) : systems.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {systemEntries.map((entry) => (
-            <SystemCard
-              key={entry.system.id}
-              systemState={entry}
-              alertCount={alertCountBySystem[entry.system.id] ?? 0}
+          {systems.map((system) => (
+            <SystemCardWithMetrics
+              key={system.id}
+              system={system}
+              alertCount={alertCountBySystem[system.id] ?? 0}
             />
           ))}
         </div>

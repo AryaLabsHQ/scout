@@ -8,6 +8,7 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router"
 import { fetchSystems } from "@/server/systems"
 import { fetchAlerts } from "@/server/alerts"
+import { HUB_URL } from "@/server/hub"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   DashboardCircleIcon,
@@ -239,6 +240,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <script
+          // Inject the hub URL for the client-side RPC protocol to pick up.
+          // protocol.ts reads `window.__SCOUT_HUB_URL__` and converts to ws://.
+          dangerouslySetInnerHTML={{
+            __html: `window.__SCOUT_HUB_URL__=${JSON.stringify(HUB_URL)};`,
+          }}
+        />
       </head>
       <body>
         {children}
