@@ -447,7 +447,9 @@ export function parseK8sServiceList(json: string): K8sService[] {
     type: normalizeServiceType(svc.spec?.type),
     clusterIP: svc.spec?.clusterIP ?? "",
     ports: (svc.spec?.ports ?? []).map(p => ({
-      name: p.name,
+      // Omit `name` key entirely when the port has no name — Schema.optionalKey
+      // on the receiver rejects explicit `undefined`.
+      ...(p.name ? { name: p.name } : {}),
       port: p.port ?? 0,
       targetPort: typeof p.targetPort === "number" ? p.targetPort : Number(p.targetPort) || 0,
       protocol: p.protocol ?? "TCP",

@@ -160,18 +160,29 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
 
           const networkData = (networkReport?.data ?? []) as NetworkInterfaceMetrics[]
 
+          // Pull optional section data; omit keys entirely when a collector
+          // was skipped so the AgentReportSchema's optionalKey fields don't
+          // see explicit `undefined` (which Schema.optionalKey rejects).
+          const processes = byCapability.get("process")?.data as ProcessMetrics[] | undefined
+          const temperatures = byCapability.get("temperature")?.data as TemperatureMetrics[] | undefined
+          const gpu = byCapability.get("gpu")?.data as GpuMetrics[] | undefined
+          const smart = byCapability.get("smart")?.data as SmartMetrics[] | undefined
+          const systemd = byCapability.get("systemd")?.data as SystemdServiceMetrics[] | undefined
+          const docker = byCapability.get("docker")?.data as DockerContainerMetrics[] | undefined
+          const k8s = byCapability.get("k8s")?.data as K8sWorkloadMetrics | undefined
+
           const report: AgentReport = {
             systemId: config.hostname,
             timestamp: Date.now(),
             system: systemData,
             network: networkData,
-            processes: byCapability.get("process")?.data as ProcessMetrics[] | undefined,
-            temperatures: byCapability.get("temperature")?.data as TemperatureMetrics[] | undefined,
-            gpu: byCapability.get("gpu")?.data as GpuMetrics[] | undefined,
-            smart: byCapability.get("smart")?.data as SmartMetrics[] | undefined,
-            systemd: byCapability.get("systemd")?.data as SystemdServiceMetrics[] | undefined,
-            docker: byCapability.get("docker")?.data as DockerContainerMetrics[] | undefined,
-            k8s: byCapability.get("k8s")?.data as K8sWorkloadMetrics | undefined,
+            ...(processes !== undefined && { processes }),
+            ...(temperatures !== undefined && { temperatures }),
+            ...(gpu !== undefined && { gpu }),
+            ...(smart !== undefined && { smart }),
+            ...(systemd !== undefined && { systemd }),
+            ...(docker !== undefined && { docker }),
+            ...(k8s !== undefined && { k8s }),
           }
 
           return report
