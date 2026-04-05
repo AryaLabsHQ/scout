@@ -450,8 +450,17 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       "terminal.open": ({ agentId, mode, cols, rows, podName, namespace, container }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
+          // Omit optionalKey fields when undefined — Schema.optionalKey rejects
+          // explicit `undefined`, only missing keys are allowed.
           const outputStream: Stream.Stream<TerminalOutput, ManagementError | RpcClientError> =
-            client["terminal.open"]({ mode, cols, rows, podName, namespace, container })
+            client["terminal.open"]({
+              mode,
+              cols,
+              rows,
+              ...(podName !== undefined && { podName }),
+              ...(namespace !== undefined && { namespace }),
+              ...(container !== undefined && { container }),
+            })
 
           const queue = yield* Queue.unbounded<TerminalOutput>()
 
@@ -596,8 +605,16 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       "logs.tail": ({ agentId, source, target, namespace, container, tail }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
+          // Omit optionalKey fields when undefined — Schema.optionalKey rejects
+          // explicit `undefined`, only missing keys are allowed.
           const logStream: Stream.Stream<LogBatch, ManagementError | RpcClientError> =
-            client["logs.tail"]({ source, target, namespace, container, tail })
+            client["logs.tail"]({
+              source,
+              target,
+              ...(namespace !== undefined && { namespace }),
+              ...(container !== undefined && { container }),
+              ...(tail !== undefined && { tail }),
+            })
           return yield* streamThroughAgent(logStream)
         }),
     })
