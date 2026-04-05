@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   TerminalIcon,
@@ -5,8 +6,9 @@ import {
   ArrowDown01Icon,
   ArrowUp01Icon,
   Add01Icon,
+  Edit02Icon,
 } from "@hugeicons/core-free-icons"
-import { useTerminalPanel } from "@/providers/terminal-provider"
+import { useTerminalPanel, type TerminalTab as TerminalTabType } from "@/providers/terminal-provider"
 import { useScout } from "@/providers/scout-provider"
 import { TerminalView } from "./terminal-view"
 import { cn } from "@/lib/utils"
@@ -14,23 +16,202 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+
+// ── Single tab ────────────────────────────────────────────────────────────────
+
+function TerminalTab({
+  tab,
+  isActive,
+  renameSignal,
+  onSelect,
+  onClose,
+  onRename,
+  onCloseOthers,
+  onRequestRename,
+}: {
+  tab: TerminalTabType
+  isActive: boolean
+  renameSignal: number
+  onSelect: () => void
+  onClose: () => void
+  onRename: (label: string) => void
+  onCloseOthers: () => void
+  onRequestRename: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(tab.label)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const startEdit = () => {
+    setDraft(tab.label)
+    setEditing(true)
+  }
+
+  // External rename trigger (from context menu)
+  useEffect(() => {
+    if (renameSignal > 0) startEdit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renameSignal])
+
+  // External rename trigger (from command palette via window event)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail
+      if (detail === tab.id) startEdit()
+    }
+    window.addEventListener("scout:rename-active-tab", handler)
+    return () => window.removeEventListener("scout:rename-active-tab", handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab.id])
+
+  useEffect(() => {
+    if (editing) {
+      // Defer to next frame so we win against any focus restore from a closing
+      // context menu (Base UI restores focus to the trigger on close).
+      const raf = requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      })
+      return () => cancelAnimationFrame(raf)
+    }
+  }, [editing])
+
+  const commit = () => {
+    onRename(draft)
+    setEditing(false)
+  }
+  const cancel = () => {
+    setDraft(tab.label)
+    setEditing(false)
+  }
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <button
+            onClick={() => {
+              if (!editing) onSelect()
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              startEdit()
+            }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 h-9 text-[11px] border-r border-border whitespace-nowrap transition-colors",
+              isActive
+                ? "bg-background text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+            )}
+          />
+        }
+      >
+          {editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === "Enter") commit()
+                else if (e.key === "Escape") cancel()
+              }}
+              onBlur={commit}
+              className="bg-transparent text-[11px] outline-none border-b border-primary/60 max-w-[160px] min-w-[40px]"
+              style={{ width: `${Math.max(draft.length, 4)}ch` }}
+            />
+          ) : (
+            <span className="max-w-[160px] truncate">{tab.label}</span>
+          )}
+          <span
+            role="button"
+            tabIndex={0}
+            className="ml-0.5 rounded hover:text-red-400 focus:outline-none"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation()
+                onClose()
+              }
+            }}
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={11} />
+          </span>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-44">
+        <ContextMenuItem onSelect={onRequestRename}>
+          <HugeiconsIcon icon={Edit02Icon} size={12} className="mr-2" />
+          Rename
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={onClose}>
+          <HugeiconsIcon icon={Cancel01Icon} size={12} className="mr-2" />
+          Close
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onCloseOthers}>Close others</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 function TerminalTabBar() {
-  const { sessions, activeTab, isOpen, setActiveTab, closeSession, togglePanel, openSession } =
-    useTerminalPanel()
+  const {
+    sessions,
+    activeTab,
+    isOpen,
+    setActiveTab,
+    closeSession,
+    closeOtherSessions,
+    renameSession,
+    togglePanel,
+    openSession,
+  } = useTerminalPanel()
   const { systems } = useScout()
+
+  // Per-tab signal that bumps to trigger an external rename (from context menu)
+  const [renameSignals, setRenameSignals] = useState<Record<string, number>>({})
+  const requestRename = (id: string) =>
+    setRenameSignals((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
 
   const onlineAgents = Object.values(systems).filter((s) => s.system.status === "online")
 
+  // When collapsed, clicking any empty area of the tab bar expands the panel.
+  // We skip if the click target is inside a button (tabs, toggle, + dropdown)
+  // because those have their own handlers. This is more reliable than
+  // stopPropagation, which Base UI's internal handlers sometimes bypass.
+  const handleBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isOpen && !(e.target as HTMLElement).closest("button")) {
+      togglePanel()
+    }
+  }
+
   return (
-    <div className="flex h-9 items-center border-b border-border bg-card shrink-0">
+    <div
+      className={cn(
+        "flex h-9 items-center border-b border-border bg-card shrink-0",
+        !isOpen && "cursor-pointer",
+      )}
+      onClick={handleBarClick}
+    >
       {/* Collapse/expand toggle */}
       <button
         className="flex items-center gap-1.5 px-3 h-full text-muted-foreground hover:text-foreground transition-colors border-r border-border"
@@ -49,38 +230,20 @@ function TerminalTabBar() {
       {/* Session tabs */}
       <div className="flex flex-1 items-center overflow-x-auto scrollbar-none">
         {sessions.map((tab) => (
-          <button
+          <TerminalTab
             key={tab.id}
-            onClick={() => {
+            tab={tab}
+            isActive={activeTab === tab.id}
+            renameSignal={renameSignals[tab.id] ?? 0}
+            onSelect={() => {
               setActiveTab(tab.id)
               if (!isOpen) togglePanel()
             }}
-            className={cn(
-              "flex items-center gap-1.5 px-3 h-9 text-[11px] border-r border-border whitespace-nowrap transition-colors",
-              activeTab === tab.id
-                ? "bg-background text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-            )}
-          >
-            <span className="max-w-[120px] truncate">{tab.label}</span>
-            <span
-              role="button"
-              tabIndex={0}
-              className="ml-0.5 rounded hover:text-red-400 focus:outline-none"
-              onClick={(e) => {
-                e.stopPropagation()
-                closeSession(tab.id)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.stopPropagation()
-                  closeSession(tab.id)
-                }
-              }}
-            >
-              <HugeiconsIcon icon={Cancel01Icon} size={11} />
-            </span>
-          </button>
+            onClose={() => closeSession(tab.id)}
+            onCloseOthers={() => closeOtherSessions(tab.id)}
+            onRename={(label) => renameSession(tab.id, label)}
+            onRequestRename={() => requestRename(tab.id)}
+          />
         ))}
       </div>
 
@@ -93,30 +256,32 @@ function TerminalTabBar() {
           <HugeiconsIcon icon={Add01Icon} size={14} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuLabel className="text-[11px]">Open Terminal</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {onlineAgents.length === 0 ? (
-            <DropdownMenuItem disabled className="text-[11px]">
-              No agents online
-            </DropdownMenuItem>
-          ) : (
-            onlineAgents.map((s) => (
-              <DropdownMenuItem
-                key={s.system.id}
-                className="text-[11px]"
-                onClick={() =>
-                  openSession({
-                    agentId: s.system.id,
-                    mode: "shell",
-                    label: s.system.hostname,
-                  })
-                }
-              >
-                <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-2" />
-                {s.system.hostname}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-[11px]">Open Terminal</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {onlineAgents.length === 0 ? (
+              <DropdownMenuItem disabled className="text-[11px]">
+                No agents online
               </DropdownMenuItem>
-            ))
-          )}
+            ) : (
+              onlineAgents.map((s) => (
+                <DropdownMenuItem
+                  key={s.system.id}
+                  className="text-[11px]"
+                  onClick={() =>
+                    openSession({
+                      agentId: s.system.id,
+                      mode: "shell",
+                      label: s.system.hostname,
+                    })
+                  }
+                >
+                  <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-2" />
+                  {s.system.hostname}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

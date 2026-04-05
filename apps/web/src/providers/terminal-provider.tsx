@@ -26,6 +26,8 @@ export interface TerminalState {
   isOpen: boolean
   openSession: (params: OpenSessionParams) => void
   closeSession: (tabId: string) => void
+  closeOtherSessions: (tabId: string) => void
+  renameSession: (tabId: string, label: string) => void
   setActiveTab: (tabId: string) => void
   togglePanel: () => void
   openPanel: () => void
@@ -39,6 +41,8 @@ const TerminalContext = createContext<TerminalState>({
   isOpen: false,
   openSession: () => {},
   closeSession: () => {},
+  closeOtherSessions: () => {},
+  renameSession: () => {},
   setActiveTab: () => {},
   togglePanel: () => {},
   openPanel: () => {},
@@ -84,6 +88,19 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     })
   }, [sessions])
 
+  const closeOtherSessions = useCallback((tabId: string) => {
+    setSessions((prev) => prev.filter((s) => s.id === tabId))
+    setActiveTabState(tabId)
+  }, [])
+
+  const renameSession = useCallback((tabId: string, label: string) => {
+    const trimmed = label.trim()
+    if (trimmed.length === 0) return
+    setSessions((prev) =>
+      prev.map((s) => (s.id === tabId ? { ...s, label: trimmed } : s)),
+    )
+  }, [])
+
   const setActiveTab = useCallback((tabId: string) => {
     setActiveTabState(tabId)
   }, [])
@@ -110,7 +127,18 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <TerminalContext.Provider
-      value={{ sessions, activeTab, isOpen, openSession, closeSession, setActiveTab, togglePanel, openPanel }}
+      value={{
+        sessions,
+        activeTab,
+        isOpen,
+        openSession,
+        closeSession,
+        closeOtherSessions,
+        renameSession,
+        setActiveTab,
+        togglePanel,
+        openPanel,
+      }}
     >
       {children}
     </TerminalContext.Provider>
