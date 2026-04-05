@@ -1,5 +1,7 @@
 import type { Effect } from "effect"
-import type { AgentCapabilities, CollectorCapability } from "./system.js"
+import type { AgentCapabilities } from "../schemas/system.js"
+
+export type CollectorCapability = keyof AgentCapabilities
 
 export interface CollectorReport {
   capability: CollectorCapability
@@ -12,5 +14,3 @@ export interface CollectorPlugin {
   readonly detect: Effect.Effect<boolean>
   readonly collect: Effect.Effect<CollectorReport>
 }
-
-export type { AgentCapabilities }

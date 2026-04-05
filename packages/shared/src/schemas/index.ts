@@ -1,2 +1,7 @@
 export * from "./agent-report.js"
+export * from "./alerts.js"
+export * from "./logs.js"
+export * from "./management.js"
 export * from "./protocol.js"
+export * from "./system.js"
+export * from "./terminal.js"
