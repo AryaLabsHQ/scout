@@ -1,5 +1,6 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useMemo, useRef, useCallback } from "react"
 import type { RefObject } from "react"
+import { Effect, Stream } from "effect"
 import type { TerminalMode, TerminalOutput } from "@scout/shared"
 import type { Ghostty, Terminal as GhosttyTerminal } from "ghostty-web"
 import { useAtomValue, useAtomSet } from "@effect/atom-react"
@@ -30,20 +31,56 @@ function loadGhostty() {
 export function useTerminal({ containerRef, agentId, mode, podName, namespace }: UseTerminalOptions) {
   const sessionIdRef = useRef<string | null>(null)
   const termRef = useRef<GhosttyTerminal | null>(null)
+  // Output chunks that arrived from the stream BEFORE the ghostty terminal
+  // finished mounting. We buffer them here and flush once `termRef.current`
+  // is set in the setup effect. Without this, the shell's initial banner +
+  // prompt (which often arrive in the first pull, before WASM has loaded)
+  // are lost and the user sees a blank terminal.
+  const pendingOutputRef = useRef<string[]>([])
 
-  // Build the stream atom for this session's params. The atom is stable as long
-  // as params don't change (AtomRpc.query uses family keying by payload hash).
-  const streamAtom = HubClient.query("terminal.open", {
-    agentId,
-    mode,
-    cols: 80, // initial — will be resized by FitAddon after mount
-    rows: 24,
-    ...(podName ? { podName } : {}),
-    ...(namespace ? { namespace } : {}),
-  })
+  // Build a fresh per-instance stream atom for this session.
+  //
+  // We deliberately bypass `HubClient.query("terminal.open", ...)` here for
+  // two reasons:
+  //
+  //   1. `HubClient.query` is backed by `Atom.family`, which dedupes atoms
+  //      structurally by payload. Two tabs on the same agent with the same
+  //      initial `cols/rows` would collapse to a single stream atom —
+  //      i.e., a single shared PTY session. Each tab needs its own session.
+  //
+  //   2. AtomRpc's internal `runtime.pull(...)` call does NOT pass
+  //      `disableAccumulation: true`. As a result, each pull emits the
+  //      CUMULATIVE list of items (`[s, a]`, then `[s, a, b]`, then
+  //      `[s, a, b, c]`, …). Iterating `items` on every update writes every
+  //      chunk over and over, which is the source of the "duplicated output"
+  //      the terminal was exhibiting.
+  //
+  // By calling `HubClient.runtime.pull(...)` directly inside `useMemo`, each
+  // tab gets a unique atom AND only sees the newly-arrived chunk per pull.
+  const streamAtom = useMemo(
+    () =>
+      HubClient.runtime.pull(
+        Stream.unwrap(
+          HubClient.use((client) =>
+            Effect.succeed(
+              client("terminal.open", {
+                agentId,
+                mode,
+                cols: 80, // initial — will be resized by FitAddon after mount
+                rows: 24,
+                ...(podName ? { podName } : {}),
+                ...(namespace ? { namespace } : {}),
+              }) as Stream.Stream<TerminalOutput, unknown>,
+            ),
+          ),
+        ),
+        { disableAccumulation: true },
+      ),
+    [agentId, mode, podName, namespace],
+  )
 
   // Mount the atom + get the pull-next setter.
-  // Calling pull(undefined) advances the stream by one batch.
+  // Calling pullNext(undefined) advances the stream by one chunk.
   const pullNext = useAtomSet(streamAtom)
 
   // Read the current pull result reactively
@@ -58,27 +95,46 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
   const runResize = useAtomSet(resizeMutationAtom)
   const runClose = useAtomSet(closeMutationAtom)
 
-  // Process incoming stream chunks → terminal output
-  const processChunk = useCallback((items: TerminalOutput[]) => {
+  // Process incoming stream chunks → terminal output.
+  //
+  // With `disableAccumulation: true`, `items` contains only the NEW chunks
+  // delivered by this pull (not the cumulative history). Iterating writes
+  // each chunk exactly once per pull.
+  //
+  // IMPORTANT: `session-start` is handled even when `termRef.current` is
+  // null, because it just records the session id — no terminal required.
+  // Output chunks that arrive before the terminal has mounted are buffered
+  // in `pendingOutputRef` and flushed once `termRef.current` is set.
+  const processChunk = useCallback((items: readonly TerminalOutput[]) => {
     const term = termRef.current
-    if (!term) return
 
     for (const chunk of items) {
       if (chunk._tag === "session-start") {
         sessionIdRef.current = chunk.sessionId
-      } else if (chunk._tag === "output") {
-        // Decode base64 PTY output
+        continue
+      }
+      if (chunk._tag !== "output") continue
+
+      // Decode base64 PTY output once, then either write or buffer.
+      let decoded: string | Uint8Array
+      try {
+        decoded = decodeURIComponent(escape(atob(chunk.dataBase64)))
+      } catch {
         try {
-          const decoded = decodeURIComponent(escape(atob(chunk.dataBase64)))
-          term.write(decoded)
+          decoded = Uint8Array.from(atob(chunk.dataBase64), (c) => c.charCodeAt(0))
         } catch {
-          try {
-            const bytes = Uint8Array.from(atob(chunk.dataBase64), (c) => c.charCodeAt(0))
-            term.write(bytes)
-          } catch {
-            // ignore
-          }
+          continue
         }
+      }
+
+      if (term) {
+        term.write(decoded)
+      } else if (typeof decoded === "string") {
+        pendingOutputRef.current.push(decoded)
+      } else {
+        // Uint8Array path: decode to string for buffering. Ghostty accepts
+        // both, but storing a string keeps the buffer uniform.
+        pendingOutputRef.current.push(new TextDecoder().decode(decoded))
       }
     }
   }, [])
@@ -152,6 +208,17 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
       fitAddon.fit()
       termRef.current = term
 
+      // Flush any output chunks that arrived from the stream before the
+      // terminal was ready. These are typically the shell banner + first
+      // prompt — without this flush the user sees a blank terminal even
+      // though the PTY is streaming.
+      if (pendingOutputRef.current.length > 0) {
+        for (const buffered of pendingOutputRef.current) {
+          term.write(buffered)
+        }
+        pendingOutputRef.current = []
+      }
+
       // User input → hub via mutation atom
       dataDisposable = term.onData((data: string) => {
         const sessionId = sessionIdRef.current
@@ -167,8 +234,20 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
         runResize({ payload: { sessionId, cols, rows } })
       })
 
-      // Fit on container resize
+      // Fit on container resize.
+      //
+      // IMPORTANT: skip when the container is zero-sized. When the terminal
+      // panel collapses we hide the view body with `display: none`, which
+      // causes ResizeObserver to fire a callback with clientWidth/Height = 0.
+      // If we called `fitAddon.fit()` at that point ghostty would resize the
+      // terminal to 0×0 cols/rows and emit a resize event — which we'd then
+      // forward to the agent as a bogus `terminal.resize` RPC, breaking any
+      // curses app running in the shell. When the panel is re-expanded a
+      // second resize fires with the real dimensions and we refit correctly.
       resizeObserver = new ResizeObserver(() => {
+        const el = containerRef.current
+        if (!el) return
+        if (el.clientWidth === 0 || el.clientHeight === 0) return
         fitAddon?.fit()
       })
       if (containerRef.current) {
@@ -193,8 +272,9 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
         return false
       })
 
-      // Kick off the first pull once the terminal is ready
-      pullNext(undefined)
+      // No explicit pullNext here: the pull atom auto-runs its first pull
+      // when mounted (via `useAtomSet` above). The reaction effect then
+      // drives subsequent pulls in response to each delivered chunk.
     }
 
     setup().catch(() => {})
@@ -211,6 +291,7 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
       termRef.current?.dispose()
       termRef.current = null
       sessionIdRef.current = null
+      pendingOutputRef.current = []
       fitAddon = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

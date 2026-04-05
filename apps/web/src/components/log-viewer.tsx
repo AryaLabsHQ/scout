@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { Effect, Stream } from "effect"
 import { useAtomValue, useAtomSet } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
+import type { LogBatch } from "@scout/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -59,8 +61,31 @@ function LogStream({ params, onClose }: LogStreamProps) {
   const autoScrollRef = useRef(autoScroll)
   useEffect(() => { autoScrollRef.current = autoScroll }, [autoScroll])
 
-  // Build the stream atom for current params
-  const streamAtom = HubClient.query("logs.tail", params)
+  // Build a fresh per-instance log stream atom.
+  //
+  // We bypass `HubClient.query("logs.tail", ...)` for the same reasons as
+  // `use-terminal.ts`:
+  //   1. Family-dedupe would share one tail subscription across viewers.
+  //   2. AtomRpc's internal stream pull does NOT pass `disableAccumulation`,
+  //      so each pull would deliver the cumulative batch list — producing
+  //      duplicated lines in the viewer.
+  //
+  // `HubClient.runtime.pull(..., { disableAccumulation: true })` gives us a
+  // dedicated pull atom that emits only the newly-arrived batches per pull.
+  const streamAtom = useMemo(
+    () =>
+      HubClient.runtime.pull(
+        Stream.unwrap(
+          HubClient.use((client) =>
+            Effect.succeed(
+              client("logs.tail", params) as Stream.Stream<LogBatch, unknown>,
+            ),
+          ),
+        ),
+        { disableAccumulation: true },
+      ),
+    [params],
+  )
   const pullResult = useAtomValue(streamAtom)
   const pullNext = useAtomSet(streamAtom)
 
@@ -90,11 +115,9 @@ function LogStream({ params, onClose }: LogStreamProps) {
     }
   }, [pullResult, pullNext])
 
-  // Kick off the first pull on mount
-  useEffect(() => {
-    pullNext(undefined)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // No explicit initial pullNext: the pull atom auto-runs its first pull
+  // when mounted (via `useAtomSet` above). The reaction effect then drives
+  // subsequent pulls in response to each delivered batch.
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current

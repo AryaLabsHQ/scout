@@ -299,32 +299,53 @@ export function TerminalPanel({ className }: { className?: string }) {
     <div className={cn("flex flex-col border-t border-border bg-[#0d0d0d]", className)}>
       <TerminalTabBar />
 
-      {/* Terminal views — keep all mounted, show only the active one */}
-      {isOpen && (
-        <div className="flex-1 overflow-hidden">
-          {sessions.length === 0 ? (
-            <EmptyTerminalState />
-          ) : (
-            sessions.map((tab) => (
-              <div
-                key={tab.id}
-                className={cn(
-                  "h-full w-full p-1",
-                  activeTab === tab.id ? "block" : "hidden"
-                )}
-              >
-                <TerminalView
-                  agentId={tab.agentId}
-                  mode={tab.mode}
-                  podName={tab.podName}
-                  namespace={tab.namespace}
-                  className="h-full"
-                />
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {/* Terminal body — keep mounted across collapse/expand and tab switches.
+       *
+       * Previously this was guarded with `{isOpen && ...}`, which unmounted
+       * every TerminalView whenever the user collapsed the panel. That ran
+       * each session's cleanup effect (runClose → agent kills PTY,
+       * ghostty term disposed) and then re-mounted fresh components on
+       * expand, spawning brand-new shells. The user lost cwd, shell
+       * history, running processes, scrollback — every collapse/expand
+       * cycle was a full reset.
+       *
+       * By switching to a CSS `hidden` toggle we keep all TerminalView
+       * instances mounted across collapse/expand. React does NOT run effect
+       * cleanup for `display: none`, so ghostty terms stay alive, PTY
+       * sessions stay open on the agent, and expanding the panel restores
+       * the exact state the user left behind.
+       *
+       * (Note: React's <Activity> component also hides via `display: none`
+       * but explicitly tears down effects on hide — which is exactly what
+       * we DON'T want here, so we use the plain CSS approach.)
+       *
+       * The inner `sessions.map` retains its per-tab visibility toggle so
+       * only the active tab's view is actually visible when the panel is
+       * open; all tabs' sessions remain alive in the background regardless.
+       */}
+      <div className={cn("flex-1 overflow-hidden", !isOpen && "hidden")}>
+        {sessions.length === 0 ? (
+          <EmptyTerminalState />
+        ) : (
+          sessions.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn(
+                "h-full w-full p-1",
+                activeTab === tab.id ? "block" : "hidden",
+              )}
+            >
+              <TerminalView
+                agentId={tab.agentId}
+                mode={tab.mode}
+                podName={tab.podName}
+                namespace={tab.namespace}
+                className="h-full"
+              />
+            </div>
+          ))
+        )}
+      </div>
     </div>
   )
 }
