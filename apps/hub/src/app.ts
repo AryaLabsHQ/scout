@@ -10,6 +10,7 @@ import { DockerService } from "./services/docker-service.js"
 import { K8sService } from "./services/k8s-service.js"
 import { TerminalService } from "./services/terminal.js"
 import { AlertEngine } from "./services/alert-engine.js"
+import { AgentRpcRegistry } from "./rpc/agent-bridge.js"
 
 // ── Layer 0: Infrastructure (no deps within AppLayer) ───────────────────────
 
@@ -50,4 +51,5 @@ export const AppLayer = Layer.mergeAll(
   DockerServiceLayer,
   K8sServiceLayer,
   TerminalServiceLayer,
+  AgentRpcRegistry.layer,
 )
