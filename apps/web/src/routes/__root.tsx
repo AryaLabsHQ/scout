@@ -37,6 +37,10 @@ import { Toaster } from "@/components/ui/sonner"
 
 import appCss from "@/styles.css?url"
 
+if (import.meta.env.DEV) {
+  import("react-grab")
+}
+
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [

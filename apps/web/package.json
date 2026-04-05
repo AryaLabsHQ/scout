@@ -46,6 +46,7 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "react-grab": "^0.1.29",
     "typescript": "^6.0.2",
     "vite": "^7.2.4"
   }

@@ -66,8 +66,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
-  '/systems/$systemId': typeof SystemsSystemIdRoute
   '/pods/$podName': typeof PodsPodNameRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,8 +76,8 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
-  '/systems/$systemId': typeof SystemsSystemIdRoute
   '/pods/$podName': typeof PodsPodNameRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -87,8 +87,8 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/workloads': typeof WorkloadsRoute
-  '/systems/$systemId': typeof SystemsSystemIdRoute
   '/pods/$podName': typeof PodsPodNameRoute
+  '/systems/$systemId': typeof SystemsSystemIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,8 +99,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/terminal'
     | '/workloads'
-    | '/systems/$systemId'
     | '/pods/$podName'
+    | '/systems/$systemId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +109,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/terminal'
     | '/workloads'
-    | '/systems/$systemId'
     | '/pods/$podName'
+    | '/systems/$systemId'
   id:
     | '__root__'
     | '/'
@@ -119,8 +119,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/terminal'
     | '/workloads'
-    | '/systems/$systemId'
     | '/pods/$podName'
+    | '/systems/$systemId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,8 +130,8 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   TerminalRoute: typeof TerminalRoute
   WorkloadsRoute: typeof WorkloadsRoute
-  SystemsSystemIdRoute: typeof SystemsSystemIdRoute
   PodsPodNameRoute: typeof PodsPodNameRoute
+  SystemsSystemIdRoute: typeof SystemsSystemIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -202,8 +202,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   TerminalRoute: TerminalRoute,
   WorkloadsRoute: WorkloadsRoute,
-  SystemsSystemIdRoute: SystemsSystemIdRoute,
   PodsPodNameRoute: PodsPodNameRoute,
+  SystemsSystemIdRoute: SystemsSystemIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
