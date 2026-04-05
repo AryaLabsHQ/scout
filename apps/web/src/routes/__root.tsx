@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import {
   HeadContent,
   Scripts,
@@ -26,12 +27,19 @@ import {
   SidebarMenuButton,
   SidebarInset,
 } from "@/components/ui/sidebar"
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
+import {
+  Group as PanelGroup,
+  Panel,
+  Separator as PanelResizeHandle,
+  usePanelRef,
+} from "react-resizable-panels"
 import { BottomNav } from "@/components/bottom-nav"
 import { ScoutProvider } from "@/providers/scout-provider"
 import { useScout } from "@/providers/scout-provider"
 import { TerminalProvider, useTerminalPanel } from "@/providers/terminal-provider"
+import { CommandPaletteProvider } from "@/providers/command-palette-provider"
 import { TerminalPanel } from "@/components/terminal/terminal-panel"
+import { CommandPalette } from "@/components/command-palette"
 import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
 
@@ -113,6 +121,19 @@ function AppSidebar() {
 
 function AppContent() {
   const { isOpen } = useTerminalPanel()
+  const terminalPanelRef = usePanelRef()
+
+  // Drive the panel's collapsed state from isOpen. The panel is always mounted
+  // so react-resizable-panels can track its size; we just collapse/expand it.
+  useEffect(() => {
+    const panel = terminalPanelRef.current
+    if (!panel) return
+    if (isOpen && panel.isCollapsed()) {
+      panel.expand()
+    } else if (!isOpen && !panel.isCollapsed()) {
+      panel.collapse()
+    }
+  }, [isOpen, terminalPanelRef])
 
   return (
     <SidebarInset className="pb-16 md:pb-0 overflow-hidden">
@@ -120,20 +141,34 @@ function AppContent() {
         <span className="font-heading text-sm font-semibold tracking-wider">SCOUT</span>
         <ConnectionStatus />
       </header>
-      <PanelGroup orientation="vertical" className="flex-1 h-full">
-        <Panel defaultSize={isOpen ? 65 : 100} minSize={20}>
+      <PanelGroup orientation="vertical" className="flex-1 h-full" id="scout-root">
+        <Panel id="main-content" minSize="200px" className="!overflow-hidden">
           <main className="h-full overflow-auto">
             <Outlet />
           </main>
         </Panel>
-        {isOpen && (
-          <>
-            <PanelResizeHandle className="h-1 bg-border hover:bg-primary/40 transition-colors cursor-row-resize" />
-            <Panel defaultSize={35} minSize={15} maxSize={70}>
-              <TerminalPanel className="h-full" />
-            </Panel>
-          </>
-        )}
+        <PanelResizeHandle
+          className={cn(
+            "h-1 bg-border hover:bg-primary/40 transition-colors cursor-row-resize",
+            !isOpen && "hidden",
+          )}
+        />
+        <Panel
+          id="terminal-panel"
+          panelRef={terminalPanelRef}
+          defaultSize="320px"
+          minSize="120px"
+          maxSize="70%"
+          collapsible
+          // When collapsed, keep the tab bar visible (36px = h-9 tab bar).
+          // The body is hidden by the inner `{isOpen && ...}` guard.
+          collapsedSize="36px"
+          // `!` overrides the library's inline `overflow:auto` which otherwise
+          // shows an empty scrollbar track on macOS.
+          className="!overflow-hidden"
+        >
+          <TerminalPanel className="h-full" />
+        </Panel>
       </PanelGroup>
     </SidebarInset>
   )
@@ -145,12 +180,15 @@ function AppLayout() {
   return (
     <ScoutProvider>
       <TerminalProvider>
-        <SidebarProvider>
-          <AppSidebar />
-          <AppContent />
-          <BottomNav />
-          <Toaster />
-        </SidebarProvider>
+        <CommandPaletteProvider>
+          <SidebarProvider>
+            <AppSidebar />
+            <AppContent />
+            <BottomNav />
+            <CommandPalette />
+            <Toaster />
+          </SidebarProvider>
+        </CommandPaletteProvider>
       </TerminalProvider>
     </ScoutProvider>
   )
