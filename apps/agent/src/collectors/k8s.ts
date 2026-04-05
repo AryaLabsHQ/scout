@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import fs from "node:fs"
 import os from "node:os"
+import YAML from "yaml"
 import type { CollectorPlugin, CollectorReport, K8sWorkloadMetrics } from "@scout/shared"
 import type {
   K8sContainer,
@@ -124,51 +125,174 @@ interface RawPodMetrics {
 // Auth / connection resolution
 // ---------------------------------------------------------------------------
 
-interface K8sConfig {
+export interface K8sConfig {
   baseUrl: string
   headers: Record<string, string>
+  tls?: {
+    ca?: string
+    cert?: string
+    key?: string
+    rejectUnauthorized?: boolean
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Kubeconfig YAML schema (subset we care about)
+// ---------------------------------------------------------------------------
+
+interface KubeconfigYaml {
+  "current-context"?: string
+  contexts?: Array<{
+    name?: string
+    context?: {
+      cluster?: string
+      user?: string
+    }
+  }>
+  clusters?: Array<{
+    name?: string
+    cluster?: {
+      server?: string
+      "certificate-authority-data"?: string
+      "certificate-authority"?: string
+      "insecure-skip-tls-verify"?: boolean
+    }
+  }>
+  users?: Array<{
+    name?: string
+    user?: {
+      token?: string
+      "client-certificate-data"?: string
+      "client-certificate"?: string
+      "client-key-data"?: string
+      "client-key"?: string
+    }
+  }>
+}
+
+/**
+ * Parse a kubeconfig YAML string and return the connection config for the
+ * current context. Returns null if the YAML is malformed, the current
+ * context is missing, or the matching cluster/user entries can't be resolved.
+ *
+ * Exported for unit testing.
+ */
+export function parseKubeconfig(raw: string): K8sConfig | null {
+  let doc: KubeconfigYaml
+  try {
+    doc = YAML.parse(raw) as KubeconfigYaml
+  } catch {
+    return null
+  }
+  if (!doc || typeof doc !== "object") return null
+
+  const currentContextName = doc["current-context"]
+  if (!currentContextName) return null
+
+  const context = doc.contexts?.find((c) => c.name === currentContextName)?.context
+  if (!context) return null
+
+  const cluster = doc.clusters?.find((c) => c.name === context.cluster)?.cluster
+  if (!cluster?.server) return null
+
+  const user = doc.users?.find((u) => u.name === context.user)?.user
+
+  const cfg: K8sConfig = {
+    baseUrl: cluster.server,
+    headers: {},
+  }
+
+  const tls: K8sConfig["tls"] = {}
+  let hasTls = false
+
+  if (cluster["certificate-authority-data"]) {
+    tls.ca = Buffer.from(cluster["certificate-authority-data"], "base64").toString("utf8")
+    hasTls = true
+  } else if (cluster["certificate-authority"]) {
+    // File path — read from disk
+    try {
+      tls.ca = fs.readFileSync(cluster["certificate-authority"], "utf8")
+      hasTls = true
+    } catch {
+      // ignore
+    }
+  }
+
+  if (cluster["insecure-skip-tls-verify"]) {
+    tls.rejectUnauthorized = false
+    hasTls = true
+  }
+
+  if (user?.token) {
+    cfg.headers["Authorization"] = `Bearer ${user.token}`
+  }
+
+  if (user?.["client-certificate-data"]) {
+    tls.cert = Buffer.from(user["client-certificate-data"], "base64").toString("utf8")
+    hasTls = true
+  } else if (user?.["client-certificate"]) {
+    try {
+      tls.cert = fs.readFileSync(user["client-certificate"], "utf8")
+      hasTls = true
+    } catch {
+      // ignore
+    }
+  }
+
+  if (user?.["client-key-data"]) {
+    tls.key = Buffer.from(user["client-key-data"], "base64").toString("utf8")
+    hasTls = true
+  } else if (user?.["client-key"]) {
+    try {
+      tls.key = fs.readFileSync(user["client-key"], "utf8")
+      hasTls = true
+    } catch {
+      // ignore
+    }
+  }
+
+  if (hasTls) cfg.tls = tls
+
+  return cfg
 }
 
 function resolveK8sConfig(): K8sConfig | null {
   // In-cluster: use ServiceAccount token + well-known env vars
   const tokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  const caPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
   if (fs.existsSync(tokenPath)) {
     try {
       const token = fs.readFileSync(tokenPath, "utf8").trim()
       const host = process.env["KUBERNETES_SERVICE_HOST"] ?? "kubernetes.default.svc"
       const port = process.env["KUBERNETES_SERVICE_PORT"] ?? "443"
-      return {
+      const cfg: K8sConfig = {
         baseUrl: `https://${host}:${port}`,
         headers: {
           Authorization: `Bearer ${token}`,
         },
       }
+      if (fs.existsSync(caPath)) {
+        try {
+          cfg.tls = { ca: fs.readFileSync(caPath, "utf8") }
+        } catch {
+          // ignore — fall back to implicit CA trust
+        }
+      }
+      return cfg
     } catch {
       // fall through
     }
   }
 
-  // Out-of-cluster: minimal kubeconfig parsing (current-context server + token/cert)
+  // Out-of-cluster: parse kubeconfig YAML
   const kubeconfigPath =
     process.env["KUBECONFIG"] ||
     `${os.homedir()}/.kube/config`
 
   if (fs.existsSync(kubeconfigPath)) {
     try {
-      // Very basic YAML parsing — extract server and token from kubeconfig
       const raw = fs.readFileSync(kubeconfigPath, "utf8")
-      const serverMatch = raw.match(/\bserver:\s*(\S+)/)
-      const tokenMatch = raw.match(/\btoken:\s*(\S+)/)
-      if (serverMatch?.[1]) {
-        const cfg: K8sConfig = {
-          baseUrl: serverMatch[1],
-          headers: {},
-        }
-        if (tokenMatch?.[1]) {
-          cfg.headers["Authorization"] = `Bearer ${tokenMatch[1]}`
-        }
-        return cfg
-      }
+      return parseKubeconfig(raw)
     } catch {
       // fall through
     }
@@ -184,9 +308,11 @@ function resolveK8sConfig(): K8sConfig | null {
 const k8sFetch = (cfg: K8sConfig, path: string): Effect.Effect<string> =>
   Effect.tryPromise({
     try: async () => {
-      const res = await fetch(`${cfg.baseUrl}${path}`, {
+      const init: RequestInit & { tls?: K8sConfig["tls"] } = {
         headers: cfg.headers,
-      })
+      }
+      if (cfg.tls) init.tls = cfg.tls
+      const res = await fetch(`${cfg.baseUrl}${path}`, init)
       return res.text()
     },
     catch: (e) => new Error(`K8s API ${path} failed: ${String(e)}`),
