@@ -33,4 +33,4 @@ npm-debug.log*
 .DS_Store
 *.pem
 
-**/scout.db*
+*.db*
