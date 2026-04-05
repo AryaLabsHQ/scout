@@ -289,40 +289,55 @@ export class RegisterAgent extends ServiceMap.Service<
 // ── agent.connect handler override ────────────────────────────────────────────
 
 /**
- * Validates the SCOUT_TOKEN and delegates to the per-connection
- * RegisterAgent callback. This layer overrides the scaffold `agent.connect`
- * in AgentHandlersLive — Effect Layer composition resolves later-provided
- * handlers over earlier ones.
+ * Builds a fresh `agent.connect` handler layer that validates the SCOUT_TOKEN
+ * and delegates to the per-connection `RegisterAgent` callback.
+ *
+ * CRITICAL: This must be invoked PER-CONNECTION, not stored as a module-level
+ * constant.
+ *
+ * Why: `RpcGroup.toLayerHandler` captures the current services snapshot at
+ * layer build time (see RpcGroup.ts:291) and later provides that snapshot to
+ * the handler when it runs. If the returned layer were a module constant, its
+ * build would be memoized — the FIRST connection's `RegisterAgent` closure
+ * (which captures the first agent's `hubAgentClient`) would be baked into the
+ * handler and reused for every subsequent connection, so every agent's
+ * `agent.connect` would register against the first agent's client. The
+ * observable symptom is that every `terminal.open` for any agent routes to
+ * the first agent that connected.
+ *
+ * Rebuilding per-connection ensures each `AgentConnectHandlerLive` instance
+ * captures the correct per-socket `RegisterAgent`.
  */
-const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
-  "agent.connect",
-  Effect.gen(function* () {
-    const registerFn = yield* RegisterAgent
-    const expectedToken = yield* Config.string("SCOUT_TOKEN")
+const makeAgentConnectHandlerLive = () =>
+  AgentHubRpcs.toLayerHandler(
+    "agent.connect",
+    Effect.gen(function* () {
+      const registerFn = yield* RegisterAgent
+      const expectedToken = yield* Config.string("SCOUT_TOKEN")
 
-    return ({ token, hostname, version, platform, capabilities }) =>
-      Effect.gen(function* () {
-        if (token !== expectedToken) {
-          return yield* Effect.fail(
-            new AgentConnectError({
-              reason: "invalid-token",
-              message: "Invalid SCOUT_TOKEN",
-            }),
-          )
-        }
+      return ({ token, hostname, version, platform, capabilities }) =>
+        Effect.gen(function* () {
+          if (token !== expectedToken) {
+            return yield* Effect.fail(
+              new AgentConnectError({
+                reason: "invalid-token",
+                message: "Invalid SCOUT_TOKEN",
+              }),
+            )
+          }
 
-        const info: AgentInfo = {
-          systemId: hostname,
-          hostname,
-          version,
-          platform,
-        }
+          const info: AgentInfo = {
+            systemId: hostname,
+            hostname,
+            version,
+            platform,
+          }
 
-        yield* Effect.logInfo("agent.connect: accepted", { hostname })
-        return yield* registerFn(info, capabilities)
-      })
-  }),
-)
+          yield* Effect.logInfo("agent.connect: accepted", { hostname })
+          return yield* registerFn(info, capabilities)
+        })
+    }),
+  )
 
 // ── WS handler for /ws/rpc/agent ─────────────────────────────────────────────
 
@@ -362,6 +377,10 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         })
 
       const RegisterAgentLive = Layer.succeed(RegisterAgent)(registerAgentFn)
+
+      // Build a FRESH agent.connect handler layer for this connection.
+      // See `makeAgentConnectHandlerLive` for why this must be per-connection.
+      const AgentConnectHandlerLive = makeAgentConnectHandlerLive()
 
       // Run the agent→hub RpcServer
       // - AgentHandlersLive handles agent.report
