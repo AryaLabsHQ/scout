@@ -1,5 +1,5 @@
 import * as React from "react"
-import { RegistryProvider, useAtomInitialValues } from "@effect/atom-react"
+import { RegistryProvider, useAtomValue, useAtomInitialValues } from "@effect/atom-react"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import type { Alert, System } from "@scout/shared"
 import { HubClient } from "@/rpc/client"
@@ -32,10 +32,29 @@ interface AtomProviderProps {
 export function AtomProvider({ children, initialState }: AtomProviderProps) {
   return (
     <RegistryProvider>
+      <PinHubClientRuntime />
       {initialState ? <SeedInitialValues state={initialState} /> : null}
       {children}
     </RegistryProvider>
   )
+}
+
+/**
+ * Holds a permanent subscription to `HubClient.runtime` so the underlying
+ * WebSocket stays open for the entire app lifetime. Without this, the atom
+ * runtime's memoMap refcount can briefly hit zero during route transitions
+ * and re-renders (between unmount/remount), which closes the layer's scope
+ * and tears down the WebSocket — then the next subscriber opens a fresh
+ * one. Empirically this caused 5–6 WS connects in rapid succession during
+ * navigation churn.
+ *
+ * Mounted as a child of RegistryProvider (so the registry exists) and
+ * before SeedInitialValues / children, so the runtime is alive by the
+ * time any consumer asks for it.
+ */
+function PinHubClientRuntime() {
+  useAtomValue(HubClient.runtime)
+  return null
 }
 
 /**
