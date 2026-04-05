@@ -15,19 +15,3 @@ export const fetchAlertRules = createServerFn({ method: "GET" }).handler(
     return res.json() as Promise<AlertRule[]>
   },
 )
-
-export const acknowledgeAlert = createServerFn({ method: "POST" })
-  .inputValidator((input: { alertId: string }) => input)
-  .handler(async ({ data }): Promise<Alert | null> => {
-    const res = await hubFetch(`/api/alerts/${data.alertId}/ack`, { method: "POST" })
-    if (!res.ok) return null
-    return res.json() as Promise<Alert>
-  })
-
-export const resolveAlert = createServerFn({ method: "POST" })
-  .inputValidator((input: { alertId: string }) => input)
-  .handler(async ({ data }): Promise<Alert | null> => {
-    const res = await hubFetch(`/api/alerts/${data.alertId}/resolve`, { method: "POST" })
-    if (!res.ok) return null
-    return res.json() as Promise<Alert>
-  })

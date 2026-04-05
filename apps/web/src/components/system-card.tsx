@@ -14,7 +14,14 @@ import { SparklineChart } from "@/components/charts/sparkline-chart"
 import { ProgressBar } from "@/components/charts/progress-bar"
 import { formatPercent, formatBytes, formatBytesPerSec, formatTimeAgo } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { SystemState } from "@/hooks/use-scout-ws"
+import type { AgentReport, System } from "@scout/shared"
+
+/** Minimal shape that SystemCard needs — compatible with both legacy SystemState and the new atom shape */
+export interface SystemState {
+  system: System
+  latestMetrics: AgentReport | null
+  cpuHistory: number[]
+}
 
 const METRIC_COLORS = {
   cpu: "#3b82f6",

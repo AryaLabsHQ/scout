@@ -9,7 +9,8 @@ import {
   Edit02Icon,
 } from "@hugeicons/core-free-icons"
 import { useTerminalPanel, type TerminalTab as TerminalTabType } from "@/providers/terminal-provider"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { TerminalView } from "./terminal-view"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -185,14 +186,15 @@ function TerminalTabBar() {
     togglePanel,
     openSession,
   } = useTerminalPanel()
-  const { systems } = useScout()
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
 
   // Per-tab signal that bumps to trigger an external rename (from context menu)
   const [renameSignals, setRenameSignals] = useState<Record<string, number>>({})
   const requestRename = (id: string) =>
     setRenameSignals((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
 
-  const onlineAgents = Object.values(systems).filter((s) => s.system.status === "online")
+  const onlineAgents = systemsList.filter((s) => s.status === "online")
 
   // When collapsed, clicking any empty area of the tab bar expands the panel.
   // We skip if the click target is inside a button (tabs, toggle, + dropdown)
@@ -266,18 +268,18 @@ function TerminalTabBar() {
             ) : (
               onlineAgents.map((s) => (
                 <DropdownMenuItem
-                  key={s.system.id}
+                  key={s.id}
                   className="text-[11px]"
                   onClick={() =>
                     openSession({
-                      agentId: s.system.id,
+                      agentId: s.id,
                       mode: "shell",
-                      label: s.system.hostname,
+                      label: s.hostname,
                     })
                   }
                 >
                   <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-2" />
-                  {s.system.hostname}
+                  {s.hostname}
                 </DropdownMenuItem>
               ))
             )}
@@ -329,8 +331,9 @@ export function TerminalPanel({ className }: { className?: string }) {
 
 function EmptyTerminalState() {
   const { openSession } = useTerminalPanel()
-  const { systems } = useScout()
-  const onlineAgents = Object.values(systems).filter((s) => s.system.status === "online")
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
+  const onlineAgents = systemsList.filter((s) => s.status === "online")
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
@@ -345,20 +348,20 @@ function EmptyTerminalState() {
         <div className="flex flex-wrap gap-2 justify-center mt-1">
           {onlineAgents.slice(0, 5).map((s) => (
             <Button
-              key={s.system.id}
+              key={s.id}
               variant="outline"
               size="sm"
               className="h-7 text-xs"
               onClick={() =>
                 openSession({
-                  agentId: s.system.id,
+                  agentId: s.id,
                   mode: "shell",
-                  label: s.system.hostname,
+                  label: s.hostname,
                 })
               }
             >
               <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-1.5" />
-              {s.system.hostname}
+              {s.hostname}
             </Button>
           ))}
         </div>

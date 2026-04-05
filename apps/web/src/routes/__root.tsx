@@ -6,6 +6,8 @@ import {
   Outlet,
 } from "@tanstack/react-router"
 import { Link, useRouterState } from "@tanstack/react-router"
+import { fetchSystems } from "@/server/systems"
+import { fetchAlerts } from "@/server/alerts"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   DashboardCircleIcon,
@@ -34,16 +36,15 @@ import {
   usePanelRef,
 } from "react-resizable-panels"
 import { BottomNav } from "@/components/bottom-nav"
-import { ScoutProvider } from "@/providers/scout-provider"
-import { useScout } from "@/providers/scout-provider"
+import { AtomProvider } from "@/providers/atom-provider"
 import { TerminalProvider, useTerminalPanel } from "@/providers/terminal-provider"
 import { CommandPaletteProvider } from "@/providers/command-palette-provider"
 import { TerminalPanel } from "@/components/terminal/terminal-panel"
 import { CommandPalette } from "@/components/command-palette"
 import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
-import { fetchSystems } from "@/server/systems"
-import { fetchAlerts } from "@/server/alerts"
+import { HubClient } from "@/rpc/client"
+import { useAtomValue } from "@effect/atom-react"
 
 import appCss from "@/styles.css?url"
 
@@ -64,7 +65,11 @@ const NAV_ITEMS = [
 // ── Connection status ─────────────────────────────────────────────────────────
 
 function ConnectionStatus() {
-  const { isConnected } = useScout()
+  // HubClient.runtime is an AtomRuntime; its layer atom reflects connection state.
+  // We use the systems.list atom as a proxy: Success → connected, else → loading/offline.
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const isConnected = systemsResult._tag === "Success"
+
   return (
     <div className="flex items-center gap-1.5">
       <HugeiconsIcon
@@ -179,9 +184,9 @@ function AppContent() {
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 function AppLayout() {
-  const { systems, alerts } = Route.useLoaderData()
+  const { initialSystems, initialAlerts } = Route.useLoaderData()
   return (
-    <ScoutProvider initialSystems={systems} initialAlerts={alerts}>
+    <AtomProvider initialState={{ systems: initialSystems, alerts: initialAlerts }}>
       <TerminalProvider>
         <CommandPaletteProvider>
           <SidebarProvider>
@@ -193,7 +198,7 @@ function AppLayout() {
           </SidebarProvider>
         </CommandPaletteProvider>
       </TerminalProvider>
-    </ScoutProvider>
+    </AtomProvider>
   )
 }
 
@@ -208,9 +213,22 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  /**
+   * SSR loader — fetch initial systems + alerts via the hub's REST API so
+   * the first client render paints with real data. The atom queries for
+   * `systems.list` and `alerts.list` are seeded with these values in
+   * `AtomProvider`, avoiding the 15s-ish convergence window that the old
+   * WS-only state exhibited (see scratchpad M3-08).
+   *
+   * Loader failures (hub unreachable, etc.) degrade gracefully — both
+   * server functions return empty arrays on error.
+   */
   loader: async () => {
-    const [systems, alerts] = await Promise.all([fetchSystems(), fetchAlerts()])
-    return { systems, alerts }
+    const [initialSystems, initialAlerts] = await Promise.all([
+      fetchSystems().catch(() => []),
+      fetchAlerts().catch(() => []),
+    ])
+    return { initialSystems, initialAlerts }
   },
   shellComponent: RootDocument,
   component: AppLayout,

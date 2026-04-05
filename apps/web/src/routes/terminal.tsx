@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { TerminalIcon } from "@hugeicons/core-free-icons"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { useTerminalPanel } from "@/providers/terminal-provider"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,12 +10,12 @@ import { Badge } from "@/components/ui/badge"
 export const Route = createFileRoute("/terminal")({ component: TerminalPage })
 
 function TerminalPage() {
-  const { systems } = useScout()
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
   const { sessions, openSession } = useTerminalPanel()
 
-  const systemList = Object.values(systems)
-  const onlineAgents = systemList.filter((s) => s.system.status === "online")
-  const offlineAgents = systemList.filter((s) => s.system.status !== "online")
+  const onlineAgents = systemsList.filter((s) => s.status === "online")
+  const offlineAgents = systemsList.filter((s) => s.status !== "online")
 
   const sessionCountFor = (agentId: string) =>
     sessions.filter((t) => t.agentId === agentId).length
@@ -34,7 +35,7 @@ function TerminalPage() {
         </p>
       </div>
 
-      {systemList.length === 0 ? (
+      {systemsList.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <HugeiconsIcon icon={TerminalIcon} size={32} className="text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">No agents registered yet.</p>
@@ -49,15 +50,15 @@ function TerminalPage() {
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {onlineAgents.map((s) => (
                   <AgentCard
-                    key={s.system.id}
-                    hostname={s.system.hostname}
+                    key={s.id}
+                    hostname={s.hostname}
                     status="online"
-                    sessionCount={sessionCountFor(s.system.id)}
+                    sessionCount={sessionCountFor(s.id)}
                     onConnect={() =>
                       openSession({
-                        agentId: s.system.id,
+                        agentId: s.id,
                         mode: "shell",
-                        label: s.system.hostname,
+                        label: s.hostname,
                       })
                     }
                   />
@@ -74,15 +75,15 @@ function TerminalPage() {
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {offlineAgents.map((s) => (
                   <AgentCard
-                    key={s.system.id}
-                    hostname={s.system.hostname}
-                    status={s.system.status}
-                    sessionCount={sessionCountFor(s.system.id)}
+                    key={s.id}
+                    hostname={s.hostname}
+                    status={s.status}
+                    sessionCount={sessionCountFor(s.id)}
                     onConnect={() =>
                       openSession({
-                        agentId: s.system.id,
+                        agentId: s.id,
                         mode: "shell",
-                        label: s.system.hostname,
+                        label: s.hostname,
                       })
                     }
                     disabled

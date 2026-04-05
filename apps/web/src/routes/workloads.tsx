@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 import { toast } from "sonner"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue, useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { fetchK8sWorkloads } from "@/server/workloads"
-import { k8sScale, k8sRestartPod } from "@/server/management"
 import { ConfirmAction } from "@/components/confirm-action"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -85,6 +85,8 @@ function PodsTab({
   const filtered = namespace === "__all__" ? pods : pods.filter((p) => p.namespace === namespace)
   const [loadingPod, setLoadingPod] = useState<string | null>(null)
 
+  const runRestartPod = useAtomSet(HubClient.mutation("k8s.restartPod"), { mode: "promise" })
+
   if (filtered.length === 0) {
     return <EmptyRow cols={8} message="No pods" />
   }
@@ -92,7 +94,7 @@ function PodsTab({
   async function handleRestartPod(podName: string, ns: string) {
     setLoadingPod(podName)
     try {
-      await k8sRestartPod({ data: { systemId, podName, namespace: ns } })
+      await runRestartPod({ payload: { agentId: systemId, pod: podName, namespace: ns } })
       toast.success(`Restarted pod ${podName}`)
       onRefresh()
     } catch (e) {
@@ -176,12 +178,14 @@ function DeploymentsTab({
   const [scaleValues, setScaleValues] = useState<Record<string, number>>({})
   const [loadingDeploy, setLoadingDeploy] = useState<string | null>(null)
 
+  const runScale = useAtomSet(HubClient.mutation("k8s.scale"), { mode: "promise" })
+
   if (filtered.length === 0) return <EmptyRow cols={6} message="No deployments" />
 
   async function handleScale(deployment: string, ns: string, replicas: number) {
     setLoadingDeploy(deployment)
     try {
-      await k8sScale({ data: { systemId, deployment, namespace: ns, replicas } })
+      await runScale({ payload: { agentId: systemId, deployment, namespace: ns, replicas } })
       toast.success(`Scaled ${deployment} to ${replicas} replica${replicas !== 1 ? "s" : ""}`)
       onRefresh()
     } catch (e) {
@@ -372,12 +376,13 @@ function EmptyRow({ cols, message }: { cols: number; message: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 function WorkloadsPage() {
-  const { systems } = useScout()
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
 
-  // K8s-capable agents
-  const k8sAgents = Object.values(systems).filter(
-    (s) => s.system.capabilities.k8s && s.system.status === "online"
-  )
+  // K8s-capable agents — adapt to the shape expected by this component
+  const k8sAgents = systemsList
+    .filter((s) => s.capabilities.k8s && s.status === "online")
+    .map((s) => ({ system: s }))
 
   const [selectedSystemId, setSelectedSystemId] = useState<string>("")
   const [workloads, setWorkloads] = useState<K8sWorkloadMetrics | null>(null)

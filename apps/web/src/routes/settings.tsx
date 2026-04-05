@@ -2,8 +2,10 @@ import { useState } from "react"
 import { createFileRoute, useRouter } from "@tanstack/react-router"
 import { toast } from "sonner"
 
-import { fetchAlertRulesSettings, updateAlertRule, removeAgent, fetchHealth } from "@/server/settings"
+import { fetchAlertRulesSettings, fetchHealth } from "@/server/settings"
 import { fetchSystems } from "@/server/systems"
+import { useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
@@ -96,6 +98,10 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
   const [severity, setSeverity] = useState<"warning" | "critical">("warning")
   const [enabled, setEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
+  const runUpdateAlertRule = useAtomSet(
+    HubClient.mutation("alertRules.update"),
+    { mode: "promise" },
+  )
 
   // Sync form with selected rule whenever it changes
   const prevRuleId = useState<string | null>(null)
@@ -121,8 +127,8 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
     }
     setSaving(true)
     try {
-      const updated = await updateAlertRule({
-        data: {
+      const updated = await runUpdateAlertRule({
+        payload: {
           id: rule.id,
           threshold: t,
           consecutiveCount: c,
@@ -130,13 +136,9 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
           enabled,
         },
       })
-      if (updated) {
-        onSaved(updated)
-        toast.success("Alert rule saved")
-        onClose()
-      } else {
-        toast.error("Failed to save rule")
-      }
+      onSaved(updated)
+      toast.success("Alert rule saved")
+      onClose()
     } catch {
       toast.error("Failed to save rule")
     } finally {
@@ -222,6 +224,10 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
   const [rules, setRules] = useState(initialRules)
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const runUpdateAlertRule = useAtomSet(
+    HubClient.mutation("alertRules.update"),
+    { mode: "promise" },
+  )
 
   function handleEdit(rule: AlertRule) {
     setEditingRule(rule)
@@ -234,10 +240,8 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
 
   async function handleToggle(rule: AlertRule, enabled: boolean) {
     try {
-      const updated = await updateAlertRule({ data: { id: rule.id, enabled } })
-      if (updated) {
-        setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-      }
+      const updated = await runUpdateAlertRule({ payload: { id: rule.id, enabled } })
+      setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
     } catch {
       toast.error("Failed to update rule")
     }
@@ -312,15 +316,19 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
 function AgentsTab({ initialSystems }: { initialSystems: System[] }) {
   const [systems, setSystems] = useState(initialSystems)
   const router = useRouter()
+  const runRemoveSystem = useAtomSet(
+    HubClient.mutation("systems.remove"),
+    { mode: "promise" },
+  )
 
   async function handleRemove(systemId: string) {
-    const result = await removeAgent({ data: { systemId } })
-    if (result.ok) {
+    try {
+      await runRemoveSystem({ payload: { id: systemId } })
       setSystems((prev) => prev.filter((s) => s.id !== systemId))
       toast.success("Agent removed")
       router.invalidate()
-    } else {
-      toast.error(result.error ?? "Failed to remove agent")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove agent")
     }
   }
 

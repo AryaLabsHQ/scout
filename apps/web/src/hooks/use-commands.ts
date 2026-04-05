@@ -10,7 +10,8 @@ import {
   Cancel01Icon,
 } from "@hugeicons/core-free-icons"
 import type { IconSvgElement } from "@hugeicons/react"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { useTerminalPanel } from "@/providers/terminal-provider"
 
 // ── Command type ──────────────────────────────────────────────────────────────
@@ -43,7 +44,8 @@ export interface Command {
  */
 export function useCommands(): Command[] {
   const navigate = useNavigate()
-  const { systems } = useScout()
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
   const {
     sessions,
     activeTab,
@@ -54,7 +56,7 @@ export function useCommands(): Command[] {
     togglePanel,
   } = useTerminalPanel()
 
-  return useMemo<Command[]>(() => {
+  return useMemo<Command[]>(() => { // eslint-disable-line react-hooks/exhaustive-deps
     const commands: Command[] = []
 
     // ── Navigation: static routes ─────────────────────────────────────────────
@@ -79,36 +81,35 @@ export function useCommands(): Command[] {
     }
 
     // ── Navigation: one entry per connected system ────────────────────────────
-    const systemList = Object.values(systems)
-    for (const s of systemList) {
+    for (const s of systemsList) {
       commands.push({
-        id: `nav:system:${s.system.id}`,
-        label: `Go to system: ${s.system.hostname}`,
+        id: `nav:system:${s.id}`,
+        label: `Go to system: ${s.hostname}`,
         group: "Navigation",
-        keywords: [s.system.id, s.system.hostname, "system", "detail"],
+        keywords: [s.id, s.hostname, "system", "detail"],
         icon: ServerStack01Icon,
         perform: () =>
           void navigate({
             to: "/systems/$systemId",
-            params: { systemId: s.system.id },
+            params: { systemId: s.id },
           }),
       })
     }
 
     // ── Terminal: open a new shell on any online agent ───────────────────────
-    const online = systemList.filter((s) => s.system.status === "online")
+    const online = systemsList.filter((s) => s.status === "online")
     for (const s of online) {
       commands.push({
-        id: `term:open:${s.system.id}`,
-        label: `Open terminal: ${s.system.hostname}`,
+        id: `term:open:${s.id}`,
+        label: `Open terminal: ${s.hostname}`,
         group: "Terminal",
-        keywords: [s.system.hostname, "shell", "connect", "new"],
+        keywords: [s.hostname, "shell", "connect", "new"],
         icon: TerminalIcon,
         perform: () =>
           openSession({
-            agentId: s.system.id,
+            agentId: s.id,
             mode: "shell",
-            label: s.system.hostname,
+            label: s.hostname,
           }),
       })
     }
@@ -171,7 +172,7 @@ export function useCommands(): Command[] {
     return commands
   }, [
     navigate,
-    systems,
+    systemsList,
     sessions,
     activeTab,
     isOpen,

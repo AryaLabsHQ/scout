@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import type { RefObject } from "react"
-import type { TerminalMode } from "@scout/shared"
+import type { TerminalMode, TerminalOutput } from "@scout/shared"
 import type { Ghostty, Terminal as GhosttyTerminal } from "ghostty-web"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue, useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 
 export interface UseTerminalOptions {
   containerRef: RefObject<HTMLDivElement | null>
@@ -27,21 +28,89 @@ function loadGhostty() {
 }
 
 export function useTerminal({ containerRef, agentId, mode, podName, namespace }: UseTerminalOptions) {
-  const { invoke, onStreamEvent, isConnected } = useScout()
   const sessionIdRef = useRef<string | null>(null)
   const termRef = useRef<GhosttyTerminal | null>(null)
 
-  useEffect(() => {
-    if (!isConnected) return
+  // Build the stream atom for this session's params. The atom is stable as long
+  // as params don't change (AtomRpc.query uses family keying by payload hash).
+  const streamAtom = HubClient.query("terminal.open", {
+    agentId,
+    mode,
+    cols: 80, // initial — will be resized by FitAddon after mount
+    rows: 24,
+    ...(podName ? { podName } : {}),
+    ...(namespace ? { namespace } : {}),
+  })
 
-    let cleanup: (() => void) | null = null
+  // Mount the atom + get the pull-next setter.
+  // Calling pull(undefined) advances the stream by one batch.
+  const pullNext = useAtomSet(streamAtom)
+
+  // Read the current pull result reactively
+  const pullResult = useAtomValue(streamAtom)
+
+  // Mutation atoms for sending input/resize/close
+  const inputMutationAtom = HubClient.mutation("terminal.input")
+  const resizeMutationAtom = HubClient.mutation("terminal.resize")
+  const closeMutationAtom = HubClient.mutation("terminal.close")
+
+  const runInput = useAtomSet(inputMutationAtom)
+  const runResize = useAtomSet(resizeMutationAtom)
+  const runClose = useAtomSet(closeMutationAtom)
+
+  // Process incoming stream chunks → terminal output
+  const processChunk = useCallback((items: TerminalOutput[]) => {
+    const term = termRef.current
+    if (!term) return
+
+    for (const chunk of items) {
+      if (chunk._tag === "session-start") {
+        sessionIdRef.current = chunk.sessionId
+      } else if (chunk._tag === "output") {
+        // Decode base64 PTY output
+        try {
+          const decoded = decodeURIComponent(escape(atob(chunk.dataBase64)))
+          term.write(decoded)
+        } catch {
+          try {
+            const bytes = Uint8Array.from(atob(chunk.dataBase64), (c) => c.charCodeAt(0))
+            term.write(bytes)
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  }, [])
+
+  // React to pull result changes: process items and pull next chunk
+  useEffect(() => {
+    if (pullResult._tag === "Success") {
+      const { done, items } = pullResult.value
+      processChunk(items)
+      if (!done) {
+        // Pull the next batch
+        pullNext(undefined)
+      }
+    } else if (pullResult._tag === "Initial") {
+      // Initial/waiting — no action needed, atom will update on next pull
+    }
+    // Initial: atom not yet started (will start when mounted by useAtomSet above)
+    // Failure: stream error — terminal will remain as-is
+  }, [pullResult, processChunk, pullNext])
+
+  // Setup terminal UI and wire input/resize
+  useEffect(() => {
     let isMounted = true
+    let fitAddon: import("ghostty-web").FitAddon | null = null
+    let dataDisposable: { dispose: () => void } | null = null
+    let resizeDisposable: { dispose: () => void } | null = null
+    let resizeObserver: ResizeObserver | null = null
 
     async function setup() {
       if (!containerRef.current || !isMounted) return
 
       const { mod, ghostty } = await loadGhostty()
-
       if (!isMounted || !containerRef.current) return
 
       const term = new mod.Terminal({
@@ -77,71 +146,36 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
         },
       })
 
-      const fitAddon = new mod.FitAddon()
+      fitAddon = new mod.FitAddon()
       term.loadAddon(fitAddon)
       term.open(containerRef.current)
       fitAddon.fit()
       termRef.current = term
 
-      // Create session on hub
-      let sessionId: string
-      try {
-        const result = await invoke("terminal.open", {
-          agentId,
-          mode,
-          cols: term.cols,
-          rows: term.rows,
-          ...(podName ? { podName } : {}),
-          ...(namespace ? { namespace } : {}),
-        })
-        sessionId = (result as { sessionId: string }).sessionId
-        sessionIdRef.current = sessionId
-      } catch (err) {
-        term.write(`\r\n\x1b[31mFailed to open terminal session: ${String(err)}\x1b[0m\r\n`)
-        return
-      }
-
-      // User input → hub
-      const dataDisposable = term.onData((data: string) => {
+      // User input → hub via mutation atom
+      dataDisposable = term.onData((data: string) => {
+        const sessionId = sessionIdRef.current
+        if (!sessionId) return
         const b64 = btoa(unescape(encodeURIComponent(data)))
-        invoke("terminal.input", {
-          sessionId,
-          dataBase64: b64,
-        }).catch(() => {})
+        runInput({ payload: { sessionId, dataBase64: b64 } })
       })
 
-      // Hub output → terminal
-      const unsubOutput = onStreamEvent(sessionId, (event: unknown) => {
-        const ev = event as { dataBase64?: string }
-        if (ev?.dataBase64) {
-          try {
-            const decoded = decodeURIComponent(escape(atob(ev.dataBase64)))
-            term.write(decoded)
-          } catch {
-            try {
-              const bytes = Uint8Array.from(atob(ev.dataBase64), (c) => c.charCodeAt(0))
-              term.write(bytes)
-            } catch {
-              // ignore
-            }
-          }
-        }
-      })
-
-      // Resize
-      const resizeDisposable = term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
-        invoke("terminal.resize", { sessionId, cols, rows }).catch(() => {})
+      // Resize events → hub
+      resizeDisposable = term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+        const sessionId = sessionIdRef.current
+        if (!sessionId) return
+        runResize({ payload: { sessionId, cols, rows } })
       })
 
       // Fit on container resize
-      const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit()
+      resizeObserver = new ResizeObserver(() => {
+        fitAddon?.fit()
       })
       if (containerRef.current) {
         resizeObserver.observe(containerRef.current)
       }
 
-      // Copy handler (Ctrl+Shift+C or Cmd+C)
+      // Copy handler
       term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         const key = event.key.toLowerCase()
         if (event.ctrlKey && event.shiftKey && key === "c") {
@@ -155,31 +189,32 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
           if (selection) navigator.clipboard.writeText(selection).catch(() => {})
           return true
         }
-        // Allow Ctrl+` to toggle terminal panel
         if (event.ctrlKey && key === "`") return true
         return false
       })
 
-      cleanup = () => {
-        isMounted = false
-        resizeObserver.disconnect()
-        dataDisposable.dispose()
-        resizeDisposable.dispose()
-        unsubOutput()
-        invoke("terminal.close", { sessionId }).catch(() => {})
-        term.dispose()
-        termRef.current = null
-        sessionIdRef.current = null
-      }
+      // Kick off the first pull once the terminal is ready
+      pullNext(undefined)
     }
 
     setup().catch(() => {})
 
     return () => {
       isMounted = false
-      cleanup?.()
+      resizeObserver?.disconnect()
+      dataDisposable?.dispose()
+      resizeDisposable?.dispose()
+      const sessionId = sessionIdRef.current
+      if (sessionId) {
+        runClose({ payload: { sessionId } })
+      }
+      termRef.current?.dispose()
+      termRef.current = null
+      sessionIdRef.current = null
+      fitAddon = null
     }
-  }, [agentId, mode, podName, namespace, isConnected])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, mode, podName, namespace])
 
   return { termRef, sessionIdRef }
 }

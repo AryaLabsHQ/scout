@@ -1,14 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { fetchSystems } from "@/server/systems"
-import { useScout } from "@/providers/scout-provider"
+import { useAtomValue } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { SystemCard } from "@/components/system-card"
 import type { System } from "@scout/shared"
+import type { AgentReport } from "@scout/shared"
 
 export const Route = createFileRoute("/overview")({
-  loader: async () => {
-    const systems = await fetchSystems()
-    return { systems }
-  },
   component: OverviewPage,
 })
 
@@ -27,37 +24,28 @@ function EmptyState() {
 }
 
 function OverviewPage() {
-  const { systems: loaderData } = Route.useLoaderData()
-  const { systems: wsState, alerts, activeAlertCount } = useScout()
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+  const alertsResult = useAtomValue(HubClient.query("alerts.list", undefined))
 
-  // Merge SSR seed with WS live state
-  // WS state takes precedence for online systems
-  const allSystemIds = new Set([
-    ...loaderData.map((s: System) => s.id),
-    ...Object.keys(wsState),
-  ])
+  const systems: System[] = systemsResult._tag === "Success" ? [...systemsResult.value] : []
+  const alerts = alertsResult._tag === "Success" ? [...alertsResult.value] : []
 
-  const mergedSystems = Array.from(allSystemIds).map((id) => {
-    const wsEntry = wsState[id]
-    const loaderSystem = loaderData.find((s: System) => s.id === id)
-    if (wsEntry) return wsEntry
-    if (loaderSystem) {
-      return {
-        system: loaderSystem,
-        latestMetrics: null,
-        cpuHistory: [] as number[],
-      }
-    }
-    return null
-  }).filter(Boolean)
-
-  // Build per-system active alert count from WS alerts
+  // Build per-system active alert count
   const alertCountBySystem: Record<string, number> = {}
   for (const alert of alerts) {
     if (alert.state === "active" || alert.state === "acknowledged") {
       alertCountBySystem[alert.systemId] = (alertCountBySystem[alert.systemId] ?? 0) + 1
     }
   }
+
+  const activeAlertCount = Object.values(alertCountBySystem).reduce((s, n) => s + n, 0)
+
+  // Build system state entries compatible with SystemCard
+  const systemEntries = systems.map((system) => ({
+    system,
+    latestMetrics: null as AgentReport | null,
+    cpuHistory: [] as number[],
+  }))
 
   return (
     <div className="p-4 md:p-6">
@@ -74,23 +62,29 @@ function OverviewPage() {
           )}
         </div>
         <span className="text-xs text-muted-foreground">
-          {mergedSystems.length} {mergedSystems.length === 1 ? "server" : "servers"}
+          {systemEntries.length} {systemEntries.length === 1 ? "server" : "servers"}
         </span>
       </div>
 
-      {mergedSystems.length === 0 ? (
+      {systemsResult._tag === "Initial" ? (
+        <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
+          Connecting...
+        </div>
+      ) : systemsResult._tag === "Failure" ? (
+        <div className="flex items-center justify-center py-24 text-sm text-destructive">
+          Failed to load systems
+        </div>
+      ) : systemEntries.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {mergedSystems.map((entry) =>
-            entry ? (
-              <SystemCard
-                key={entry.system.id}
-                systemState={entry}
-                alertCount={alertCountBySystem[entry.system.id] ?? 0}
-              />
-            ) : null
-          )}
+          {systemEntries.map((entry) => (
+            <SystemCard
+              key={entry.system.id}
+              systemState={entry}
+              alertCount={alertCountBySystem[entry.system.id] ?? 0}
+            />
+          ))}
         </div>
       )}
     </div>

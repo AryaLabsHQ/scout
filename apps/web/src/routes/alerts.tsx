@@ -2,8 +2,8 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { CheckmarkCircle02Icon, Alert02Icon, InformationCircleIcon } from "@hugeicons/core-free-icons"
-import { useScout } from "@/providers/scout-provider"
-import { acknowledgeAlert, resolveAlert, fetchAlerts } from "@/server/alerts"
+import { useAtomValue, useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,10 +12,6 @@ import { formatTimeAgo } from "@/lib/format"
 import type { Alert } from "@scout/shared"
 
 export const Route = createFileRoute("/alerts")({
-  loader: async () => {
-    const alerts = await fetchAlerts()
-    return { alerts }
-  },
   component: AlertsPage,
 })
 
@@ -165,25 +161,30 @@ function AlertSection({ title, alerts, systemMap, onAck, onResolve }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function AlertsPage() {
-  const { alerts: loaderAlerts } = Route.useLoaderData()
-  const { alerts: wsAlerts, systems } = useScout()
+  const alertsResult = useAtomValue(HubClient.query("alerts.list", undefined))
+  const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
+
+  const remoteAlerts: Alert[] = alertsResult._tag === "Success" ? [...alertsResult.value] : []
+  const systems = systemsResult._tag === "Success" ? [...systemsResult.value] : []
 
   // Build system hostname map
   const systemMap: Record<string, string> = {}
-  for (const [id, state] of Object.entries(systems)) {
-    systemMap[id] = state.system.hostname
+  for (const sys of systems) {
+    systemMap[sys.id] = sys.hostname
   }
 
-  // Merge loader alerts with WS-pushed alerts (WS alerts take precedence by id)
-  const [localAlerts, setLocalAlerts] = useState<Alert[]>(loaderAlerts)
+  // Optimistic local overrides — ack/resolve mutations invalidate the
+  // `alerts.list` query via `reactivityKeys: ["alerts"]`, but overrides
+  // bridge the gap between the click and the next query refresh.
+  const [overrides, setOverrides] = useState<Record<string, Alert>>({})
 
-  // Merge WS-triggered alerts into local state
+  const runAck = useAtomSet(HubClient.mutation("alerts.ack"))
+  const runResolve = useAtomSet(HubClient.mutation("alerts.resolve"))
+
+  // Merge: local overrides take precedence over remote
   const allAlertsMap = new Map<string, Alert>()
-  for (const a of localAlerts) allAlertsMap.set(a.id, a)
-  for (const a of wsAlerts) {
-    // WS alerts are always the freshest
-    allAlertsMap.set(a.id, a)
-  }
+  for (const a of remoteAlerts) allAlertsMap.set(a.id, a)
+  for (const [id, a] of Object.entries(overrides)) allAlertsMap.set(id, a)
   const allAlerts = Array.from(allAlertsMap.values()).sort((a, b) => b.triggeredAt - a.triggeredAt)
 
   const activeAlerts = allAlerts.filter((a) => a.state === "active")
@@ -193,21 +194,25 @@ function AlertsPage() {
   const totalActive = activeAlerts.length + acknowledgedAlerts.length
 
   const handleAck = async (alertId: string) => {
-    const updated = await acknowledgeAlert({ data: { alertId } })
-    if (updated) {
-      setLocalAlerts((prev) =>
-        prev.map((a) => (a.id === alertId ? { ...a, state: "acknowledged" as const, acknowledgedAt: updated.acknowledgedAt } : a))
-      )
+    const current = allAlertsMap.get(alertId)
+    if (current) {
+      setOverrides((prev) => ({
+        ...prev,
+        [alertId]: { ...current, state: "acknowledged", acknowledgedAt: Date.now() },
+      }))
     }
+    runAck({ payload: { alertId }, reactivityKeys: ["alerts"] })
   }
 
   const handleResolve = async (alertId: string) => {
-    const updated = await resolveAlert({ data: { alertId } })
-    if (updated) {
-      setLocalAlerts((prev) =>
-        prev.map((a) => (a.id === alertId ? { ...a, state: "resolved" as const, resolvedAt: updated.resolvedAt } : a))
-      )
+    const current = allAlertsMap.get(alertId)
+    if (current) {
+      setOverrides((prev) => ({
+        ...prev,
+        [alertId]: { ...current, state: "resolved", resolvedAt: Date.now() },
+      }))
     }
+    runResolve({ payload: { alertId }, reactivityKeys: ["alerts"] })
   }
 
   return (

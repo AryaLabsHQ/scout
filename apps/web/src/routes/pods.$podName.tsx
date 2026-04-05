@@ -14,8 +14,9 @@ import {
 import { LogViewer } from "@/components/log-viewer"
 import { ConfirmAction } from "@/components/confirm-action"
 import { fetchK8sWorkloads } from "@/server/workloads"
-import { k8sRestartPod } from "@/server/management"
 import { useTerminalPanel } from "@/providers/terminal-provider"
+import { useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { formatBytes, formatDuration } from "@/lib/format"
 import type { K8sPod } from "@scout/shared"
 
@@ -60,6 +61,7 @@ function PodDetailPage() {
   const [logSheetOpen, setLogSheetOpen] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const { openSession } = useTerminalPanel()
+  const runRestartPod = useAtomSet(HubClient.mutation("k8s.restartPod"), { mode: "promise" })
 
   // Load on first render
   useState(() => {
@@ -84,7 +86,9 @@ function PodDetailPage() {
     if (!systemId || !pod) return
     setRestarting(true)
     try {
-      await k8sRestartPod({ data: { systemId, podName: pod.name, namespace: pod.namespace } })
+      await runRestartPod({
+        payload: { agentId: systemId, pod: pod.name, namespace: pod.namespace },
+      })
       toast.success(`Restarted pod ${pod.name}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Restart failed")

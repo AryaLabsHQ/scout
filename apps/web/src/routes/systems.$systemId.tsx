@@ -17,8 +17,8 @@ import {
 
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
 import { fetchDockerContainers, fetchSystemdServices } from "@/server/workloads"
-import { systemdAction, dockerAction, dockerInspect, getUnitFile, editUnitFile } from "@/server/management"
-import { useSystemState } from "@/providers/scout-provider"
+import { useAtomValue, useAtomSet } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
 import { useTerminalPanel } from "@/providers/terminal-provider"
 import { MetricsChart } from "@/components/charts/metrics-chart"
 import { ConfirmAction } from "@/components/confirm-action"
@@ -90,7 +90,9 @@ function buildChartData(
 function SystemDetailPage() {
   const { systemId } = Route.useParams()
   const { detail, metrics: initialMetrics } = Route.useLoaderData()
-  const wsState = useSystemState(systemId)
+  // Live system data from atom query; falls back to loader data when loading
+  const systemResult = useAtomValue(HubClient.query("systems.get", { id: systemId }))
+  const liveSystem = systemResult._tag === "Success" ? systemResult.value : null
   const { sessions, openSession } = useTerminalPanel()
 
   const [selectedRange, setSelectedRange] = useState<TimeRange>("1h")
@@ -115,8 +117,24 @@ function SystemDetailPage() {
   const [inspectSheetOpen, setInspectSheetOpen] = useState(false)
   const [inspectData, setInspectData] = useState<unknown>(null)
 
-  const system = wsState?.system ?? detail
-  const latestMetrics = wsState?.latestMetrics ?? null
+  // Mutation atoms for the three main-component actions
+  const runGetUnitFile = useAtomSet(
+    HubClient.mutation("systemd.unitFile"),
+    { mode: "promise" },
+  )
+  const runEditUnitFile = useAtomSet(
+    HubClient.mutation("systemd.unitFileEdit"),
+    { mode: "promise" },
+  )
+  const runDockerInspect = useAtomSet(
+    HubClient.mutation("docker.inspect"),
+    { mode: "promise" },
+  )
+
+  const system = liveSystem ?? detail
+  // latestMetrics not available via atom queries in Phase D/E — use null placeholder.
+  // Phase F will wire up metrics.subscribe stream for live metrics.
+  const latestMetrics = null as AgentReport | null
 
   // Load Docker/Systemd data when system is loaded
   useState(() => {
@@ -141,7 +159,7 @@ function SystemDetailPage() {
     setUnitFileData(null)
     setUnitFileContent("")
     try {
-      const file = await getUnitFile({ data: { systemId, unit } })
+      const file = await runGetUnitFile({ payload: { agentId: systemId, unit } })
       setUnitFileData(file)
       setUnitFileContent(file.content)
     } catch {
@@ -156,7 +174,13 @@ function SystemDetailPage() {
     if (!unitFileData) return
     setUnitFileLoading(true)
     try {
-      await editUnitFile({ data: { systemId, unit: unitFileData.path.split("/").pop() ?? "", content: unitFileContent } })
+      await runEditUnitFile({
+        payload: {
+          agentId: systemId,
+          unit: unitFileData.path.split("/").pop() ?? "",
+          content: unitFileContent,
+        },
+      })
       toast.success("Unit file saved")
       setUnitFileSheetOpen(false)
     } catch (e) {
@@ -168,11 +192,18 @@ function SystemDetailPage() {
 
   async function openDockerInspect(containerId: string, containerName: string) {
     try {
-      const text = await dockerInspect({ data: { systemId, containerId } })
-      try {
-        setInspectData(JSON.parse(text))
-      } catch {
-        setInspectData(text)
+      const inspected: unknown = await runDockerInspect({
+        payload: { agentId: systemId, containerId },
+      })
+      // Agent returns a parsed object; fall back to re-parsing if it came through as a string
+      if (typeof inspected === "string") {
+        try {
+          setInspectData(JSON.parse(inspected))
+        } catch {
+          setInspectData(inspected)
+        }
+      } else {
+        setInspectData(inspected)
       }
       setInspectSheetOpen(true)
     } catch {
@@ -684,10 +715,19 @@ function DockerSection({
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
+  const runStart = useAtomSet(HubClient.mutation("docker.start"), { mode: "promise" })
+  const runStop = useAtomSet(HubClient.mutation("docker.stop"), { mode: "promise" })
+  const runRestart = useAtomSet(HubClient.mutation("docker.restart"), { mode: "promise" })
+  const runRemove = useAtomSet(HubClient.mutation("docker.remove"), { mode: "promise" })
+
   async function handleDockerAction(containerId: string, name: string, action: "start" | "stop" | "restart" | "remove") {
     setLoadingId(`${containerId}-${action}`)
     try {
-      await dockerAction({ data: { systemId, containerId, action } })
+      const payload = { agentId: systemId, containerId }
+      if (action === "start") await runStart({ payload })
+      else if (action === "stop") await runStop({ payload })
+      else if (action === "restart") await runRestart({ payload })
+      else await runRemove({ payload })
       toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}ed ${name}`)
       onRefresh()
     } catch (e) {
@@ -828,10 +868,21 @@ function SystemdSection({
 }) {
   const [loadingUnit, setLoadingUnit] = useState<string | null>(null)
 
+  const runStart = useAtomSet(HubClient.mutation("systemd.start"), { mode: "promise" })
+  const runStop = useAtomSet(HubClient.mutation("systemd.stop"), { mode: "promise" })
+  const runRestart = useAtomSet(HubClient.mutation("systemd.restart"), { mode: "promise" })
+  const runEnable = useAtomSet(HubClient.mutation("systemd.enable"), { mode: "promise" })
+  const runDisable = useAtomSet(HubClient.mutation("systemd.disable"), { mode: "promise" })
+
   async function handleSystemdAction(unit: string, action: "start" | "stop" | "restart" | "enable" | "disable") {
     setLoadingUnit(`${unit}-${action}`)
     try {
-      await systemdAction({ data: { systemId, unit, action } })
+      const payload = { agentId: systemId, unit }
+      if (action === "start") await runStart({ payload })
+      else if (action === "stop") await runStop({ payload })
+      else if (action === "restart") await runRestart({ payload })
+      else if (action === "enable") await runEnable({ payload })
+      else await runDisable({ payload })
       toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}ed ${unit}`)
       onRefresh()
     } catch (e) {
