@@ -7,7 +7,10 @@
     "build": "bun build --compile src/main.ts --outfile dist/scout-hub",
     "typecheck": "tsgo --noEmit",
     "test": "bun --bun vitest run",
-    "test:watch": "bun --bun vitest"
+    "test:watch": "bun --bun vitest",
+    "db:generate": "bun --bun drizzle-kit generate",
+    "db:migrate": "bun --bun drizzle-kit migrate",
+    "db:push": "bun --bun drizzle-kit push"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.43",
