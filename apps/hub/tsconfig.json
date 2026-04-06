@@ -5,6 +5,10 @@
     "module": "ESNext",
     "lib": ["ES2022"],
     "types": ["node", "bun-types"],
+    "paths": {
+      "@scout/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"],
+      "@scout/plugin-sdk/*": ["../../packages/plugin-sdk/src/*.ts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

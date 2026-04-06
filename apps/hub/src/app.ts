@@ -4,6 +4,7 @@ import { MetricsIngestion } from "./services/metrics-ingestion.js"
 import { MetricsBroadcast } from "./services/metrics-broadcast.js"
 import { Retention } from "./services/retention.js"
 import { AlertEngine } from "./services/alert-engine.js"
+import { PluginRegistry } from "./services/plugin-registry.js"
 import { AgentRegistry } from "./rpc/agent-bridge.js"
 
 // ── Layer 0: Infrastructure (no deps within AppLayer) ───────────────────────
@@ -25,6 +26,7 @@ const AlertEngineLayer = AlertEngine.layer.pipe(
 // ── Layer 3: AgentRegistry (depends on Database) ──────────────────────────
 
 const AgentRegistryLayer = AgentRegistry.layer.pipe(Layer.provide(DatabaseLayer))
+const PluginRegistryLayer = PluginRegistry.layer
 
 // ── AppLayer: merge everything ────────────────────────────────────────────
 
@@ -35,4 +37,5 @@ export const AppLayer = Layer.mergeAll(
   RetentionLayer,
   AlertEngineLayer,
   AgentRegistryLayer,
+  PluginRegistryLayer,
 )

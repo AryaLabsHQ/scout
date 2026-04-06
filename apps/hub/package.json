@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/main.ts",
+    "dev:test": "bun --env-file=.env.test run db:push && bun --env-file=.env.test --hot src/main.ts",
     "build": "bun build --compile src/main.ts --outfile dist/scout-hub",
     "typecheck": "tsgo --noEmit",
     "test": "bun --bun vitest run",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.43",
+    "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
     "drizzle-orm": "^1.0.0-beta.20",
     "effect": "4.0.0-beta.43"

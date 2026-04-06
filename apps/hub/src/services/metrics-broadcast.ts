@@ -1,7 +1,7 @@
 import { Effect, Layer, PubSub, Queue, Ref, Schedule } from "effect"
 import type * as Scope from "effect/Scope"
 import * as ServiceMap from "effect/ServiceMap"
-import type { Alert, AgentReport } from "@scout/shared"
+import type { Alert, SystemMetricsSample } from "@scout/shared"
 
 // PubSub fan-out for real-time metrics and alerts.
 // Metrics are coalesced over a 100ms window before being published.
@@ -11,7 +11,7 @@ import type { Alert, AgentReport } from "@scout/shared"
  * Envelope for every broadcast event. Stream handlers in
  * `rpc/client-handlers.ts` match on `event` and pull typed values out of
  * `data`. Kept loosely-typed here because the producers below emit many
- * different shapes (AgentReport[], Alert, system rows, etc.).
+ * different shapes (SystemMetricsSample[], Alert, system rows, etc.).
  */
 export interface BroadcastEvent {
   readonly event: string
@@ -20,10 +20,10 @@ export interface BroadcastEvent {
 
 export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
   /**
-   * Enqueue an AgentReport for coalesced broadcast.
-   * Reports are batched over 100ms and published as a single event.
+   * Enqueue a core metrics sample for coalesced broadcast.
+   * Samples are batched over 100ms and published as a single event.
    */
-  readonly publishMetrics: (report: AgentReport) => Effect.Effect<void>
+  readonly publishMetrics: (sample: SystemMetricsSample) => Effect.Effect<void>
   /**
    * Publish an alert immediately — bypasses the coalescing queue.
    * Uses "alert.triggered" event type.
@@ -51,16 +51,16 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
       // Main fan-out channel
       const hub = yield* PubSub.bounded<BroadcastEvent>(256)
       // Coalescing buffer — sliding so the newest reports survive overflow
-      const buffer = yield* Queue.sliding<AgentReport>(16)
+      const buffer = yield* Queue.sliding<SystemMetricsSample>(16)
       // Track subscriber count manually (PubSub has no public API for this)
       const subCount = yield* Ref.make(0)
 
       // Background fiber: every 100ms drain the buffer and publish a batch
       const flushLoop = Effect.repeat(
         Effect.gen(function* () {
-          const reports = yield* Queue.clear(buffer)
-          if (reports.length > 0) {
-            const event: BroadcastEvent = { event: "metrics.data", data: reports }
+          const samples = yield* Queue.clear(buffer)
+          if (samples.length > 0) {
+            const event: BroadcastEvent = { event: "metrics.data", data: samples }
             yield* PubSub.publish(hub, event)
           }
         }),
@@ -71,8 +71,8 @@ export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
       yield* Effect.forkScoped(flushLoop)
 
       return {
-        publishMetrics: (report: AgentReport) =>
-          Queue.offer(buffer, report).pipe(Effect.asVoid),
+        publishMetrics: (sample: SystemMetricsSample) =>
+          Queue.offer(buffer, sample).pipe(Effect.asVoid),
 
         publishAlert: (alert: Alert) => {
           const event: BroadcastEvent = { event: "alert.triggered", data: alert }

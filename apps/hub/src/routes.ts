@@ -3,9 +3,15 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { desc, gte, or, eq, count } from "drizzle-orm"
+import type { SystemMetricsSample } from "@scout/shared"
 import { Database } from "./services/database.js"
 import { MetricsIngestion } from "./services/metrics-ingestion.js"
+import { PluginRegistry } from "./services/plugin-registry.js"
 import { AgentRegistry } from "./rpc/agent-bridge.js"
+import {
+  serializePluginActionMetadata,
+  serializePluginStreamMetadata,
+} from "./lib/plugin-input-metadata.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -75,6 +81,7 @@ export const ListSystemsRoute = HttpRouter.add(
       tailscaleIp: row.tailscaleIp,
       status: row.status,
       capabilities: row.capabilities,
+      pluginCapabilities: row.pluginCapabilities,
       lastSeen: row.lastSeen?.getTime() ?? null,
       createdAt: row.createdAt.getTime(),
     }))
@@ -108,6 +115,7 @@ export const GetSystemRoute = HttpRouter.add(
       tailscaleIp: row.tailscaleIp,
       status: row.status,
       capabilities: row.capabilities,
+      pluginCapabilities: row.pluginCapabilities,
       lastSeen: row.lastSeen?.getTime() ?? null,
       createdAt: row.createdAt.getTime(),
       latestMetrics: latest,
@@ -140,7 +148,9 @@ export const GetSystemMetricsRoute = HttpRouter.add(
     const ingestion = yield* MetricsIngestion
     const rows = yield* ingestion.querySystemMetrics(systemId, hours, metricType)
 
-    return yield* HttpServerResponse.json(rows.map((row) => row.data))
+    return yield* HttpServerResponse.json(
+      rows.map((row) => row.data as unknown as SystemMetricsSample),
+    )
   }),
 )
 
@@ -206,54 +216,116 @@ export const ListAlertRulesRoute = HttpRouter.add(
   }),
 )
 
-// ── GET /api/systems/:id/k8s ──────────────────────────────────────────────────
+// ── GET /api/plugins ─────────────────────────────────────────────────────────
 
-export const GetSystemK8sRoute = HttpRouter.add(
+export const ListPluginsRoute = HttpRouter.add(
   "GET",
-  "/api/systems/:id/k8s",
+  "/api/plugins",
   Effect.gen(function* () {
-    const { params } = yield* HttpRouter.RouteContext
-    const systemId = params["id"]!
-    const ingestion = yield* MetricsIngestion
-    const latest = yield* ingestion.queryLatest(systemId)
-    if (!latest || !latest.k8s) {
-      return yield* HttpServerResponse.json(null)
-    }
-    return yield* HttpServerResponse.json(latest.k8s)
+    const plugins = yield* PluginRegistry
+    const loaded = yield* plugins.list()
+    return yield* HttpServerResponse.json(
+      loaded.map((plugin) => ({
+        id: plugin.manifest.id,
+        displayName: plugin.manifest.displayName,
+        version: plugin.manifest.version,
+        description: plugin.manifest.description,
+        runtimes: plugin.manifest.runtimes,
+        capabilities: plugin.manifest.capabilities,
+        entityKinds: plugin.manifest.entityKinds,
+        metrics: plugin.manifest.metrics,
+        actions: plugin.manifest.actions,
+        streams: plugin.manifest.streams,
+        alerts: plugin.manifest.alerts,
+      })),
+    )
   }),
 )
 
-// ── GET /api/systems/:id/docker ───────────────────────────────────────────────
+// ── GET /api/plugins/:id ─────────────────────────────────────────────────────
 
-export const GetSystemDockerRoute = HttpRouter.add(
+export const GetPluginRoute = HttpRouter.add(
   "GET",
-  "/api/systems/:id/docker",
+  "/api/plugins/:id",
   Effect.gen(function* () {
     const { params } = yield* HttpRouter.RouteContext
-    const systemId = params["id"]!
-    const ingestion = yield* MetricsIngestion
-    const latest = yield* ingestion.queryLatest(systemId)
-    if (!latest || !latest.docker) {
-      return yield* HttpServerResponse.json(null)
+    const pluginId = params["id"]!
+    const plugins = yield* PluginRegistry
+    const plugin = yield* plugins.get(pluginId)
+    if (plugin === null) {
+      return HttpServerResponse.text("Not found", { status: 404 })
     }
-    return yield* HttpServerResponse.json(latest.docker)
+
+    return yield* HttpServerResponse.json({
+      manifest: plugin.manifest,
+      ...(plugin.agent !== undefined && {
+        agent: {
+          actions: serializePluginActionMetadata(plugin),
+          streams: serializePluginStreamMetadata(plugin),
+        },
+      }),
+      ...(plugin.hub !== undefined && { hub: { alerts: plugin.hub.alerts ?? [] } }),
+      ...(plugin.web !== undefined && { web: { views: plugin.web.views } }),
+    })
   }),
 )
 
-// ── GET /api/systems/:id/systemd ──────────────────────────────────────────────
+// ── GET /api/systems/:id/plugins/:pluginId/entities ─────────────────────────
 
-export const GetSystemSystemdRoute = HttpRouter.add(
+export const GetSystemPluginEntitiesRoute = HttpRouter.add(
   "GET",
-  "/api/systems/:id/systemd",
+  "/api/systems/:id/plugins/:pluginId/entities",
   Effect.gen(function* () {
     const { params } = yield* HttpRouter.RouteContext
+    const searchParams = yield* HttpServerRequest.ParsedSearchParams
     const systemId = params["id"]!
+    const pluginId = params["pluginId"]!
+    const kind = typeof searchParams["kind"] === "string" ? searchParams["kind"] : undefined
+
     const ingestion = yield* MetricsIngestion
-    const latest = yield* ingestion.queryLatest(systemId)
-    if (!latest || !latest.systemd) {
-      return yield* HttpServerResponse.json(null)
-    }
-    return yield* HttpServerResponse.json(latest.systemd)
+    const entities = yield* ingestion.queryPluginEntities(systemId, pluginId, kind)
+    return yield* HttpServerResponse.json(entities)
+  }),
+)
+
+// ── GET /api/systems/:id/plugins/:pluginId/metrics ──────────────────────────
+
+export const GetSystemPluginMetricsRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/plugins/:pluginId/metrics",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const searchParams = yield* HttpServerRequest.ParsedSearchParams
+    const systemId = params["id"]!
+    const pluginId = params["pluginId"]!
+    const hoursRaw = searchParams["hours"]
+    const metricId = typeof searchParams["metricId"] === "string" ? searchParams["metricId"] : undefined
+    const hours = typeof hoursRaw === "string" ? Number(hoursRaw) || 1 : 1
+
+    const ingestion = yield* MetricsIngestion
+    const points = yield* ingestion.queryPluginMetricPoints(systemId, pluginId, hours, metricId)
+    return yield* HttpServerResponse.json(points)
+  }),
+)
+
+// ── GET /api/systems/:id/plugins/:pluginId/events ───────────────────────────
+
+export const GetSystemPluginEventsRoute = HttpRouter.add(
+  "GET",
+  "/api/systems/:id/plugins/:pluginId/events",
+  Effect.gen(function* () {
+    const { params } = yield* HttpRouter.RouteContext
+    const searchParams = yield* HttpServerRequest.ParsedSearchParams
+    const systemId = params["id"]!
+    const pluginId = params["pluginId"]!
+    const hoursRaw = searchParams["hours"]
+    const eventId =
+      typeof searchParams["eventId"] === "string" ? searchParams["eventId"] : undefined
+    const hours = typeof hoursRaw === "string" ? Number(hoursRaw) || 1 : 1
+
+    const ingestion = yield* MetricsIngestion
+    const events = yield* ingestion.queryPluginEvents(systemId, pluginId, hours, eventId)
+    return yield* HttpServerResponse.json(events)
   }),
 )
 
@@ -269,9 +341,11 @@ export const AppRoutes = Layer.mergeAll(
   ListSystemsRoute,
   GetSystemRoute,
   GetSystemMetricsRoute,
-  GetSystemK8sRoute,
-  GetSystemDockerRoute,
-  GetSystemSystemdRoute,
+  ListPluginsRoute,
+  GetPluginRoute,
+  GetSystemPluginEntitiesRoute,
+  GetSystemPluginMetricsRoute,
+  GetSystemPluginEventsRoute,
   ListAlertsRoute,
   ListAlertRulesRoute,
 )

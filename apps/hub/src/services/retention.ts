@@ -1,7 +1,7 @@
 import { Effect, Layer, Schedule } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import { and, eq, lt } from "drizzle-orm"
-import type { AgentReport } from "@scout/shared"
+import type { SystemMetricsSample } from "@scout/shared"
 import { Database } from "./database.js"
 import * as schema from "../../drizzle/schema.js"
 
@@ -77,7 +77,7 @@ function avgNumbers(values: number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length
 }
 
-function avgArrays(arrays: number[][]): number[] {
+function avgArrays(arrays: ReadonlyArray<ReadonlyArray<number>>): number[] {
   if (arrays.length === 0) return []
   const len = arrays[0].length
   const result: number[] = []
@@ -88,93 +88,78 @@ function avgArrays(arrays: number[][]): number[] {
   return result
 }
 
-function averageReports(reports: AgentReport[]): AgentReport {
-  const first = reports[0]
-  const avgTimestamp = Math.round(avgNumbers(reports.map((r) => r.timestamp)))
+function averageRecordMaps(
+  reports: SystemMetricsSample[],
+  select: (report: SystemMetricsSample) => Record<string, number>,
+): Record<string, number> {
+  const keys = [...new Set(reports.flatMap((report) => Object.keys(select(report))))]
+  return Object.fromEntries(
+    keys.map((key) => [
+      key,
+      avgNumbers(
+        reports
+          .map((report) => select(report)[key])
+          .filter((value): value is number => value !== undefined),
+      ),
+    ]),
+  )
+}
 
-  // CPU
-  const cpuUsage = avgNumbers(reports.map((r) => r.system.cpu.usage))
-  const cpuCores = first.system.cpu.cores
-  const perCore = avgArrays(reports.map((r) => r.system.cpu.perCore))
-  const breakdown = {
-    user: avgNumbers(reports.map((r) => r.system.cpu.breakdown.user)),
-    system: avgNumbers(reports.map((r) => r.system.cpu.breakdown.system)),
-    iowait: avgNumbers(reports.map((r) => r.system.cpu.breakdown.iowait)),
-    steal: avgNumbers(reports.map((r) => r.system.cpu.breakdown.steal)),
-    idle: avgNumbers(reports.map((r) => r.system.cpu.breakdown.idle)),
+function averageNullNumbers(values: Array<number | null>): number | null {
+  const defined = values.filter((value): value is number => value !== null)
+  return defined.length > 0 ? avgNumbers(defined) : null
+}
+
+function averageSamples(samples: SystemMetricsSample[]): SystemMetricsSample {
+  const first = samples[0]
+
+  return {
+    timestamp: Math.round(avgNumbers(samples.map((sample) => sample.timestamp))),
+    cpuPercent: avgNumbers(samples.map((sample) => sample.cpuPercent)),
+    cpuCores: first.cpuCores,
+    cpuPerCorePercent: avgArrays(samples.map((sample) => sample.cpuPerCorePercent)),
+    cpuUserPercent: avgNumbers(samples.map((sample) => sample.cpuUserPercent)),
+    cpuSystemPercent: avgNumbers(samples.map((sample) => sample.cpuSystemPercent)),
+    cpuIowaitPercent: avgNumbers(samples.map((sample) => sample.cpuIowaitPercent)),
+    cpuStealPercent: avgNumbers(samples.map((sample) => sample.cpuStealPercent)),
+    cpuIdlePercent: avgNumbers(samples.map((sample) => sample.cpuIdlePercent)),
+    memoryUsedBytes: avgNumbers(samples.map((sample) => sample.memoryUsedBytes)),
+    memoryTotalBytes: first.memoryTotalBytes,
+    memoryAvailableBytes: avgNumbers(samples.map((sample) => sample.memoryAvailableBytes)),
+    memoryBuffersCacheBytes: avgNumbers(samples.map((sample) => sample.memoryBuffersCacheBytes)),
+    swapUsedBytes: avgNumbers(samples.map((sample) => sample.swapUsedBytes)),
+    swapTotalBytes: first.swapTotalBytes,
+    memoryPercent: avgNumbers(samples.map((sample) => sample.memoryPercent)),
+    diskUsedBytes: averageNullNumbers(samples.map((sample) => sample.diskUsedBytes)),
+    diskTotalBytes: first.diskTotalBytes,
+    diskPercent: averageNullNumbers(samples.map((sample) => sample.diskPercent)),
+    diskReadBytesPerSec: avgNumbers(samples.map((sample) => sample.diskReadBytesPerSec)),
+    diskWriteBytesPerSec: avgNumbers(samples.map((sample) => sample.diskWriteBytesPerSec)),
+    networkRxBytesPerSec: avgNumbers(samples.map((sample) => sample.networkRxBytesPerSec)),
+    networkTxBytesPerSec: avgNumbers(samples.map((sample) => sample.networkTxBytesPerSec)),
+    networkRxBytesPerSecByInterface: averageRecordMaps(
+      samples,
+      (sample) => sample.networkRxBytesPerSecByInterface,
+    ),
+    networkTxBytesPerSecByInterface: averageRecordMaps(
+      samples,
+      (sample) => sample.networkTxBytesPerSecByInterface,
+    ),
+    gpuPercent: averageNullNumbers(samples.map((sample) => sample.gpuPercent)),
+    gpuMemoryPercent: averageNullNumbers(samples.map((sample) => sample.gpuMemoryPercent)),
+    gpuTemperatureCelsius: averageNullNumbers(
+      samples.map((sample) => sample.gpuTemperatureCelsius),
+    ),
+    temperaturesCelsius: averageRecordMaps(
+      samples,
+      (sample) => sample.temperaturesCelsius,
+    ),
+    smartHealthFailing: samples.some((sample) => sample.smartHealthFailing),
+    loadAvg1m: avgNumbers(samples.map((sample) => sample.loadAvg1m)),
+    loadAvg5m: avgNumbers(samples.map((sample) => sample.loadAvg5m)),
+    loadAvg15m: avgNumbers(samples.map((sample) => sample.loadAvg15m)),
+    uptimeSeconds: avgNumbers(samples.map((sample) => sample.uptimeSeconds)),
   }
-
-  // Memory
-  const memory = {
-    used: avgNumbers(reports.map((r) => r.system.memory.used)),
-    total: first.system.memory.total,
-    available: avgNumbers(reports.map((r) => r.system.memory.available)),
-    buffersCache: avgNumbers(reports.map((r) => r.system.memory.buffersCache)),
-    swap: {
-      used: avgNumbers(reports.map((r) => r.system.memory.swap.used)),
-      total: first.system.memory.swap.total,
-    },
-  }
-
-  // Disks — average same mounts
-  const mounts = [...new Set(reports.flatMap((r) => r.system.disks.map((d) => d.mount)))]
-  const disks = mounts.map((mount) => {
-    const ds = reports.flatMap((r) => r.system.disks.filter((d) => d.mount === mount))
-    return {
-      mount,
-      device: ds[0].device,
-      used: avgNumbers(ds.map((d) => d.used)),
-      total: ds[0].total,
-      readBytesPerSec: avgNumbers(ds.map((d) => d.readBytesPerSec)),
-      writeBytesPerSec: avgNumbers(ds.map((d) => d.writeBytesPerSec)),
-    }
-  })
-
-  // Load avg
-  const loadAvg: [number, number, number] = [
-    avgNumbers(reports.map((r) => r.system.loadAvg[0])),
-    avgNumbers(reports.map((r) => r.system.loadAvg[1])),
-    avgNumbers(reports.map((r) => r.system.loadAvg[2])),
-  ]
-
-  const uptime = avgNumbers(reports.map((r) => r.system.uptime))
-
-  // Network — average same interface names
-  const ifnames = [...new Set(reports.flatMap((r) => r.network.map((n) => n.name)))]
-  const network = ifnames.map((name) => {
-    const ifaces = reports.flatMap((r) => r.network.filter((n) => n.name === name))
-    return {
-      name,
-      rxBytesPerSec: avgNumbers(ifaces.map((n) => n.rxBytesPerSec)),
-      txBytesPerSec: avgNumbers(ifaces.map((n) => n.txBytesPerSec)),
-      rxPacketsPerSec: avgNumbers(ifaces.map((n) => n.rxPacketsPerSec)),
-      txPacketsPerSec: avgNumbers(ifaces.map((n) => n.txPacketsPerSec)),
-    }
-  })
-
-  const averaged: AgentReport = {
-    systemId: first.systemId,
-    timestamp: avgTimestamp,
-    system: {
-      cpu: { usage: cpuUsage, cores: cpuCores, perCore, breakdown },
-      memory,
-      disks,
-      loadAvg,
-      uptime,
-    },
-    network,
-  }
-
-  // Carry over optional sections from first record
-  if (first.processes) averaged.processes = first.processes
-  if (first.temperatures) averaged.temperatures = first.temperatures
-  if (first.gpu) averaged.gpu = first.gpu
-  if (first.smart) averaged.smart = first.smart
-  if (first.systemd) averaged.systemd = first.systemd
-  if (first.docker) averaged.docker = first.docker
-  if (first.k8s) averaged.k8s = first.k8s
-
-  return averaged
 }
 
 export class Retention extends ServiceMap.Service<Retention, {
@@ -226,10 +211,10 @@ export class Retention extends ServiceMap.Service<Retention, {
               if (rows.length === 0) continue
 
               // Parse data blobs
-              const reports = rows.map((r) => r.data as unknown as AgentReport)
+              const reports = rows.map((r) => r.data as unknown as SystemMetricsSample)
 
               // Only aggregate if we have records
-              const averaged = averageReports(reports)
+              const averaged = averageSamples(reports)
 
               // Insert aggregated record with target type
               db.insert(schema.systemMetrics)
@@ -263,6 +248,12 @@ export class Retention extends ServiceMap.Service<Retention, {
                 lt(schema.systemMetrics.timestamp, cutoff480),
               ),
             )
+            .run()
+
+          // Plugin-native points are append-only; keep entity state as current rows.
+          const pluginMetricCutoff = new Date(now - policy.raw1mHours * 60 * 60 * 1000)
+          db.delete(schema.pluginMetricPoints)
+            .where(lt(schema.pluginMetricPoints.timestamp, pluginMetricCutoff))
             .run()
           })
 

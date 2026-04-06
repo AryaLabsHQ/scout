@@ -1,9 +1,10 @@
 import { Effect, Layer, Ref } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import { eq, or, gte, desc, and } from "drizzle-orm"
-import type { Alert, AlertRule, AgentReport } from "@scout/shared"
+import type { Alert, AlertRule } from "@scout/shared"
 import { Database } from "./database.js"
 import { MetricsBroadcast } from "./metrics-broadcast.js"
+import type { AlertMetricSample } from "./alert-metrics.js"
 import * as schema from "../../drizzle/schema.js"
 
 // ── Default seed rules ────────────────────────────────────────────────────────
@@ -12,51 +13,9 @@ const DEFAULT_RULES: Omit<typeof schema.alertRules.$inferInsert, "createdAt">[] 
   { id: "default-cpu-usage",       metric: "cpu.usage",       operator: ">",  threshold: 85, consecutiveCount: 3, severity: "warning",  enabled: true },
   { id: "default-memory-percent",  metric: "memory.percent",  operator: ">",  threshold: 90, consecutiveCount: 3, severity: "critical", enabled: true },
   { id: "default-disk-percent",    metric: "disk.percent",    operator: ">",  threshold: 90, consecutiveCount: 1, severity: "critical", enabled: true },
-  { id: "default-pod-restarts",    metric: "pod.restarts",    operator: ">",  threshold: 2,  consecutiveCount: 1, severity: "warning",  enabled: true },
   { id: "default-gpu-temperature", metric: "gpu.temperature", operator: ">",  threshold: 85, consecutiveCount: 3, severity: "warning",  enabled: true },
   { id: "default-smart-health",    metric: "smart.health",    operator: "=",  threshold: 1,  consecutiveCount: 1, severity: "critical", enabled: true },
 ]
-
-// ── Metric extraction ─────────────────────────────────────────────────────────
-
-function extractMetricValue(metric: string, report: AgentReport): number | null {
-  switch (metric) {
-    case "cpu.usage":
-      return report.system.cpu.usage
-
-    case "memory.percent": {
-      const { used, total } = report.system.memory
-      if (total === 0) return null
-      return (used / total) * 100
-    }
-
-    case "disk.percent": {
-      const disks = report.system.disks
-      if (disks.length === 0) return null
-      const maxPct = Math.max(...disks.map((d) => (d.total > 0 ? (d.used / d.total) * 100 : 0)))
-      return maxPct
-    }
-
-    case "pod.restarts": {
-      if (!report.k8s) return null
-      const total = report.k8s.pods.reduce((sum, pod) => sum + pod.restarts, 0)
-      return total
-    }
-
-    case "gpu.temperature": {
-      if (!report.gpu || report.gpu.length === 0) return null
-      return Math.max(...report.gpu.map((g) => g.temperature))
-    }
-
-    case "smart.health": {
-      if (!report.smart || report.smart.length === 0) return null
-      return report.smart.some((d) => d.health === "FAILED") ? 1 : 0
-    }
-
-    default:
-      return null
-  }
-}
 
 // ── Operator comparison ───────────────────────────────────────────────────────
 
@@ -105,10 +64,13 @@ function rowToRule(row: typeof schema.alertRules.$inferSelect): AlertRule {
 export class AlertEngine extends ServiceMap.Service<AlertEngine, {
   readonly _tag: "@scout/AlertEngine"
   /**
-   * Evaluate all enabled rules against the incoming report.
+   * Evaluate all enabled rules against normalized metric samples.
    * Returns the list of newly triggered alerts.
    */
-  readonly evaluate: (systemId: string, report: AgentReport) => Effect.Effect<Alert[]>
+  readonly evaluate: (
+    systemId: string,
+    samples: ReadonlyArray<AlertMetricSample>,
+  ) => Effect.Effect<Alert[]>
   /** All active + acknowledged alerts. */
   readonly getActive: Effect.Effect<Alert[]>
   /** Alerts from the last N hours (resolved included). */
@@ -141,7 +103,10 @@ export class AlertEngine extends ServiceMap.Service<AlertEngine, {
       })
 
       // ── evaluate ───────────────────────────────────────────────────────────
-      const evaluate = (systemId: string, report: AgentReport): Effect.Effect<Alert[]> =>
+      const evaluate = (
+        systemId: string,
+        samples: ReadonlyArray<AlertMetricSample>,
+      ): Effect.Effect<Alert[]> =>
         Effect.gen(function* () {
           // Load enabled rules
           const ruleRows = yield* Effect.sync(() =>
@@ -150,14 +115,15 @@ export class AlertEngine extends ServiceMap.Service<AlertEngine, {
               .all()
           )
           const rules = ruleRows.map(rowToRule)
+          const metricValues = new Map(samples.map((sample) => [sample.metric, sample.value]))
 
           const triggered: Alert[] = []
 
           for (const rule of rules) {
             const key   = `${rule.id}:${systemId}`
-            const value = extractMetricValue(rule.metric, report)
+            const value = metricValues.get(rule.metric) ?? null
 
-            // Skip if metric is not available (e.g. no k8s section)
+            // Skip if metric is not available in the normalized sample set.
             if (value === null) continue
 
             const violated = compare(value, rule.operator, rule.threshold)

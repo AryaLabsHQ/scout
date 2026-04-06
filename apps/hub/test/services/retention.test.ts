@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect"
 import { Database } from "../../src/services/database.js"
 import { Retention } from "../../src/services/retention.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
-import { makeAgentReport } from "../helpers/fixtures.js"
+import { makeSystemMetricsSample } from "../helpers/fixtures.js"
 import * as schema from "../../drizzle/schema.js"
 import { eq, and } from "drizzle-orm"
 import type { ScoutDatabase } from "../../src/services/database.js"
@@ -37,52 +37,40 @@ function insertMetric(
   type: typeof schema.systemMetrics.$inferSelect["type"],
   cpuUsage: number,
 ): void {
-  const report = makeAgentReport({
-    systemId,
+  const sample = makeSystemMetricsSample({
     timestamp: ts,
-    system: {
-      cpu: {
-        usage: cpuUsage,
-        cores: 4,
-        perCore: [cpuUsage, cpuUsage, cpuUsage, cpuUsage],
-        breakdown: { user: cpuUsage * 0.6, system: 5, iowait: 1, steal: 0, idle: 100 - cpuUsage },
-      },
-      memory: {
-        used: 4_000_000_000,
-        total: 8_000_000_000,
-        available: 4_000_000_000,
-        buffersCache: 500_000_000,
-        swap: { used: 0, total: 2_000_000_000 },
-      },
-      disks: [
-        {
-          mount: "/",
-          device: "/dev/sda1",
-          used: 50_000_000_000,
-          total: 100_000_000_000,
-          readBytesPerSec: 1024,
-          writeBytesPerSec: 2048,
-        },
-      ],
-      loadAvg: [1.0, 1.5, 2.0],
-      uptime: 86400,
-    },
-    network: [
-      {
-        name: "eth0",
-        rxBytesPerSec: 1000,
-        txBytesPerSec: 500,
-        rxPacketsPerSec: 10,
-        txPacketsPerSec: 5,
-      },
-    ],
+    cpuPercent: cpuUsage,
+    cpuPerCorePercent: [cpuUsage, cpuUsage, cpuUsage, cpuUsage],
+    cpuUserPercent: cpuUsage * 0.6,
+    cpuSystemPercent: 5,
+    cpuIowaitPercent: 1,
+    cpuIdlePercent: 100 - cpuUsage,
   })
   db.insert(schema.systemMetrics)
     .values({
       systemId,
       timestamp: new Date(ts),
       type,
-      data: report as unknown as Record<string, unknown>,
+      data: sample as unknown as Record<string, unknown>,
+    })
+    .run()
+}
+
+function insertPluginMetricPoint(
+  db: ScoutDatabase,
+  systemId: string,
+  pluginId: string,
+  metricId: string,
+  ts: number,
+  value: number,
+): void {
+  db.insert(schema.pluginMetricPoints)
+    .values({
+      systemId,
+      pluginId,
+      metricId,
+      timestamp: new Date(ts),
+      value,
     })
     .run()
 }
@@ -113,8 +101,8 @@ describe("Retention service", () => {
 
         expect(rollups.length).toBeGreaterThanOrEqual(1)
 
-        const averaged = rollups[0].data as ReturnType<typeof makeAgentReport>
-        expect(averaged.system.cpu.usage).toBeCloseTo(55, 1)
+        const averaged = rollups[0].data as ReturnType<typeof makeSystemMetricsSample>
+        expect(averaged.cpuPercent).toBeCloseTo(55, 1)
       }),
     ))
 
@@ -139,8 +127,8 @@ describe("Retention service", () => {
           .all()
 
         expect(rollups.length).toBeGreaterThanOrEqual(1)
-        const avg = rollups[0].data as ReturnType<typeof makeAgentReport>
-        expect(avg.system.cpu.usage).toBeCloseTo(50, 0)
+        const avg = rollups[0].data as ReturnType<typeof makeSystemMetricsSample>
+        expect(avg.cpuPercent).toBeCloseTo(50, 0)
       }),
     ))
 
@@ -196,6 +184,46 @@ describe("Retention service", () => {
           .all()
 
         expect(remaining).toHaveLength(1)
+      }),
+    ))
+
+  it("cleanup: deletes old plugin metric points but keeps current plugin entities", () =>
+    run(
+      Effect.gen(function* () {
+        const db = yield* Database
+        const svc = yield* Retention
+        const systemId = "sys-plugin-retention-01"
+        const oldTs = Date.now() - 2 * 60 * 60 * 1000
+
+        insertSystem(db, systemId, oldTs)
+        db.insert(schema.pluginEntities)
+          .values({
+            key: `${systemId}:systemd:systemd.unit:nginx.service`,
+            systemId,
+            pluginId: "systemd",
+            kind: "systemd.unit",
+            entityId: "nginx.service",
+            observedAt: new Date(oldTs),
+            status: "active",
+          })
+          .run()
+        insertPluginMetricPoint(db, systemId, "systemd", "units.total", oldTs, 12)
+
+        yield* svc.runOnce()
+
+        const metricPoints = db
+          .select()
+          .from(schema.pluginMetricPoints)
+          .where(eq(schema.pluginMetricPoints.systemId, systemId))
+          .all()
+        expect(metricPoints).toHaveLength(0)
+
+        const entities = db
+          .select()
+          .from(schema.pluginEntities)
+          .where(eq(schema.pluginEntities.systemId, systemId))
+          .all()
+        expect(entities).toHaveLength(1)
       }),
     ))
 })

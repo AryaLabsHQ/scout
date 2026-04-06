@@ -32,6 +32,7 @@ import {
   makeDuplexRpcProtocols,
 } from "@scout/shared"
 import type { AgentCapabilities, AgentInfo, System } from "@scout/shared"
+import type { PluginCapability } from "@scout/plugin-sdk"
 import { Database } from "../services/database.js"
 import * as schema from "../../drizzle/schema.js"
 import { AgentHandlersLive } from "./agent-handlers.js"
@@ -80,6 +81,7 @@ export class AgentRegistry extends ServiceMap.Service<
     readonly register: (
       info: AgentInfo,
       capabilities: AgentCapabilities,
+      pluginCapabilities: ReadonlyArray<PluginCapability>,
       client: HubAgentClient,
     ) => Effect.Effect<System>
 
@@ -110,6 +112,7 @@ export class AgentRegistry extends ServiceMap.Service<
       const register = (
         info: AgentInfo,
         capabilities: AgentCapabilities,
+        pluginCapabilities: ReadonlyArray<PluginCapability>,
         client: HubAgentClient,
       ): Effect.Effect<System> =>
         Effect.gen(function* () {
@@ -142,6 +145,7 @@ export class AgentRegistry extends ServiceMap.Service<
                 hostname: info.hostname,
                 status: "online",
                 capabilities: capabilities as unknown,
+                pluginCapabilities: pluginCapabilities as unknown,
                 lastSeen: nowDate,
                 createdAt: nowDate,
               })
@@ -151,6 +155,7 @@ export class AgentRegistry extends ServiceMap.Service<
                   hostname: info.hostname,
                   status: "online",
                   capabilities: capabilities as unknown,
+                  pluginCapabilities: pluginCapabilities as unknown,
                   lastSeen: nowDate,
                 },
               })
@@ -174,10 +179,9 @@ export class AgentRegistry extends ServiceMap.Service<
                 temperature: false,
                 gpu: false,
                 smart: false,
-                systemd: false,
-                docker: false,
-                k8s: false,
               },
+              pluginCapabilities:
+                (row.pluginCapabilities as System["pluginCapabilities"]) ?? [],
               lastSeen: row.lastSeen?.getTime() ?? now,
               createdAt: row.createdAt.getTime(),
             } satisfies System
@@ -283,6 +287,7 @@ export class RegisterAgent extends ServiceMap.Service<
   (
     info: AgentInfo,
     capabilities: AgentCapabilities,
+    pluginCapabilities: ReadonlyArray<PluginCapability>,
   ) => Effect.Effect<{ readonly systemId: string }>
 >()("@scout/RegisterAgent") {}
 
@@ -306,7 +311,7 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
     const registerFn = yield* RegisterAgent
     const expectedToken = yield* Config.string("SCOUT_TOKEN")
 
-    return ({ token, hostname, version, platform, capabilities }) =>
+    return ({ token, hostname, version, platform, capabilities, pluginCapabilities }) =>
       Effect.gen(function* () {
         if (token !== expectedToken) {
           return yield* Effect.fail(
@@ -325,7 +330,7 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
         }
 
         yield* Effect.logInfo("agent.connect: accepted", { hostname })
-        return yield* registerFn(info, capabilities)
+        return yield* registerFn(info, capabilities, pluginCapabilities ?? [])
       })
   }),
 )
@@ -360,10 +365,11 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
       const registerAgentFn = (
         info: AgentInfo,
         capabilities: AgentCapabilities,
+        pluginCapabilities: ReadonlyArray<PluginCapability>,
       ): Effect.Effect<{ readonly systemId: string }> =>
         Effect.gen(function* () {
           yield* Ref.set(agentIdRef, info.systemId)
-          yield* registry.register(info, capabilities, hubAgentClient)
+          yield* registry.register(info, capabilities, pluginCapabilities, hubAgentClient)
           return { systemId: info.systemId }
         })
 

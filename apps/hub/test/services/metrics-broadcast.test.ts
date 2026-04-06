@@ -1,35 +1,48 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, PubSub } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import type { AgentReport, Alert } from "@scout/shared"
+import type { Alert, SystemMetricsSample } from "@scout/shared"
 import { MetricsBroadcast, type BroadcastEvent } from "../../src/services/metrics-broadcast.js"
 
 // ---------------------------------------------------------------------------
 // Minimal fixtures
 // ---------------------------------------------------------------------------
 
-const makeReport = (systemId: string): AgentReport => ({
-  systemId,
+const makeSample = (): SystemMetricsSample => ({
   timestamp: Date.now(),
-  system: {
-    cpu: {
-      usage: 10,
-      cores: 4,
-      perCore: [10, 10, 10, 10],
-      breakdown: { user: 5, system: 5, iowait: 0, steal: 0, idle: 90 },
-    },
-    memory: {
-      used: 1024,
-      total: 8192,
-      available: 7168,
-      buffersCache: 512,
-      swap: { used: 0, total: 2048 },
-    },
-    disks: [],
-    loadAvg: [0.1, 0.2, 0.3],
-    uptime: 3600,
-  },
-  network: [],
+  cpuPercent: 10,
+  cpuCores: 4,
+  cpuPerCorePercent: [10, 10, 10, 10],
+  cpuUserPercent: 5,
+  cpuSystemPercent: 5,
+  cpuIowaitPercent: 0,
+  cpuStealPercent: 0,
+  cpuIdlePercent: 90,
+  memoryUsedBytes: 1024,
+  memoryTotalBytes: 8192,
+  memoryAvailableBytes: 7168,
+  memoryBuffersCacheBytes: 512,
+  swapUsedBytes: 0,
+  swapTotalBytes: 2048,
+  memoryPercent: 12.5,
+  diskUsedBytes: null,
+  diskTotalBytes: null,
+  diskPercent: null,
+  diskReadBytesPerSec: 0,
+  diskWriteBytesPerSec: 0,
+  networkRxBytesPerSec: 0,
+  networkTxBytesPerSec: 0,
+  networkRxBytesPerSecByInterface: {},
+  networkTxBytesPerSecByInterface: {},
+  gpuPercent: null,
+  gpuMemoryPercent: null,
+  gpuTemperatureCelsius: null,
+  temperaturesCelsius: {},
+  smartHealthFailing: false,
+  loadAvg1m: 0.1,
+  loadAvg5m: 0.2,
+  loadAvg15m: 0.3,
+  uptimeSeconds: 3600,
 })
 
 const makeAlert = (id: string): Alert => ({
@@ -72,9 +85,9 @@ describe("MetricsBroadcast", () => {
               const sub = yield* svc.subscribe()
 
               // Publish 3 reports without advancing the clock
-              yield* svc.publishMetrics(makeReport("sys-1"))
-              yield* svc.publishMetrics(makeReport("sys-2"))
-              yield* svc.publishMetrics(makeReport("sys-3"))
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 11 })
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 22 })
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 33 })
 
               // Fork taking 1 event — this will suspend until the flush fires
               const fiber = yield* Effect.forkChild(PubSub.take(sub), {
@@ -91,13 +104,9 @@ describe("MetricsBroadcast", () => {
 
           const event = sub as BroadcastEvent
           expect(event.event).toBe("metrics.data")
-          const reports = event.data as AgentReport[]
-          expect(reports).toHaveLength(3)
-          expect(reports.map((r) => r.systemId)).toEqual([
-            "sys-1",
-            "sys-2",
-            "sys-3",
-          ])
+          const samples = event.data as SystemMetricsSample[]
+          expect(samples).toHaveLength(3)
+          expect(samples.map((sample) => sample.cpuPercent)).toEqual([11, 22, 33])
         }),
       ),
   )
@@ -121,27 +130,27 @@ describe("MetricsBroadcast", () => {
               }).pipe(Effect.forkChild({ startImmediately: true }))
 
               // Publish first metric and flush
-              yield* svc.publishMetrics(makeReport("sys-1"))
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 11 })
               yield* TestClock.adjust("200 millis")
 
               // Publish second metric and flush
-              yield* svc.publishMetrics(makeReport("sys-2"))
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 22 })
               yield* TestClock.adjust("200 millis")
 
               // Publish third metric and flush
-              yield* svc.publishMetrics(makeReport("sys-3"))
+              yield* svc.publishMetrics({ ...makeSample(), cpuPercent: 33 })
               yield* TestClock.adjust("200 millis")
 
               const [e1, e2, e3] = yield* Fiber.join(collectFiber)
 
               expect(e1.event).toBe("metrics.data")
-              expect((e1.data as AgentReport[])[0].systemId).toBe("sys-1")
+              expect((e1.data as SystemMetricsSample[])[0]?.cpuPercent).toBe(11)
 
               expect(e2.event).toBe("metrics.data")
-              expect((e2.data as AgentReport[])[0].systemId).toBe("sys-2")
+              expect((e2.data as SystemMetricsSample[])[0]?.cpuPercent).toBe(22)
 
               expect(e3.event).toBe("metrics.data")
-              expect((e3.data as AgentReport[])[0].systemId).toBe("sys-3")
+              expect((e3.data as SystemMetricsSample[])[0]?.cpuPercent).toBe(33)
             }),
           )
         }),
@@ -195,7 +204,7 @@ describe("MetricsBroadcast", () => {
               startImmediately: true,
             })
 
-            yield* svc.publishMetrics(makeReport("sys-1"))
+            yield* svc.publishMetrics(makeSample())
             yield* TestClock.adjust("100 millis")
 
             const [e1, e2] = yield* Effect.all([

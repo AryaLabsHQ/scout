@@ -21,8 +21,9 @@ import { MetricsIngestion } from "../src/services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../src/services/metrics-broadcast.js"
 import { Retention } from "../src/services/retention.js"
 import { AlertEngine } from "../src/services/alert-engine.js"
+import { PluginRegistry } from "../src/services/plugin-registry.js"
 import { TestDatabaseLayer } from "./helpers/test-database.js"
-import { makeAgentReport } from "./helpers/fixtures.js"
+import { makeCoreMetricsPayload } from "./helpers/fixtures.js"
 import { AppRoutes } from "../src/routes.js"
 import type { AgentCapabilities, AgentInfo } from "@scout/shared"
 
@@ -37,6 +38,7 @@ const TestAppLayer = Layer.mergeAll(
   AlertEngine.layer.pipe(
     Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
   ),
+  PluginRegistry.layer,
 )
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -48,9 +50,6 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
   temperature: false,
   gpu: false,
   smart: false,
-  systemd: false,
-  docker: false,
-  k8s: false,
 }
 
 // Service-level pipeline tests never call through the typed HubAgentClient —
@@ -81,6 +80,7 @@ describe("E2E service pipeline", () => {
           yield* registry.register(
             makeAgentInfo("test-agent"),
             DEFAULT_CAPABILITIES,
+            [],
             MOCK_HUB_AGENT_CLIENT,
           )
 
@@ -91,11 +91,10 @@ describe("E2E service pipeline", () => {
           // Step 2-3: Ingest 3 reports
           const now = Date.now()
           for (let i = 0; i < 3; i++) {
-            const report = makeAgentReport({
-              systemId: "test-agent",
+            const payload = makeCoreMetricsPayload("test-agent", {
               timestamp: now + i * 60_000,
             })
-            yield* ingestion.ingest(report)
+            yield* ingestion.ingest(payload)
           }
 
           // Verify they are stored
@@ -126,12 +125,11 @@ describe("E2E service pipeline", () => {
 
               // Ingest and publish 2 reports
               for (let i = 0; i < 2; i++) {
-                const report = makeAgentReport({
-                  systemId: "test-broadcast",
+                const payload = makeCoreMetricsPayload("test-broadcast", {
                   timestamp: Date.now() + i * 60_000,
                 })
-                yield* ingestion.ingest(report)
-                yield* broadcast.publishMetrics(report)
+                yield* ingestion.ingest(payload)
+                yield* broadcast.publishMetrics(payload.sample)
               }
 
               // Step 5: Advance time to trigger coalescing flush
@@ -157,22 +155,20 @@ describe("E2E service pipeline", () => {
           const ingestion = yield* MetricsIngestion
 
           const baseTime = Date.now()
-          const reports = Array.from({ length: 3 }, (_, i) =>
-            makeAgentReport({
-              systemId: "test-query",
+          const payloads = Array.from({ length: 3 }, (_, i) =>
+            makeCoreMetricsPayload("test-query", {
               timestamp: baseTime + i * 60_000,
             }),
           )
 
           // Ingest all 3
-          for (const report of reports) {
-            yield* ingestion.ingest(report)
+          for (const payload of payloads) {
+            yield* ingestion.ingest(payload)
           }
 
           // Step 6: Query latest — should return the last report
           const latest = yield* ingestion.queryLatest("test-query")
           expect(latest).not.toBeNull()
-          expect(latest?.systemId).toBe("test-query")
           expect(latest?.timestamp).toBe(baseTime + 2 * 60_000) // most recent
 
           // Step 7-8: Query all metrics
@@ -194,6 +190,7 @@ describe("E2E service pipeline", () => {
           yield* registry.register(
             makeAgentInfo("test-grace"),
             DEFAULT_CAPABILITIES,
+            [],
             MOCK_HUB_AGENT_CLIENT,
           )
 
@@ -226,11 +223,10 @@ describe("E2E service pipeline", () => {
           const retention = yield* Retention
 
           // Insert some data so retention has something to process
-          const report = makeAgentReport({
-            systemId: "test-retention",
+          const payload = makeCoreMetricsPayload("test-retention", {
             timestamp: Date.now(),
           })
-          yield* ingestion.ingest(report)
+          yield* ingestion.ingest(payload)
 
           // runOnce should not fail
           yield* retention.runOnce()
@@ -282,11 +278,10 @@ describe("E2E HTTP routes", () => {
 
       // Seed via service
       const ingestion = yield* MetricsIngestion
-      const report = makeAgentReport({
-        systemId: "http-test-system",
+      const payload = makeCoreMetricsPayload("http-test-system", {
         timestamp: Date.now(),
       })
-      yield* ingestion.ingest(report)
+      yield* ingestion.ingest(payload)
 
       const response = yield* HttpClient.get("/api/systems")
       expect(response.status).toBe(200)
@@ -341,7 +336,7 @@ describe("E2E HTTP routes", () => {
       const systemId = "http-metrics-test"
       for (let i = 0; i < 2; i++) {
         yield* ingestion.ingest(
-          makeAgentReport({ systemId, timestamp: Date.now() + i * 60_000 }),
+          makeCoreMetricsPayload(systemId, { timestamp: Date.now() + i * 60_000 }),
         )
       }
 

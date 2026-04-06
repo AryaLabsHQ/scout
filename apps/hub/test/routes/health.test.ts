@@ -16,8 +16,9 @@ import { MetricsIngestion } from "../../src/services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
 import { Retention } from "../../src/services/retention.js"
 import { AlertEngine } from "../../src/services/alert-engine.js"
+import { PluginRegistry } from "../../src/services/plugin-registry.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
-import { makeAgentReport } from "../helpers/fixtures.js"
+import { makeCoreMetricsPayload } from "../helpers/fixtures.js"
 import { AppRoutes } from "../../src/routes.js"
 import type { AgentCapabilities, AgentInfo } from "@scout/shared"
 
@@ -32,6 +33,7 @@ const TestAppLayer = Layer.mergeAll(
   AlertEngine.layer.pipe(
     Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
   ),
+  PluginRegistry.layer,
 )
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -43,9 +45,6 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
   temperature: false,
   gpu: false,
   smart: false,
-  systemd: false,
-  docker: false,
-  k8s: false,
 }
 
 // Minimal mock — tests exercising /health never call through the typed
@@ -104,6 +103,7 @@ describe("GET /health", () => {
       yield* registry.register(
         makeAgentInfo("health-test-agent"),
         DEFAULT_CAPABILITIES,
+        [],
         MOCK_HUB_AGENT_CLIENT,
       )
 
@@ -119,10 +119,10 @@ describe("GET /health", () => {
 
       const ingestion = yield* MetricsIngestion
       yield* ingestion.ingest(
-        makeAgentReport({ systemId: "health-sys-1", timestamp: Date.now() }),
+        makeCoreMetricsPayload("health-sys-1", { timestamp: Date.now() }),
       )
       yield* ingestion.ingest(
-        makeAgentReport({ systemId: "health-sys-2", timestamp: Date.now() }),
+        makeCoreMetricsPayload("health-sys-2", { timestamp: Date.now() }),
       )
 
       const response = yield* HttpClient.get("/health")

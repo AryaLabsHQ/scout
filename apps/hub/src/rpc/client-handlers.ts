@@ -2,11 +2,10 @@
  * ClientHubRpcs handler implementations.
  *
  * Cleanup pass:
- *   - All management mutations (systemd.*, docker.*, k8s.*) now call the
- *     typed HubAgentRpcs client directly via AgentRegistry.getClient. No
+ *   - Generic management mutations now call the typed HubAgentRpcs client directly via AgentRegistry.getClient. No
  *     fallback to old AgentManager.call() — if an agent isn't connected,
  *     the mutation fails with ManagementError({code: "not-connected"}).
- *   - logs.tail, terminal.open, terminal.input/resize/close all wire
+ *   - terminal.open, terminal.input/resize/close all wire
  *     through the per-agent HubAgentClient the same way.
  *   - alertRules.update and systems.remove are new RPCs added in the
  *     cleanup pass to replace REST server functions for the settings page.
@@ -15,7 +14,7 @@
 import { Effect, PubSub, Queue, Ref, Stream } from "effect"
 import type { Scope } from "effect/Scope"
 import { eq } from "drizzle-orm"
-import type { AgentReport, Alert, LogBatch, TerminalOutput } from "@scout/shared"
+import type { Alert, LogBatch, System, SystemMetricsSample, TerminalOutput } from "@scout/shared"
 import type { BroadcastEvent } from "../services/metrics-broadcast.js"
 import {
   ClientHubRpcs,
@@ -44,16 +43,13 @@ function rowToSystem(row: typeof schema.systems.$inferSelect) {
     hostname: row.hostname,
     tailscaleIp: row.tailscaleIp ?? null,
     status: row.status,
-    capabilities: (row.capabilities as {
+      capabilities: (row.capabilities as {
       system: boolean
       network: boolean
       process: boolean
       temperature: boolean
       gpu: boolean
       smart: boolean
-      systemd: boolean
-      docker: boolean
-      k8s: boolean
     }) ?? {
       system: false,
       network: false,
@@ -61,10 +57,8 @@ function rowToSystem(row: typeof schema.systems.$inferSelect) {
       temperature: false,
       gpu: false,
       smart: false,
-      systemd: false,
-      docker: false,
-      k8s: false,
     },
+    pluginCapabilities: (row.pluginCapabilities as System["pluginCapabilities"]) ?? [],
     lastSeen: row.lastSeen?.getTime() ?? Date.now(),
     createdAt: row.createdAt.getTime(),
   }
@@ -214,7 +208,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
         const hours = rangeToHours(range)
         return mi.querySystemMetrics(id, hours).pipe(
           Effect.map((rows) =>
-            rows.map((r) => r.data as unknown as AgentReport),
+            rows.map((r) => r.data as unknown as SystemMetricsSample),
           ),
         )
       },
@@ -297,86 +291,14 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           return updated
         }),
 
-      // ── Systemd mutations ─────────────────────────────────────────────────
-
-      "systemd.start": ({ agentId, unit }) =>
+      "plugins.runAction": ({ agentId, pluginId, actionId, entity, input }) =>
         withAgent(registry, agentId, (client) =>
-          client["systemd.start"]({ unit }).pipe(Effect.asVoid),
-        ),
-
-      "systemd.stop": ({ agentId, unit }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.stop"]({ unit }).pipe(Effect.asVoid),
-        ),
-
-      "systemd.restart": ({ agentId, unit }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.restart"]({ unit }).pipe(Effect.asVoid),
-        ),
-
-      "systemd.enable": ({ agentId, unit }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.enable"]({ unit }).pipe(Effect.asVoid),
-        ),
-
-      "systemd.disable": ({ agentId, unit }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.disable"]({ unit }).pipe(Effect.asVoid),
-        ),
-
-      "systemd.reload": ({ agentId }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.reload"]({}).pipe(Effect.asVoid),
-        ),
-
-      "systemd.unitFile": ({ agentId, unit }) =>
-        withAgent(registry, agentId, (client) => client["systemd.unitFile"]({ unit })),
-
-      "systemd.unitFileEdit": ({ agentId, unit, content }) =>
-        withAgent(registry, agentId, (client) =>
-          client["systemd.unitFileEdit"]({ unit, content }).pipe(Effect.asVoid),
-        ),
-
-      // ── Docker mutations ──────────────────────────────────────────────────
-
-      "docker.start": ({ agentId, containerId }) =>
-        withAgent(registry, agentId, (client) =>
-          client["docker.start"]({ containerId }).pipe(Effect.asVoid),
-        ),
-
-      "docker.stop": ({ agentId, containerId }) =>
-        withAgent(registry, agentId, (client) =>
-          client["docker.stop"]({ containerId }).pipe(Effect.asVoid),
-        ),
-
-      "docker.restart": ({ agentId, containerId }) =>
-        withAgent(registry, agentId, (client) =>
-          client["docker.restart"]({ containerId }).pipe(Effect.asVoid),
-        ),
-
-      "docker.remove": ({ agentId, containerId }) =>
-        withAgent(registry, agentId, (client) =>
-          client["docker.remove"]({ containerId }).pipe(Effect.asVoid),
-        ),
-
-      "docker.inspect": ({ agentId, containerId }) =>
-        withAgent(registry, agentId, (client) => client["docker.inspect"]({ containerId })),
-
-      // ── K8s mutations ─────────────────────────────────────────────────────
-
-      "k8s.scale": ({ agentId, namespace, deployment, replicas }) =>
-        withAgent(registry, agentId, (client) =>
-          client["k8s.scale"]({ namespace, deployment, replicas }).pipe(Effect.asVoid),
-        ),
-
-      "k8s.restartPod": ({ agentId, namespace, pod }) =>
-        withAgent(registry, agentId, (client) =>
-          client["k8s.restartPod"]({ namespace, pod }).pipe(Effect.asVoid),
-        ),
-
-      "k8s.describe": ({ agentId, resource, name, namespace }) =>
-        withAgent(registry, agentId, (client) =>
-          client["k8s.describe"]({ resource, name, namespace }),
+          client["plugins.runAction"]({
+            pluginId,
+            actionId,
+            ...(entity !== undefined && { entity }),
+            ...(input !== undefined && { input }),
+          }),
         ),
 
       // ── Alert rule + system management (settings page) ────────────────────
@@ -447,19 +369,14 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
       // ── Terminal — wired through AgentRpcRegistry ─────────────────────────
 
-      "terminal.open": ({ agentId, mode, cols, rows, podName, namespace, container }) =>
+      "terminal.open": ({ agentId, mode, cols, rows }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
-          // Omit optionalKey fields when undefined — Schema.optionalKey rejects
-          // explicit `undefined`, only missing keys are allowed.
           const outputStream: Stream.Stream<TerminalOutput, ManagementError | RpcClientError> =
             client["terminal.open"]({
               mode,
               cols,
               rows,
-              ...(podName !== undefined && { podName }),
-              ...(namespace !== undefined && { namespace }),
-              ...(container !== undefined && { container }),
             })
 
           const queue = yield* Queue.unbounded<TerminalOutput>()
@@ -553,10 +470,10 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       // ── Streams ───────────────────────────────────────────────────────────
 
       "metrics.subscribe": () =>
-        subscribeToBroadcast<AgentReport>(
+        subscribeToBroadcast<SystemMetricsSample>(
           broadcast,
           "metrics.data",
-          (event) => (event.data as AgentReport[] | undefined) ?? [],
+          (event) => (event.data as SystemMetricsSample[] | undefined) ?? [],
         ),
 
       "alerts.subscribe": () =>
@@ -600,20 +517,15 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           },
         ),
 
-      // ── logs.tail — wired through AgentRpcRegistry ────────────────────────
-
-      "logs.tail": ({ agentId, source, target, namespace, container, tail }) =>
+      "plugins.logs": ({ agentId, pluginId, streamId, entity, input }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
-          // Omit optionalKey fields when undefined — Schema.optionalKey rejects
-          // explicit `undefined`, only missing keys are allowed.
           const logStream: Stream.Stream<LogBatch, ManagementError | RpcClientError> =
-            client["logs.tail"]({
-              source,
-              target,
-              ...(namespace !== undefined && { namespace }),
-              ...(container !== undefined && { container }),
-              ...(tail !== undefined && { tail }),
+            client["plugins.logs"]({
+              pluginId,
+              streamId,
+              ...(entity !== undefined && { entity }),
+              ...(input !== undefined && { input }),
             })
           return yield* streamThroughAgent(logStream)
         }),

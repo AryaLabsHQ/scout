@@ -8,25 +8,60 @@
  * agent in one shot.
  */
 
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { AgentHubRpcs } from "@scout/shared"
+import type { PluginCollectionResult } from "@scout/plugin-sdk"
 import { MetricsIngestion } from "../services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../services/metrics-broadcast.js"
 import { AlertEngine } from "../services/alert-engine.js"
+import {
+  alertMetricSamplesFromPluginCollection,
+  alertMetricSamplesFromCoreMetrics,
+} from "../services/alert-metrics.js"
 
-export const AgentHandlersLive = AgentHubRpcs.toLayerHandler(
+const CoreMetricsHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.report",
   Effect.gen(function* () {
     const mi = yield* MetricsIngestion
     const broadcast = yield* MetricsBroadcast
     const alerts = yield* AlertEngine
 
-    return (report) =>
+    return (payload) =>
       Effect.gen(function* () {
-        const typedReport = report as Parameters<typeof mi.ingest>[0]
-        yield* mi.ingest(typedReport)
-        yield* broadcast.publishMetrics(typedReport)
-        yield* alerts.evaluate(typedReport.systemId, typedReport)
+        const typedPayload = payload as Parameters<typeof mi.ingest>[0]
+        yield* mi.ingest(typedPayload)
+        yield* broadcast.publishMetrics(typedPayload.sample)
+        yield* alerts.evaluate(
+          typedPayload.systemId,
+          alertMetricSamplesFromCoreMetrics(typedPayload.sample),
+        )
       })
   }),
+)
+
+const AgentPluginCollectionHandlerLive = AgentHubRpcs.toLayerHandler(
+  "agent.reportPluginCollection",
+  Effect.gen(function* () {
+    const mi = yield* MetricsIngestion
+    const alerts = yield* AlertEngine
+
+    return ({
+      systemId,
+      collection,
+    }: {
+      systemId: string
+      collection: PluginCollectionResult
+    }) =>
+      Effect.gen(function* () {
+        yield* mi.ingestPluginCollection(systemId, collection)
+        yield* alerts.evaluate(
+          systemId,
+          alertMetricSamplesFromPluginCollection(collection),
+        )
+      })
+  }),
+)
+
+export const AgentHandlersLive = CoreMetricsHandlerLive.pipe(
+  Layer.merge(AgentPluginCollectionHandlerLive),
 )

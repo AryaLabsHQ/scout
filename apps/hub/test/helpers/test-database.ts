@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS systems (
   tailscale_ip TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   capabilities TEXT NOT NULL DEFAULT '{}',
+  plugin_capabilities TEXT NOT NULL DEFAULT '[]',
   last_seen INTEGER,
   created_at INTEGER NOT NULL
 );
@@ -25,6 +26,65 @@ CREATE TABLE IF NOT EXISTS system_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_metrics_system_time_type
   ON system_metrics (system_id, timestamp, type);
+
+CREATE TABLE IF NOT EXISTS plugin_entities (
+  key TEXT PRIMARY KEY,
+  system_id TEXT NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  plugin_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  display_name TEXT,
+  status TEXT,
+  labels TEXT,
+  spec TEXT,
+  state TEXT,
+  relationships TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_entities_system_plugin_kind
+  ON plugin_entities (system_id, plugin_id, kind);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_entities_system_plugin_observed
+  ON plugin_entities (system_id, plugin_id, observed_at);
+
+CREATE TABLE IF NOT EXISTS plugin_metric_points (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  system_id TEXT NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  plugin_id TEXT NOT NULL,
+  metric_id TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  entity_kind TEXT,
+  entity_id TEXT,
+  value REAL NOT NULL,
+  unit TEXT,
+  tags TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_metric_points_system_plugin_metric_time
+  ON plugin_metric_points (system_id, plugin_id, metric_id, timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_metric_points_system_plugin_entity_time
+  ON plugin_metric_points (system_id, plugin_id, entity_kind, entity_id, timestamp);
+
+CREATE TABLE IF NOT EXISTS plugin_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  system_id TEXT NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  plugin_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  entity_kind TEXT,
+  entity_id TEXT,
+  severity TEXT NOT NULL,
+  message TEXT,
+  payload TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_events_system_plugin_time
+  ON plugin_events (system_id, plugin_id, timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_plugin_events_system_plugin_event_time
+  ON plugin_events (system_id, plugin_id, event_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS alert_rules (
   id TEXT PRIMARY KEY,
