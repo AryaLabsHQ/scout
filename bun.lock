@@ -17,6 +17,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@effect/platform-bun": "4.0.0-beta.43",
+        "@scout/plugin-sdk": "workspace:*",
         "@scout/shared": "workspace:*",
         "effect": "4.0.0-beta.43",
         "yaml": "^2.8.3",
@@ -34,6 +35,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@effect/platform-bun": "4.0.0-beta.43",
+        "@scout/plugin-sdk": "workspace:*",
         "@scout/shared": "workspace:*",
         "drizzle-orm": "^1.0.0-beta.20",
         "effect": "4.0.0-beta.43",
@@ -95,10 +97,61 @@
         "vite": "^7.2.4",
       },
     },
+    "packages/plugin-docker": {
+      "name": "@scout/plugin-docker",
+      "version": "0.0.1",
+      "dependencies": {
+        "@scout/plugin-sdk": "workspace:*",
+        "effect": "4.0.0-beta.43",
+      },
+      "devDependencies": {
+        "@types/node": "^24.6.0",
+        "typescript": "^6.0.2",
+        "vitest": "^3.0.0",
+      },
+    },
+    "packages/plugin-k8s": {
+      "name": "@scout/plugin-k8s",
+      "version": "0.0.1",
+      "dependencies": {
+        "@scout/plugin-sdk": "workspace:*",
+        "effect": "4.0.0-beta.43",
+      },
+      "devDependencies": {
+        "@types/node": "^24.6.0",
+        "typescript": "^6.0.2",
+        "vitest": "^3.0.0",
+      },
+    },
+    "packages/plugin-sdk": {
+      "name": "@scout/plugin-sdk",
+      "version": "0.0.1",
+      "dependencies": {
+        "effect": "4.0.0-beta.43",
+      },
+      "devDependencies": {
+        "typescript": "^6.0.2",
+        "vitest": "^3.0.0",
+      },
+    },
+    "packages/plugin-systemd": {
+      "name": "@scout/plugin-systemd",
+      "version": "0.0.1",
+      "dependencies": {
+        "@scout/plugin-sdk": "workspace:*",
+        "effect": "4.0.0-beta.43",
+      },
+      "devDependencies": {
+        "@types/node": "^24.6.0",
+        "typescript": "^6.0.2",
+        "vitest": "^3.0.0",
+      },
+    },
     "packages/shared": {
       "name": "@scout/shared",
       "version": "0.0.1",
       "dependencies": {
+        "@scout/plugin-sdk": "workspace:*",
         "effect": "4.0.0-beta.43",
       },
       "devDependencies": {
@@ -572,6 +625,14 @@
     "@scout/agent": ["@scout/agent@workspace:apps/agent"],
 
     "@scout/hub": ["@scout/hub@workspace:apps/hub"],
+
+    "@scout/plugin-docker": ["@scout/plugin-docker@workspace:packages/plugin-docker"],
+
+    "@scout/plugin-k8s": ["@scout/plugin-k8s@workspace:packages/plugin-k8s"],
+
+    "@scout/plugin-sdk": ["@scout/plugin-sdk@workspace:packages/plugin-sdk"],
+
+    "@scout/plugin-systemd": ["@scout/plugin-systemd@workspace:packages/plugin-systemd"],
 
     "@scout/shared": ["@scout/shared@workspace:packages/shared"],
 
@@ -1725,6 +1786,12 @@
 
     "@reduxjs/toolkit/immer": ["immer@11.1.4", "", {}, "sha512-XREFCPo6ksxVzP4E0ekD5aMdf8WMwmdNaz6vuvxgI40UaEiu6q3p8X52aU6GdyvLY3XXX/8R7JOTXStz/nBbRw=="],
 
+    "@scout/plugin-docker/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
+
+    "@scout/plugin-k8s/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
+
+    "@scout/plugin-systemd/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
+
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.9.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.1", "tslib": "^2.4.0" }, "bundled": true }, "sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/runtime": ["@emnapi/runtime@1.9.2", "", { "dependencies": { "tslib": "^2.4.0" }, "bundled": true }, "sha512-3U4+MIWHImeyu1wnmVygh5WlgfYDtyf0k8AbLhMFxOipihf6nrWC4syIm/SwEeec0mNSafiiNnMJwbza/Is6Lw=="],
@@ -1810,6 +1877,12 @@
     "@dotenvx/dotenvx/execa/signal-exit": ["signal-exit@3.0.7", "", {}, "sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ=="],
 
     "@dotenvx/dotenvx/execa/strip-final-newline": ["strip-final-newline@2.0.0", "", {}, "sha512-BrpvfNAE3dcvq7ll3xVumzjKjZQ5tI1sEUIKr3Uoks0XUl45St3FlatVqef9prk4jRDzhW6WZg+3bk93y6pLjA=="],
+
+    "@scout/plugin-docker/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "@scout/plugin-k8s/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "@scout/plugin-systemd/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
 
     "@tanstack/start-plugin-core/@babel/code-frame/js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
 
