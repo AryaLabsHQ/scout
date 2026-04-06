@@ -20,7 +20,7 @@ import { HubProtocolLayer } from "./protocol.js"
  *   run({ payload: { alertId }, reactivityKeys: ["alerts"] })
  *
  *   // Stream (returns Writable<PullResult<A, E>, void>):
- *   const [result, pull] = useAtom(HubClient.query("logs.tail", params))
+ *   const [result, pull] = useAtom(HubClient.query("plugins.logs", params))
  */
 export class HubClient extends AtomRpc.Service<HubClient>()("HubClient", {
   group: ClientHubRpcs,

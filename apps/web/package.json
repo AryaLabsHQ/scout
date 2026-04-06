@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
+    "dev:test": "bun --env-file=.env.test run dev",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsgo --noEmit"

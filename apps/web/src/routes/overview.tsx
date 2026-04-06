@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useAtomValue } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
 import { SystemCard } from "@/components/system-card"
-import type { System, AgentReport } from "@scout/shared"
+import type { System } from "@scout/shared"
 
 export const Route = createFileRoute("/overview")({
   component: OverviewPage,
@@ -21,8 +21,8 @@ function SystemCardWithMetrics({
   const reports =
     metricsResult._tag === "Success" ? metricsResult.value : []
   const latestMetrics =
-    (reports.length > 0 ? (reports[reports.length - 1] as AgentReport) : null)
-  const cpuHistory = reports.map((r) => r.system.cpu.usage)
+    (reports.length > 0 ? reports[reports.length - 1] : null)
+  const cpuHistory = reports.map((r) => r.cpuPercent)
 
   return (
     <SystemCard

@@ -8,16 +8,12 @@ export interface TerminalTab {
   label: string
   agentId: string
   mode: TerminalMode
-  podName?: string
-  namespace?: string
 }
 
 export interface OpenSessionParams {
   agentId: string
   mode: TerminalMode
   label: string
-  podName?: string
-  namespace?: string
 }
 
 export interface TerminalState {
@@ -64,8 +60,6 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
       label: params.label,
       agentId: params.agentId,
       mode: params.mode,
-      podName: params.podName,
-      namespace: params.namespace,
     }
     setSessions((prev) => [...prev, tab])
     setActiveTabState(id)

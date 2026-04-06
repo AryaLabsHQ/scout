@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils"
 export interface TerminalViewProps {
   agentId: string
   mode: TerminalMode
-  podName?: string
-  namespace?: string
   className?: string
   onReady?: () => void
 }
@@ -15,12 +13,10 @@ export interface TerminalViewProps {
 export function TerminalView({
   agentId,
   mode,
-  podName,
-  namespace,
   className,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  useTerminal({ containerRef, agentId, mode, podName, namespace })
+  useTerminal({ containerRef, agentId, mode })
 
   return (
     <div

@@ -338,8 +338,6 @@ export function TerminalPanel({ className }: { className?: string }) {
               <TerminalView
                 agentId={tab.agentId}
                 mode={tab.mode}
-                podName={tab.podName}
-                namespace={tab.namespace}
                 className="h-full"
               />
             </div>

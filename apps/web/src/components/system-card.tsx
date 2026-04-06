@@ -2,7 +2,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert01Icon,
-  ContainerIcon,
   CpuIcon,
   DriveIcon,
   WifiConnected01Icon,
@@ -13,13 +12,13 @@ import { Badge } from "@/components/ui/badge"
 import { SparklineChart } from "@/components/charts/sparkline-chart"
 import { ProgressBar } from "@/components/charts/progress-bar"
 import { formatPercent, formatBytes, formatBytesPerSec, formatTimeAgo } from "@/lib/format"
+import { getAvailablePluginCapabilities } from "@/lib/system-capabilities"
 import { cn } from "@/lib/utils"
-import type { AgentReport, System } from "@scout/shared"
+import type { System, SystemMetricsSample } from "@scout/shared"
 
-/** Minimal shape that SystemCard needs — compatible with both legacy SystemState and the new atom shape */
 export interface SystemState {
   system: System
-  latestMetrics: AgentReport | null
+  latestMetrics: SystemMetricsSample | null
   cpuHistory: number[]
 }
 
@@ -43,27 +42,16 @@ export function SystemCard({ systemState, alertCount = 0 }: SystemCardProps) {
   const lastSeen = system.lastSeen ? formatTimeAgo(system.lastSeen) : "never"
 
   // Derived metrics
-  const cpu = latestMetrics?.system.cpu.usage ?? 0
-  const mem = latestMetrics
-    ? (latestMetrics.system.memory.used / latestMetrics.system.memory.total) * 100
-    : 0
-  const disk = latestMetrics?.system.disks[0]
-    ? (latestMetrics.system.disks[0].used / latestMetrics.system.disks[0].total) * 100
-    : 0
+  const cpu = latestMetrics?.cpuPercent ?? 0
+  const mem = latestMetrics?.memoryPercent ?? 0
+  const disk = latestMetrics?.diskPercent ?? 0
 
-  const totalRx = latestMetrics
-    ? latestMetrics.network.reduce((s: number, n) => s + n.rxBytesPerSec, 0)
-    : 0
-  const totalTx = latestMetrics
-    ? latestMetrics.network.reduce((s: number, n) => s + n.txBytesPerSec, 0)
-    : 0
+  const totalRx = latestMetrics?.networkRxBytesPerSec ?? 0
+  const totalTx = latestMetrics?.networkTxBytesPerSec ?? 0
 
-  const caps = system.capabilities
-  const capBadges: string[] = []
-  if (caps.k8s) capBadges.push("k8s")
-  if (caps.docker) capBadges.push("docker")
-  if (caps.gpu) capBadges.push("gpu")
-  if (caps.systemd) capBadges.push("systemd")
+  const capBadges = getAvailablePluginCapabilities(system).map(
+    (capability) => capability.pluginId,
+  )
 
   return (
     <Card
@@ -131,14 +119,6 @@ export function SystemCard({ systemState, alertCount = 0 }: SystemCardProps) {
             <HugeiconsIcon icon={WifiConnected01Icon} size={12} className="text-purple-500" />
             <span className="text-purple-400">↓ {formatBytesPerSec(totalRx)}</span>
             <span className="text-purple-400">↑ {formatBytesPerSec(totalTx)}</span>
-            {system.capabilities.k8s && latestMetrics.k8s && (
-              <>
-                <span className="ml-auto flex items-center gap-1">
-                  <HugeiconsIcon icon={ContainerIcon} size={12} />
-                  {latestMetrics.k8s.pods?.length ?? 0} pods
-                </span>
-              </>
-            )}
           </div>
         )}
 
@@ -152,8 +132,8 @@ export function SystemCard({ systemState, alertCount = 0 }: SystemCardProps) {
         {/* Memory details */}
         {latestMetrics && (
           <p className="text-[10px] text-muted-foreground">
-            {formatBytes(latestMetrics.system.memory.used)} /{" "}
-            {formatBytes(latestMetrics.system.memory.total)}
+            {formatBytes(latestMetrics.memoryUsedBytes)} /{" "}
+            {formatBytes(latestMetrics.memoryTotalBytes)}
           </p>
         )}
       </CardContent>

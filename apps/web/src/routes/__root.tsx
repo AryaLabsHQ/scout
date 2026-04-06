@@ -12,7 +12,6 @@ import { HUB_URL } from "@/server/hub"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   DashboardCircleIcon,
-  ServerStack01Icon,
   Alert01Icon,
   TerminalIcon,
   Settings01Icon,
@@ -57,7 +56,6 @@ if (import.meta.env.DEV) {
 
 const NAV_ITEMS = [
   { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
-  { to: "/workloads", label: "Workloads", icon: ServerStack01Icon },
   { to: "/alerts", label: "Alerts", icon: Alert01Icon },
   { to: "/terminal", label: "Terminal", icon: TerminalIcon },
   { to: "/settings", label: "Settings", icon: Settings01Icon },

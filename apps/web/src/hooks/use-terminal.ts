@@ -10,8 +10,6 @@ export interface UseTerminalOptions {
   containerRef: RefObject<HTMLDivElement | null>
   agentId: string
   mode: TerminalMode
-  podName?: string
-  namespace?: string
 }
 
 // Shared WASM loader — cached across all terminal instances
@@ -28,7 +26,7 @@ function loadGhostty() {
   return ghosttyPromise
 }
 
-export function useTerminal({ containerRef, agentId, mode, podName, namespace }: UseTerminalOptions) {
+export function useTerminal({ containerRef, agentId, mode }: UseTerminalOptions) {
   const sessionIdRef = useRef<string | null>(null)
   const termRef = useRef<GhosttyTerminal | null>(null)
   // Output chunks that arrived from the stream BEFORE the ghostty terminal
@@ -68,15 +66,13 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
                 mode,
                 cols: 80, // initial — will be resized by FitAddon after mount
                 rows: 24,
-                ...(podName ? { podName } : {}),
-                ...(namespace ? { namespace } : {}),
               }) as Stream.Stream<TerminalOutput, unknown>,
             ),
           ),
         ),
         { disableAccumulation: true },
       ),
-    [agentId, mode, podName, namespace],
+    [agentId, mode],
   )
 
   // Mount the atom + get the pull-next setter.
@@ -295,7 +291,7 @@ export function useTerminal({ containerRef, agentId, mode, podName, namespace }:
       fitAddon = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, mode, podName, namespace])
+  }, [agentId, mode])
 
   return { termRef, sessionIdRef }
 }

@@ -13,19 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { LogsTailParams } from "@scout/shared"
+import type { PluginLogsParams } from "@scout/shared"
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface LogViewerProps {
-  agentId: string
-  source: "k8s" | "systemd"
-  target: string
-  namespace?: string
-  container?: string
-  tail?: number
+interface PluginLogViewerProps {
+  params: PluginLogsParams
   onClose: () => void
 }
+
+export type LogViewerProps = PluginLogViewerProps
 
 const TAIL_OPTIONS = [100, 500, 1000] as const
 const MAX_LINES = 1000
@@ -46,13 +41,17 @@ function highlightMatch(line: string, search: string): string {
 // ── Inner component that owns the stream atom ─────────────────────────────────
 
 interface LogStreamProps {
-  params: LogsTailParams
+  params: PluginLogsParams
   onClose: () => void
 }
 
 function LogStream({ params, onClose }: LogStreamProps) {
   const [search, setSearch] = useState("")
-  const [tail, setTail] = useState<number>(params.tail ?? 100)
+  const [tail, setTail] = useState<number>(
+    params.input !== undefined && typeof params.input === "object" && params.input !== null && typeof (params.input as Record<string, unknown>)["tail"] === "number"
+      ? (params.input as Record<string, number>)["tail"]
+      : 100,
+  )
   const [lines, setLines] = useState<string[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
 
@@ -63,7 +62,7 @@ function LogStream({ params, onClose }: LogStreamProps) {
 
   // Build a fresh per-instance log stream atom.
   //
-  // We bypass `HubClient.query("logs.tail", ...)` for the same reasons as
+  // We bypass `HubClient.query("plugins.logs", ...)` for the same reasons as
   // `use-terminal.ts`:
   //   1. Family-dedupe would share one tail subscription across viewers.
   //   2. AtomRpc's internal stream pull does NOT pass `disableAccumulation`,
@@ -78,7 +77,7 @@ function LogStream({ params, onClose }: LogStreamProps) {
         Stream.unwrap(
           HubClient.use((client) =>
             Effect.succeed(
-              client("logs.tail", params) as Stream.Stream<LogBatch, unknown>,
+              client("plugins.logs", params) as Stream.Stream<LogBatch, unknown>,
             ),
           ),
         ),
@@ -135,9 +134,9 @@ function LogStream({ params, onClose }: LogStreamProps) {
     ? "Log stream error — check agent connection"
     : null
 
-  const title = params.source === "k8s"
-    ? `Pod: ${params.target}${params.namespace ? ` (${params.namespace})` : ""}${params.container ? ` / ${params.container}` : ""}`
-    : `Unit: ${params.target}`
+  const title = params.entity?.id
+    ? `${params.pluginId}: ${params.entity.id}`
+    : `${params.pluginId}: ${params.streamId}`
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -245,28 +244,19 @@ function LogStream({ params, onClose }: LogStreamProps) {
 // ── Public component ──────────────────────────────────────────────────────────
 
 /**
- * LogViewer — mounts a `logs.tail` stream atom for the given target and
+ * LogViewer — mounts a `plugins.logs` stream atom for the given target and
  * renders incoming log batches. The stream finalizes when the component
  * unmounts (the atom's scope closes automatically).
  */
 export function LogViewer({
-  agentId,
-  source,
-  target,
-  namespace,
-  container,
-  tail = 100,
   onClose,
+  params,
 }: LogViewerProps) {
-  // Build the params object — key for atom identity
-  const params: LogsTailParams = {
-    agentId,
-    source,
-    target,
-    tail,
-    ...(namespace ? { namespace } : {}),
-    ...(container ? { container } : {}),
-  }
-
-  return <LogStream key={`${agentId}:${source}:${target}:${tail}`} params={params} onClose={onClose} />
+  return (
+    <LogStream
+      key={`plugin:${params.agentId}:${params.pluginId}:${params.streamId}:${params.entity?.id ?? "none"}`}
+      params={params}
+      onClose={onClose}
+    />
+  )
 }
