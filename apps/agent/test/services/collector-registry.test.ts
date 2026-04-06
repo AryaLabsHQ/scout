@@ -1,15 +1,23 @@
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import type { CollectorPlugin, CollectorReport } from "@scout/shared"
+import type {
+  AgentCapabilities,
+  CollectorPlugin,
+  CollectorReport,
+  SystemMetricsSample,
+} from "@scout/shared"
+
+type CoreCapability = keyof AgentCapabilities
+type CoreCollectorPlugin = CollectorPlugin & { capability: CoreCapability }
 
 // ── Mock collector builders ───────────────────────────────────────────────────
 
 const makeCollector = (
   name: string,
-  capability: CollectorPlugin["capability"],
+  capability: CoreCapability,
   available: boolean,
   data: unknown,
-): CollectorPlugin => ({
+): CoreCollectorPlugin => ({
   name,
   capability,
   detect: Effect.succeed(available),
@@ -18,8 +26,8 @@ const makeCollector = (
 
 const makeFailingCollector = (
   name: string,
-  capability: CollectorPlugin["capability"],
-): CollectorPlugin => ({
+  capability: CoreCapability,
+): CoreCollectorPlugin => ({
   name,
   capability,
   detect: Effect.succeed(true),
@@ -35,7 +43,7 @@ const run = <A>(effect: Effect.Effect<A, unknown, never>): Promise<A> =>
 
 describe("CollectorRegistry.discover", () => {
   it("all available → all capabilities true", async () => {
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, {}),
       makeCollector("network", "network", true, []),
       makeCollector("process", "process", true, []),
@@ -51,7 +59,7 @@ describe("CollectorRegistry.discover", () => {
   })
 
   it("one unavailable → that capability false", async () => {
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, {}),
       makeCollector("network", "network", true, []),
       makeCollector("gpu", "gpu", false, []),
@@ -67,21 +75,21 @@ describe("CollectorRegistry.discover", () => {
   })
 
   it("config disable → forced false even if detected", async () => {
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, {}),
-      makeCollector("docker", "docker", true, []),
+      makeCollector("gpu", "gpu", true, []),
     ]
 
     const capabilities = await run(
-      discoverFromCollectors(collectors, ["docker"], [])
+      discoverFromCollectors(collectors, ["gpu"], [])
     )
 
     expect(capabilities.system).toBe(true)
-    expect(capabilities.docker).toBe(false)
+    expect(capabilities.gpu).toBe(false)
   })
 
   it("config enable → forced true even if not detected", async () => {
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("gpu", "gpu", false, []),
     ]
 
@@ -93,7 +101,7 @@ describe("CollectorRegistry.discover", () => {
   })
 
   it("detect failure → treated as unavailable", async () => {
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, {}),
       {
         name: "broken",
@@ -125,19 +133,20 @@ describe("CollectorRegistry.collectAll", () => {
     }
     const networkData = [{ name: "eth0", rxBytesPerSec: 0, txBytesPerSec: 0, rxPacketsPerSec: 0, txPacketsPerSec: 0 }]
 
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, systemData),
       makeCollector("network", "network", true, networkData),
       makeCollector("gpu", "gpu", false, []), // inactive
     ]
 
-    const report = await run(
+    const sample = await run(
       collectAllFromCollectors(collectors, [], [])
     )
 
-    expect(report.system).toEqual(systemData)
-    expect(report.network).toEqual(networkData)
-    expect(report.gpu).toBeUndefined()
+    expect(sample.cpuPercent).toBe(systemData.cpu.usage)
+    expect(sample.cpuCores).toBe(systemData.cpu.cores)
+    expect(sample.networkRxBytesPerSecByInterface).toEqual({ eth0: 0 })
+    expect(sample.gpuPercent).toBeNull()
   })
 
   it("one collector fails → report excludes that section", async () => {
@@ -149,35 +158,33 @@ describe("CollectorRegistry.collectAll", () => {
       uptime: 100,
     }
 
-    const collectors: CollectorPlugin[] = [
+    const collectors: CoreCollectorPlugin[] = [
       makeCollector("system", "system", true, systemData),
       makeCollector("network", "network", true, []),
       makeFailingCollector("process", "process"),
     ]
 
-    const report = await run(
+    const sample = await run(
       collectAllFromCollectors(collectors, [], [])
     )
 
-    // Report succeeds even though process collector failed
-    expect(report.system).toEqual(systemData)
-    expect(report.processes).toBeUndefined()
+    expect(sample.cpuPercent).toBe(systemData.cpu.usage)
+    expect(sample.cpuCores).toBe(systemData.cpu.cores)
   })
 
-  it("all collectors fail → report has empty system/network", async () => {
-    const collectors: CollectorPlugin[] = [
+  it("all collectors fail → sample falls back to zeroed core values", async () => {
+    const collectors: CoreCollectorPlugin[] = [
       makeFailingCollector("system", "system"),
       makeFailingCollector("network", "network"),
     ]
 
-    const report = await run(
+    const sample = await run(
       collectAllFromCollectors(collectors, [], [])
     )
 
-    // system and network fallback to empty defaults
-    expect(report.system).toBeDefined()
-    expect(report.network).toBeDefined()
-    expect(Array.isArray(report.network)).toBe(true)
+    expect(sample.cpuPercent).toBe(0)
+    expect(sample.networkRxBytesPerSec).toBe(0)
+    expect(sample.networkRxBytesPerSecByInterface).toEqual({})
   })
 })
 
@@ -188,7 +195,7 @@ describe("CollectorRegistry.collectAll", () => {
  * parameterised over a custom collector list.
  */
 function discoverFromCollectors(
-  collectors: CollectorPlugin[],
+  collectors: CoreCollectorPlugin[],
   disable: string[],
   enable: string[],
 ) {
@@ -210,9 +217,6 @@ function discoverFromCollectors(
       temperature: false,
       gpu: false,
       smart: false,
-      systemd: false,
-      docker: false,
-      k8s: false,
     }
 
     for (const { capability, detected } of results) {
@@ -230,7 +234,7 @@ function discoverFromCollectors(
 }
 
 function collectAllFromCollectors(
-  collectors: CollectorPlugin[],
+  collectors: CoreCollectorPlugin[],
   disable: string[],
   enable: string[],
 ) {
@@ -269,18 +273,70 @@ function collectAllFromCollectors(
 
     const networkData = (networkReport?.data ?? []) as import("@scout/shared").NetworkInterfaceMetrics[]
 
+    const temperatures = byCapability.get("temperature")?.data as import("@scout/shared").TemperatureMetrics[] | undefined
+    const gpu = byCapability.get("gpu")?.data as import("@scout/shared").GpuMetrics[] | undefined
+    const smart = byCapability.get("smart")?.data as import("@scout/shared").SmartMetrics[] | undefined
+    const disk = systemData.disks[0] ?? null
+    const networkRxBytesPerSec = networkData.reduce(
+      (total, network) => total + network.rxBytesPerSec,
+      0,
+    )
+    const networkTxBytesPerSec = networkData.reduce(
+      (total, network) => total + network.txBytesPerSec,
+      0,
+    )
+
     return {
-      systemId: "test-host",
       timestamp: Date.now(),
-      system: systemData,
-      network: networkData,
-      processes: byCapability.get("process")?.data as import("@scout/shared").ProcessMetrics[] | undefined,
-      temperatures: byCapability.get("temperature")?.data as import("@scout/shared").TemperatureMetrics[] | undefined,
-      gpu: byCapability.get("gpu")?.data as import("@scout/shared").GpuMetrics[] | undefined,
-      smart: byCapability.get("smart")?.data as import("@scout/shared").SmartMetrics[] | undefined,
-      systemd: byCapability.get("systemd")?.data as import("@scout/shared").SystemdServiceMetrics[] | undefined,
-      docker: byCapability.get("docker")?.data as import("@scout/shared").DockerContainerMetrics[] | undefined,
-      k8s: byCapability.get("k8s")?.data as import("@scout/shared").K8sWorkloadMetrics | undefined,
-    } as import("@scout/shared").AgentReport
+      cpuPercent: systemData.cpu.usage,
+      cpuCores: systemData.cpu.cores,
+      cpuPerCorePercent: systemData.cpu.perCore,
+      cpuUserPercent: systemData.cpu.breakdown.user,
+      cpuSystemPercent: systemData.cpu.breakdown.system,
+      cpuIowaitPercent: systemData.cpu.breakdown.iowait,
+      cpuStealPercent: systemData.cpu.breakdown.steal,
+      cpuIdlePercent: systemData.cpu.breakdown.idle,
+      memoryUsedBytes: systemData.memory.used,
+      memoryTotalBytes: systemData.memory.total,
+      memoryAvailableBytes: systemData.memory.available,
+      memoryBuffersCacheBytes: systemData.memory.buffersCache,
+      swapUsedBytes: systemData.memory.swap.used,
+      swapTotalBytes: systemData.memory.swap.total,
+      memoryPercent:
+        systemData.memory.total > 0
+          ? (systemData.memory.used / systemData.memory.total) * 100
+          : 0,
+      diskUsedBytes: disk?.used ?? null,
+      diskTotalBytes: disk?.total ?? null,
+      diskPercent:
+        disk !== null && disk.total > 0
+          ? (disk.used / disk.total) * 100
+          : null,
+      diskReadBytesPerSec: disk?.readBytesPerSec ?? 0,
+      diskWriteBytesPerSec: disk?.writeBytesPerSec ?? 0,
+      networkRxBytesPerSec,
+      networkTxBytesPerSec,
+      networkRxBytesPerSecByInterface: Object.fromEntries(
+        networkData.map((network) => [network.name, network.rxBytesPerSec]),
+      ),
+      networkTxBytesPerSecByInterface: Object.fromEntries(
+        networkData.map((network) => [network.name, network.txBytesPerSec]),
+      ),
+      gpuPercent: gpu?.[0]?.usage ?? null,
+      gpuMemoryPercent:
+        gpu?.[0] && gpu[0].memTotal > 0
+          ? (gpu[0].memUsed / gpu[0].memTotal) * 100
+          : null,
+      gpuTemperatureCelsius: gpu?.[0]?.temperature ?? null,
+      temperaturesCelsius: Object.fromEntries(
+        (temperatures ?? []).map((temperature) => [temperature.label, temperature.celsius]),
+      ),
+      smartHealthFailing:
+        smart?.some((device) => device.health === "FAILED") ?? false,
+      loadAvg1m: systemData.loadAvg[0],
+      loadAvg5m: systemData.loadAvg[1],
+      loadAvg15m: systemData.loadAvg[2],
+      uptimeSeconds: systemData.uptime,
+    } satisfies SystemMetricsSample
   })
 }

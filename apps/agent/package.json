@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.43",
+    "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
     "effect": "4.0.0-beta.43",
     "yaml": "^2.8.3"

@@ -28,6 +28,7 @@ import {
 } from "@scout/shared"
 import { AgentConfig } from "../config.js"
 import { CollectorRegistry } from "../services/collector-registry.js"
+import { AgentPluginHost } from "../services/plugin-host.js"
 import { HubAgentHandlersLive } from "./handlers.js"
 
 // ── HubClient service ─────────────────────────────────────────────────────────
@@ -69,8 +70,10 @@ const makeConnectOnce = (
   Effect.gen(function* () {
     const config = yield* AgentConfig.load
     const registry = yield* CollectorRegistry
+    const pluginHost = yield* AgentPluginHost
 
     const capabilities = yield* registry.discover()
+    const pluginCapabilities = yield* pluginHost.listCapabilities()
 
     yield* Effect.logInfo("HubConnection: connecting", { url: wsUrl })
 
@@ -101,6 +104,7 @@ const makeConnectOnce = (
           version: "0.0.1",
           platform: process.platform,
           capabilities,
+          pluginCapabilities,
         })
 
         yield* Effect.logInfo("HubConnection: connected", {
@@ -116,7 +120,11 @@ const makeConnectOnce = (
         yield* RpcServer.make(HubAgentRpcs, {
           disableFatalDefects: true,
         }).pipe(
-          Effect.provide(HubAgentHandlersLive),
+          Effect.provide(
+            HubAgentHandlersLive.pipe(
+              Layer.provide(Layer.succeed(AgentPluginHost, pluginHost)),
+            ),
+          ),
           Effect.provide(serverProtocol),
         )
       }).pipe(

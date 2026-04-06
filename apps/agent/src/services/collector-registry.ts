@@ -1,16 +1,17 @@
 import { Cause, Effect, Layer } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
-import type { AgentCapabilities, CollectorPlugin, AgentReport, CollectorReport } from "@scout/shared"
+import type {
+  AgentCapabilities,
+  CollectorPlugin,
+  CollectorReport,
+  SystemMetricsSample,
+} from "@scout/shared"
 import type {
   SystemMetrics,
   NetworkInterfaceMetrics,
-  ProcessMetrics,
   TemperatureMetrics,
   GpuMetrics,
   SmartMetrics,
-  SystemdServiceMetrics,
-  DockerContainerMetrics,
-  K8sWorkloadMetrics,
 } from "@scout/shared"
 import { AgentConfig } from "../config.js"
 import { systemCollector } from "../collectors/system.js"
@@ -19,21 +20,18 @@ import { processCollector } from "../collectors/process.js"
 import { temperatureCollector } from "../collectors/temperature.js"
 import { gpuCollector } from "../collectors/gpu.js"
 import { smartCollector } from "../collectors/smart.js"
-import { systemdCollector } from "../collectors/systemd.js"
-import { dockerCollector } from "../collectors/docker.js"
-import { k8sCollector } from "../collectors/k8s.js"
 
 // All collector plugins in canonical order
-const ALL_COLLECTORS: CollectorPlugin[] = [
-  systemCollector,
-  networkCollector,
-  processCollector,
-  temperatureCollector,
-  gpuCollector,
-  smartCollector,
-  systemdCollector,
-  dockerCollector,
-  k8sCollector,
+type CoreCollectorCapability = keyof AgentCapabilities
+type CoreCollectorPlugin = CollectorPlugin & { capability: CoreCollectorCapability }
+
+const ALL_COLLECTORS: CoreCollectorPlugin[] = [
+  systemCollector as CoreCollectorPlugin,
+  networkCollector as CoreCollectorPlugin,
+  processCollector as CoreCollectorPlugin,
+  temperatureCollector as CoreCollectorPlugin,
+  gpuCollector as CoreCollectorPlugin,
+  smartCollector as CoreCollectorPlugin,
 ]
 
 // Auto-discovers available collectors and manages their lifecycle.
@@ -43,19 +41,14 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
    */
   readonly discover: () => Effect.Effect<AgentCapabilities>
   /**
-   * Return only collectors that passed their detect check.
+   * Run all active core collectors and assemble a flat core metrics sample.
    */
-  readonly getActive: () => Effect.Effect<CollectorPlugin[]>
-  /**
-   * Run all active collectors and assemble a full AgentReport.
-   */
-  readonly collectAll: () => Effect.Effect<AgentReport>
+  readonly collectAll: (capabilities?: AgentCapabilities) => Effect.Effect<SystemMetricsSample>
 }>()(
   "@scout/CollectorRegistry",
   {
     make: Effect.gen(function* () {
       const config = yield* AgentConfig.load
-
       // ── discover ─────────────────────────────────────────────────────────────
 
       const discover = (): Effect.Effect<AgentCapabilities> =>
@@ -70,8 +63,6 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
             ),
             { concurrency: "unbounded" }
           )
-
-          // Build base capabilities from detect results
           const caps: AgentCapabilities = {
             system: false,
             network: false,
@@ -79,9 +70,6 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
             temperature: false,
             gpu: false,
             smart: false,
-            systemd: false,
-            docker: false,
-            k8s: false,
           }
 
           const mutable: { -readonly [K in keyof AgentCapabilities]: boolean } = {
@@ -107,19 +95,14 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
           return mutable as AgentCapabilities
         })
 
-      // ── getActive ────────────────────────────────────────────────────────────
-
-      const getActive = (): Effect.Effect<CollectorPlugin[]> =>
-        Effect.gen(function* () {
-          const caps = yield* discover()
-          return ALL_COLLECTORS.filter((c) => caps[c.capability])
-        })
-
       // ── collectAll ───────────────────────────────────────────────────────────
 
-      const collectAll = (): Effect.Effect<AgentReport> =>
+      const collectAll = (
+        capabilities?: AgentCapabilities,
+      ): Effect.Effect<SystemMetricsSample> =>
         Effect.gen(function* () {
-          const active = yield* getActive()
+          const caps = capabilities ?? (yield* discover())
+          const active = ALL_COLLECTORS.filter((c) => caps[c.capability])
 
           // Run all active collectors in parallel; catch failures per-collector
           const results = yield* Effect.all(
@@ -138,7 +121,7 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
           )
 
           // Map results back to active collectors by capability
-          const byCapability = new Map<keyof AgentCapabilities, CollectorReport>()
+          const byCapability = new Map<CoreCollectorCapability, CollectorReport>()
           for (let i = 0; i < active.length; i++) {
             const r = results[i]
             if (r !== null && r !== undefined) {
@@ -149,7 +132,6 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
           const systemReport = byCapability.get("system")
           const networkReport = byCapability.get("network")
 
-          // system and network are required fields in AgentReport
           const systemData = (systemReport?.data ?? {
             cpu: { usage: 0, cores: 0, perCore: [], breakdown: { user: 0, system: 0, iowait: 0, steal: 0, idle: 100 } },
             memory: { used: 0, total: 0, available: 0, buffersCache: 0, swap: { used: 0, total: 0 } },
@@ -160,35 +142,78 @@ export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
 
           const networkData = (networkReport?.data ?? []) as NetworkInterfaceMetrics[]
 
-          // Pull optional section data; omit keys entirely when a collector
-          // was skipped so the AgentReportSchema's optionalKey fields don't
-          // see explicit `undefined` (which Schema.optionalKey rejects).
-          const processes = byCapability.get("process")?.data as ProcessMetrics[] | undefined
           const temperatures = byCapability.get("temperature")?.data as TemperatureMetrics[] | undefined
           const gpu = byCapability.get("gpu")?.data as GpuMetrics[] | undefined
           const smart = byCapability.get("smart")?.data as SmartMetrics[] | undefined
-          const systemd = byCapability.get("systemd")?.data as SystemdServiceMetrics[] | undefined
-          const docker = byCapability.get("docker")?.data as DockerContainerMetrics[] | undefined
-          const k8s = byCapability.get("k8s")?.data as K8sWorkloadMetrics | undefined
+          const disk = systemData.disks[0] ?? null
+          const networkRxBytesPerSec = networkData.reduce(
+            (total, network) => total + network.rxBytesPerSec,
+            0,
+          )
+          const networkTxBytesPerSec = networkData.reduce(
+            (total, network) => total + network.txBytesPerSec,
+            0,
+          )
+          const networkRxBytesPerSecByInterface = Object.fromEntries(
+            networkData.map((network) => [network.name, network.rxBytesPerSec]),
+          )
+          const networkTxBytesPerSecByInterface = Object.fromEntries(
+            networkData.map((network) => [network.name, network.txBytesPerSec]),
+          )
+          const primaryGpu = gpu?.[0] ?? null
+          const temperaturesCelsius = Object.fromEntries(
+            (temperatures ?? []).map((temperature) => [temperature.label, temperature.celsius]),
+          )
 
-          const report: AgentReport = {
-            systemId: config.hostname,
+          return {
             timestamp: Date.now(),
-            system: systemData,
-            network: networkData,
-            ...(processes !== undefined && { processes }),
-            ...(temperatures !== undefined && { temperatures }),
-            ...(gpu !== undefined && { gpu }),
-            ...(smart !== undefined && { smart }),
-            ...(systemd !== undefined && { systemd }),
-            ...(docker !== undefined && { docker }),
-            ...(k8s !== undefined && { k8s }),
+            cpuPercent: systemData.cpu.usage,
+            cpuCores: systemData.cpu.cores,
+            cpuPerCorePercent: systemData.cpu.perCore,
+            cpuUserPercent: systemData.cpu.breakdown.user,
+            cpuSystemPercent: systemData.cpu.breakdown.system,
+            cpuIowaitPercent: systemData.cpu.breakdown.iowait,
+            cpuStealPercent: systemData.cpu.breakdown.steal,
+            cpuIdlePercent: systemData.cpu.breakdown.idle,
+            memoryUsedBytes: systemData.memory.used,
+            memoryTotalBytes: systemData.memory.total,
+            memoryAvailableBytes: systemData.memory.available,
+            memoryBuffersCacheBytes: systemData.memory.buffersCache,
+            swapUsedBytes: systemData.memory.swap.used,
+            swapTotalBytes: systemData.memory.swap.total,
+            memoryPercent:
+              systemData.memory.total > 0
+                ? (systemData.memory.used / systemData.memory.total) * 100
+                : 0,
+            diskUsedBytes: disk?.used ?? null,
+            diskTotalBytes: disk?.total ?? null,
+            diskPercent:
+              disk !== null && disk.total > 0
+                ? (disk.used / disk.total) * 100
+                : null,
+            diskReadBytesPerSec: disk?.readBytesPerSec ?? 0,
+            diskWriteBytesPerSec: disk?.writeBytesPerSec ?? 0,
+            networkRxBytesPerSec,
+            networkTxBytesPerSec,
+            networkRxBytesPerSecByInterface,
+            networkTxBytesPerSecByInterface,
+            gpuPercent: primaryGpu?.usage ?? null,
+            gpuMemoryPercent:
+              primaryGpu !== null && primaryGpu.memTotal > 0
+                ? (primaryGpu.memUsed / primaryGpu.memTotal) * 100
+                : null,
+            gpuTemperatureCelsius: primaryGpu?.temperature ?? null,
+            temperaturesCelsius,
+            smartHealthFailing:
+              smart?.some((device) => device.health === "FAILED") ?? false,
+            loadAvg1m: systemData.loadAvg[0],
+            loadAvg5m: systemData.loadAvg[1],
+            loadAvg15m: systemData.loadAvg[2],
+            uptimeSeconds: systemData.uptime,
           }
-
-          return report
         })
 
-      return { discover, getActive, collectAll }
+      return { discover, collectAll }
     }),
   },
 ) {
