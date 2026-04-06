@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { PluginCapabilitySchema } from "@scout/plugin-sdk/schemas"
 
 export const SystemStatusSchema = Schema.Literals(["online", "offline", "pending"])
 
@@ -9,9 +10,6 @@ export const AgentCapabilitiesSchema = Schema.Struct({
   temperature: Schema.Boolean,
   gpu: Schema.Boolean,
   smart: Schema.Boolean,
-  systemd: Schema.Boolean,
-  docker: Schema.Boolean,
-  k8s: Schema.Boolean,
 })
 
 export const SystemSchema = Schema.Struct({
@@ -20,6 +18,7 @@ export const SystemSchema = Schema.Struct({
   tailscaleIp: Schema.NullOr(Schema.String),
   status: SystemStatusSchema,
   capabilities: AgentCapabilitiesSchema,
+  pluginCapabilities: Schema.optionalKey(Schema.Array(PluginCapabilitySchema)),
   lastSeen: Schema.Number,
   createdAt: Schema.Number,
 })

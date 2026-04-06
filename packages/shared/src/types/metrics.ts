@@ -1,17 +1,3 @@
-export interface AgentReport {
-  systemId: string
-  timestamp: number
-  system: SystemMetrics // always present
-  network: NetworkInterfaceMetrics[] // always present, per-interface
-  processes?: ProcessMetrics[]
-  temperatures?: TemperatureMetrics[]
-  gpu?: GpuMetrics[]
-  smart?: SmartMetrics[]
-  systemd?: SystemdServiceMetrics[]
-  docker?: DockerContainerMetrics[]
-  k8s?: K8sWorkloadMetrics
-}
-
 export interface SystemMetrics {
   cpu: CpuMetrics
   memory: MemoryMetrics
@@ -94,10 +80,3 @@ export interface ProcessMetrics {
   memBytes: number
   user: string
 }
-
-// Forward references — resolved in k8s.ts, docker.ts, systemd.ts
-import type { K8sWorkloadMetrics } from "./k8s.js"
-import type { DockerContainerMetrics } from "./docker.js"
-import type { SystemdServiceMetrics } from "./systemd.js"
-
-export type { K8sWorkloadMetrics, DockerContainerMetrics, SystemdServiceMetrics }

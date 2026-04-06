@@ -1,7 +1,15 @@
 import type { Effect } from "effect"
-import type { AgentCapabilities } from "../schemas/system.js"
 
-export type CollectorCapability = keyof AgentCapabilities
+export type CollectorCapability =
+  | "system"
+  | "network"
+  | "process"
+  | "temperature"
+  | "gpu"
+  | "smart"
+  | "systemd"
+  | "docker"
+  | "k8s"
 
 export interface CollectorReport {
   capability: CollectorCapability

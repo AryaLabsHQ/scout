@@ -24,9 +24,15 @@ export interface AgentCapabilities {
   temperature: boolean
   gpu: boolean
   smart: boolean
-  systemd: boolean
-  docker: boolean
-  k8s: boolean
 }
 
-export type CollectorCapability = keyof AgentCapabilities
+export type CollectorCapability =
+  | "system"
+  | "network"
+  | "process"
+  | "temperature"
+  | "gpu"
+  | "smart"
+  | "systemd"
+  | "docker"
+  | "k8s"

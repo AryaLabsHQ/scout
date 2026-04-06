@@ -1,13 +1,11 @@
 import { Schema } from "effect"
 
-export const TerminalModeSchema = Schema.Literals(["shell", "podExec"])
+export const TerminalModeSchema = Schema.Literal("shell")
 
 export const TerminalSessionSchema = Schema.Struct({
   id: Schema.String,
   agentId: Schema.String,
   mode: TerminalModeSchema,
-  podName: Schema.NullOr(Schema.String),
-  namespace: Schema.NullOr(Schema.String),
   cols: Schema.Number,
   rows: Schema.Number,
   createdAt: Schema.Number,
@@ -39,9 +37,6 @@ export const TerminalOpenParamsSchema = Schema.Struct({
   mode: TerminalModeSchema,
   cols: Schema.Number,
   rows: Schema.Number,
-  podName: Schema.optionalKey(Schema.String),
-  namespace: Schema.optionalKey(Schema.String),
-  container: Schema.optionalKey(Schema.String),
 })
 
 export const TerminalInputParamsSchema = Schema.Struct({

@@ -2,24 +2,16 @@ import { Schema } from "effect"
 import * as Rpc from "effect/unstable/rpc/Rpc"
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 
-import { AgentReportSchema } from "../schemas/agent-report.js"
 import { AlertEventSchema, AlertSchema, AlertRuleSchema } from "../schemas/alerts.js"
-import { LogBatchSchema, LogsTailParamsSchema } from "../schemas/logs.js"
+import { LogBatchSchema } from "../schemas/logs.js"
 import {
-  DockerContainerActionParamsSchema,
-  DockerInspectResultSchema,
-  K8sDescribeParamsSchema,
-  K8sDescribeResultSchema,
-  K8sRestartPodParamsSchema,
-  K8sScaleParamsSchema,
   ManagementError,
-  SystemdReloadParamsSchema,
-  SystemdUnitActionParamsSchema,
-  SystemdUnitFileEditParamsSchema,
-  SystemdUnitFileParamsSchema,
-  SystemdUnitFileSchema,
+  PluginActionResultSchema,
+  PluginLogsParamsSchema,
+  PluginRunActionParamsSchema,
 } from "../schemas/management.js"
 import { SystemSchema } from "../schemas/system.js"
+import { SystemMetricsSampleSchema } from "../schemas/system-metrics.js"
 import {
   TerminalCloseParamsSchema,
   TerminalInputParamsSchema,
@@ -78,7 +70,7 @@ export const ClientHubRpcs = RpcGroup.make(
       id: Schema.String,
       range: MetricsRangeSchema,
     }),
-    success: Schema.Array(AgentReportSchema),
+    success: Schema.Array(SystemMetricsSampleSchema),
   }),
   Rpc.make("alerts.list", {
     success: Schema.Array(AlertSchema),
@@ -118,40 +110,10 @@ export const ClientHubRpcs = RpcGroup.make(
     error: ManagementError,
   }),
 
-  // Systemd management (forwarded to target agent)
-  Rpc.make("systemd.start", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.stop", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.restart", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.enable", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.disable", { payload: SystemdUnitActionParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.reload", { payload: SystemdReloadParamsSchema, error: ManagementError }),
-  Rpc.make("systemd.unitFile", {
-    payload: SystemdUnitFileParamsSchema,
-    success: SystemdUnitFileSchema,
-    error: ManagementError,
-  }),
-  Rpc.make("systemd.unitFileEdit", {
-    payload: SystemdUnitFileEditParamsSchema,
-    error: ManagementError,
-  }),
-
-  // Docker management (forwarded to target agent)
-  Rpc.make("docker.start", { payload: DockerContainerActionParamsSchema, error: ManagementError }),
-  Rpc.make("docker.stop", { payload: DockerContainerActionParamsSchema, error: ManagementError }),
-  Rpc.make("docker.restart", { payload: DockerContainerActionParamsSchema, error: ManagementError }),
-  Rpc.make("docker.remove", { payload: DockerContainerActionParamsSchema, error: ManagementError }),
-  Rpc.make("docker.inspect", {
-    payload: DockerContainerActionParamsSchema,
-    success: DockerInspectResultSchema,
-    error: ManagementError,
-  }),
-
-  // K8s management (forwarded to target agent)
-  Rpc.make("k8s.scale", { payload: K8sScaleParamsSchema, error: ManagementError }),
-  Rpc.make("k8s.restartPod", { payload: K8sRestartPodParamsSchema, error: ManagementError }),
-  Rpc.make("k8s.describe", {
-    payload: K8sDescribeParamsSchema,
-    success: K8sDescribeResultSchema,
+  // Generic plugin control
+  Rpc.make("plugins.runAction", {
+    payload: PluginRunActionParamsSchema,
+    success: PluginActionResultSchema,
     error: ManagementError,
   }),
 
@@ -171,9 +133,9 @@ export const ClientHubRpcs = RpcGroup.make(
 
   // ── Streams (server-pushed, subscribed by client) ──
 
-  /** Fire-hose of AgentReports from every connected agent, coalesced at 100ms. */
+  /** Fire-hose of core metrics samples from every connected agent, coalesced at 100ms. */
   Rpc.make("metrics.subscribe", {
-    success: AgentReportSchema,
+    success: SystemMetricsSampleSchema,
     stream: true,
   }),
 
@@ -189,9 +151,8 @@ export const ClientHubRpcs = RpcGroup.make(
     stream: true,
   }),
 
-  /** Tail logs from a specific pod or systemd unit. Finalizes on unsubscribe. */
-  Rpc.make("logs.tail", {
-    payload: LogsTailParamsSchema,
+  Rpc.make("plugins.logs", {
+    payload: PluginLogsParamsSchema,
     success: LogBatchSchema,
     error: ManagementError,
     stream: true,

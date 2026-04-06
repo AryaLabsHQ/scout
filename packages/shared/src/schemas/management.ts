@@ -1,70 +1,45 @@
 import { Schema } from "effect"
+import { ActionResultSchema } from "@scout/plugin-sdk/schemas"
 
-// ─── Systemd ──────────────────────────────────────────────────────────────
+// ─── Generic plugin control ───────────────────────────────────────────────
 
-export const SystemdUnitActionParamsSchema = Schema.Struct({
+export const PluginEntityTargetSchema = Schema.Struct({
+  pluginId: Schema.String,
+  kind: Schema.String,
+  id: Schema.String,
+})
+
+export const PluginRunActionParamsSchema = Schema.Struct({
   agentId: Schema.String,
-  unit: Schema.String,
+  pluginId: Schema.String,
+  actionId: Schema.String,
+  entity: Schema.optionalKey(PluginEntityTargetSchema),
+  input: Schema.optionalKey(Schema.Unknown),
 })
 
-export const SystemdReloadParamsSchema = Schema.Struct({
+export const PluginRunActionLocalParamsSchema = Schema.Struct({
+  pluginId: Schema.String,
+  actionId: Schema.String,
+  entity: Schema.optionalKey(PluginEntityTargetSchema),
+  input: Schema.optionalKey(Schema.Unknown),
+})
+
+export const PluginActionResultSchema = ActionResultSchema
+
+export const PluginLogsParamsSchema = Schema.Struct({
   agentId: Schema.String,
+  pluginId: Schema.String,
+  streamId: Schema.String,
+  entity: Schema.optionalKey(PluginEntityTargetSchema),
+  input: Schema.optionalKey(Schema.Unknown),
 })
 
-export const SystemdUnitFileParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  unit: Schema.String,
+export const PluginLogsLocalParamsSchema = Schema.Struct({
+  pluginId: Schema.String,
+  streamId: Schema.String,
+  entity: Schema.optionalKey(PluginEntityTargetSchema),
+  input: Schema.optionalKey(Schema.Unknown),
 })
-
-export const SystemdUnitFileSchema = Schema.Struct({
-  path: Schema.String,
-  content: Schema.String,
-})
-
-export const SystemdUnitFileEditParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  unit: Schema.String,
-  content: Schema.String,
-})
-
-// ─── Docker ───────────────────────────────────────────────────────────────
-
-export const DockerContainerActionParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  containerId: Schema.String,
-})
-
-/**
- * Docker inspect result — opaque JSON from the Docker Engine API. We
- * pass it through untyped since Scout only displays it, never navigates
- * its structure.
- */
-export const DockerInspectResultSchema = Schema.Unknown
-
-// ─── Kubernetes ───────────────────────────────────────────────────────────
-
-export const K8sScaleParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  namespace: Schema.String,
-  deployment: Schema.String,
-  replicas: Schema.Number,
-})
-
-export const K8sRestartPodParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  namespace: Schema.String,
-  pod: Schema.String,
-})
-
-export const K8sDescribeParamsSchema = Schema.Struct({
-  agentId: Schema.String,
-  /** Resource kind — e.g. "pod", "deployment", "service". */
-  resource: Schema.String,
-  name: Schema.String,
-  namespace: Schema.String,
-})
-
-export const K8sDescribeResultSchema = Schema.Unknown
 
 // ─── Errors ───────────────────────────────────────────────────────────────
 
@@ -79,4 +54,5 @@ export class ManagementError extends Schema.ErrorClass<ManagementError>(
   message: Schema.String,
 }) {}
 
-export type SystemdUnitFile = typeof SystemdUnitFileSchema.Type
+export type PluginRunActionParams = typeof PluginRunActionParamsSchema.Type
+export type PluginLogsParams = typeof PluginLogsParamsSchema.Type

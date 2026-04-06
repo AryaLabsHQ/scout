@@ -2,7 +2,11 @@ import { Schema } from "effect"
 import * as Rpc from "effect/unstable/rpc/Rpc"
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 import { AgentCapabilitiesSchema } from "../schemas/system.js"
-import { AgentReportSchema } from "../schemas/agent-report.js"
+import { CoreMetricsPayloadSchema } from "../schemas/system-metrics.js"
+import {
+  PluginCapabilitySchema,
+  PluginCollectionResultSchema,
+} from "@scout/plugin-sdk/schemas"
 
 /**
  * AgentHubRpcs — the RPC group that the **agent** calls on the **hub**.
@@ -17,10 +21,16 @@ export const AgentConnectPayload = Schema.Struct({
   version: Schema.String,
   platform: Schema.String,
   capabilities: AgentCapabilitiesSchema,
+  pluginCapabilities: Schema.optionalKey(Schema.Array(PluginCapabilitySchema)),
 })
 
 export const AgentConnectResult = Schema.Struct({
   systemId: Schema.String,
+})
+
+export const AgentPluginCollectionPayload = Schema.Struct({
+  systemId: Schema.String,
+  collection: PluginCollectionResultSchema,
 })
 
 export class AgentConnectError extends Schema.ErrorClass<AgentConnectError>(
@@ -38,6 +48,9 @@ export const AgentHubRpcs = RpcGroup.make(
     error: AgentConnectError,
   }),
   Rpc.make("agent.report", {
-    payload: AgentReportSchema,
+    payload: CoreMetricsPayloadSchema,
+  }),
+  Rpc.make("agent.reportPluginCollection", {
+    payload: AgentPluginCollectionPayload,
   }),
 )
