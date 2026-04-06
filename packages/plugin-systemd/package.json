@@ -1,0 +1,25 @@
+{
+  "name": "@scout/plugin-systemd",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./manifest": "./src/manifest.ts",
+    "./agent": "./src/agent.ts",
+    "./hub": "./src/hub.ts",
+    "./web": "./src/web.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@scout/plugin-sdk": "workspace:*",
+    "effect": "4.0.0-beta.43"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,298 @@
+import { Effect, Stream } from "effect"
+import { describe, expect, it } from "vitest"
+import { executePluginAction, openPluginStream } from "@scout/plugin-sdk"
+import {
+  SYSTEMD_ACTION_IDS,
+  SYSTEMD_PLUGIN_ID,
+  SYSTEMD_STREAM_IDS,
+  SYSTEMD_UNIT_KIND,
+} from "../src/contracts.js"
+import { manifest } from "../src/manifest.js"
+import {
+  createSystemdAgentPlugin,
+  parseSystemctlListUnits,
+  parseSystemctlShow,
+  type SystemdDependencies,
+} from "../src/systemd.js"
+
+const makeDeps = (
+  overrides: Partial<SystemdDependencies> = {},
+): SystemdDependencies => ({
+  exec: () => Effect.succeed({ stdout: "", stderr: "", exitCode: 0 }),
+  readFile: () => Effect.succeed(""),
+  copyFile: () => Effect.void,
+  writeFile: () => Effect.void,
+  unlink: () => Effect.void,
+  makeTempPath: () => "/tmp/scout-systemd.test",
+  followJournal: () =>
+    Stream.fromIterable([
+      { lines: ["line one", "line two"], ts: 123 },
+    ]),
+  ...overrides,
+})
+
+describe("systemd plugin", () => {
+  it("parses list-units json output", () => {
+    expect(
+      parseSystemctlListUnits(
+        JSON.stringify([
+          {
+            unit: "nginx.service",
+            description: "NGINX",
+            load: "loaded",
+            active: "active",
+            sub: "running",
+          },
+        ]),
+      ),
+    ).toEqual([
+      {
+        unit: "nginx.service",
+        description: "NGINX",
+        loadState: "loaded",
+        activeState: "active",
+        subState: "running",
+        pid: null,
+        memoryBytes: null,
+        cpuUsageNs: null,
+      },
+    ])
+  })
+
+  it("parses systemctl show output", () => {
+    expect(
+      parseSystemctlShow("MainPID=55\nMemoryCurrent=4096\nCPUUsageNSec=9000\n"),
+    ).toEqual({
+      pid: 55,
+      memoryBytes: 4096,
+      cpuUsageNs: 9000,
+    })
+  })
+
+  it("detects systemd availability", async () => {
+    const plugin = createSystemdAgentPlugin(
+      makeDeps({
+        exec: (command) =>
+          Effect.succeed({
+            stdout: command === "which" ? "/usr/bin/systemctl\n" : "",
+            stderr: "",
+            exitCode: 0,
+          }),
+      }),
+    )
+
+    await expect(
+      Effect.runPromise(plugin.detect({ nodeId: "n1", now: 1 })),
+    ).resolves.toMatchObject({
+      pluginId: SYSTEMD_PLUGIN_ID,
+      status: "available",
+    })
+  })
+
+  it("collects unit entities and metrics", async () => {
+    const plugin = createSystemdAgentPlugin(
+      makeDeps({
+        exec: (command, args) => {
+          if (command !== "systemctl") {
+            return Effect.fail(new Error(`unexpected command: ${command}`))
+          }
+          if (args[0] === "list-units") {
+            return Effect.succeed({
+              stdout: JSON.stringify([
+                {
+                  unit: "nginx.service",
+                  description: "NGINX",
+                  load: "loaded",
+                  active: "active",
+                  sub: "running",
+                },
+                {
+                  unit: "broken.service",
+                  description: "Broken Unit",
+                  load: "loaded",
+                  active: "failed",
+                  sub: "failed",
+                },
+              ]),
+              stderr: "",
+              exitCode: 0,
+            })
+          }
+          if (args[0] === "show") {
+            return Effect.succeed({
+              stdout: "MainPID=101\nMemoryCurrent=8192\nCPUUsageNSec=500\n",
+              stderr: "",
+              exitCode: 0,
+            })
+          }
+          return Effect.fail(new Error(`unexpected args: ${args.join(" ")}`))
+        },
+      }),
+    )
+
+    const result = await Effect.runPromise(
+      plugin.collect!({ nodeId: "node-1", now: 42 }),
+    )
+
+    expect(result.entities).toHaveLength(2)
+    expect(result.entities?.[0]).toMatchObject({
+      ref: {
+        pluginId: SYSTEMD_PLUGIN_ID,
+        kind: SYSTEMD_UNIT_KIND,
+        nodeId: "node-1",
+        id: "nginx.service",
+      },
+      status: "active",
+    })
+    expect(result.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metricId: "units.total", value: 2 }),
+        expect.objectContaining({ metricId: "units.failed", value: 1 }),
+        expect.objectContaining({ metricId: "unit.memory.bytes", value: 8192 }),
+      ]),
+    )
+  })
+
+  it("executes unit actions through the generic runtime", async () => {
+    const calls: string[] = []
+    const packageUnderTest = {
+      manifest,
+      agent: createSystemdAgentPlugin(
+        makeDeps({
+          exec: (command, args) => {
+            calls.push(`${command} ${args.join(" ")}`)
+            return Effect.succeed({ stdout: "", stderr: "", exitCode: 0 })
+          },
+        }),
+      ),
+    }
+
+    const result = await Effect.runPromise(
+      executePluginAction(
+        packageUnderTest,
+        {
+          nodeId: "node-1",
+          permissions: new Set(["node:systemd", "node:spawn-process"]),
+        },
+        {
+          pluginId: SYSTEMD_PLUGIN_ID,
+          actionId: SYSTEMD_ACTION_IDS.restartUnit,
+          target: {
+            nodeId: "node-1",
+            entity: {
+              pluginId: SYSTEMD_PLUGIN_ID,
+              kind: SYSTEMD_UNIT_KIND,
+              nodeId: "node-1",
+              id: "nginx.service",
+            },
+          },
+          input: {},
+        },
+      ),
+    )
+
+    expect(result).toMatchObject({ success: true, output: {} })
+    expect(calls).toContain("systemctl restart nginx.service")
+  })
+
+  it("writes a unit file and reloads systemd", async () => {
+    const calls: string[] = []
+    const packageUnderTest = {
+      manifest,
+      agent: createSystemdAgentPlugin(
+        makeDeps({
+          exec: (command, args) => {
+            calls.push(`${command} ${args.join(" ")}`)
+            if (command === "systemctl" && args[0] === "show") {
+              return Effect.succeed({
+                stdout: "FragmentPath=/etc/systemd/system/nginx.service\n",
+                stderr: "",
+                exitCode: 0,
+              })
+            }
+            return Effect.succeed({ stdout: "", stderr: "", exitCode: 0 })
+          },
+        }),
+      ),
+    }
+
+    await expect(
+      Effect.runPromise(
+        executePluginAction(
+          packageUnderTest,
+          {
+            nodeId: "node-1",
+            permissions: new Set([
+              "node:systemd",
+              "node:spawn-process",
+              "node:read-files",
+              "node:write-files",
+            ]),
+          },
+          {
+            pluginId: SYSTEMD_PLUGIN_ID,
+            actionId: SYSTEMD_ACTION_IDS.writeUnitFile,
+            target: {
+              nodeId: "node-1",
+              entity: {
+                pluginId: SYSTEMD_PLUGIN_ID,
+                kind: SYSTEMD_UNIT_KIND,
+                nodeId: "node-1",
+                id: "nginx.service",
+              },
+            },
+            input: { content: "[Unit]\nDescription=NGINX\n" },
+          },
+        ),
+      ),
+    ).resolves.toMatchObject({ success: true, output: {} })
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        "systemctl show -p FragmentPath nginx.service",
+        "systemd-analyze verify /tmp/scout-systemd.test",
+        "systemctl daemon-reload",
+      ]),
+    )
+  })
+
+  it("opens the systemd log stream through the generic runtime", async () => {
+    const packageUnderTest = {
+      manifest,
+      agent: createSystemdAgentPlugin(makeDeps()),
+    }
+
+    const stream = await Effect.runPromise(
+      openPluginStream(
+        packageUnderTest,
+        {
+          nodeId: "node-1",
+          permissions: new Set([
+            "node:systemd",
+            "node:stream-logs",
+            "node:spawn-process",
+          ]),
+        },
+        {
+          pluginId: SYSTEMD_PLUGIN_ID,
+          streamId: SYSTEMD_STREAM_IDS.unitLogs,
+          target: {
+            nodeId: "node-1",
+            entity: {
+              pluginId: SYSTEMD_PLUGIN_ID,
+              kind: SYSTEMD_UNIT_KIND,
+              nodeId: "node-1",
+              id: "nginx.service",
+            },
+          },
+          input: {},
+        },
+      ),
+    )
+
+    const chunks = await Effect.runPromise(Stream.runCollect(stream))
+    expect([...chunks]).toEqual([
+      { lines: ["line one", "line two"], ts: 123 },
+    ])
+  })
+})

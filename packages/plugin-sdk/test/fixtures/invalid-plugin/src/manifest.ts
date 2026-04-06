@@ -1,0 +1,15 @@
+export const manifest = {
+  apiVersion: "v0alpha1",
+  id: "fixture-invalid",
+  displayName: "Fixture Invalid Plugin",
+  version: "0.1.0",
+  description: "Invalid fixture plugin",
+  runtimes: ["agent"],
+  permissions: ["node:not-real"],
+  capabilities: [],
+  entityKinds: [],
+  metrics: [],
+  actions: [],
+  streams: [],
+  alerts: [],
+}
