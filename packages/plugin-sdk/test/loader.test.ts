@@ -68,7 +68,7 @@ describe("@scout/plugin-sdk loader", () => {
     expect(plugin.agent).toBeDefined()
     expect(plugin.hub).toBeDefined()
     expect(plugin.web).toBeDefined()
-    expect(plugin.web?.views).toHaveLength(1)
+    expect(plugin.web?.screens).toHaveLength(1)
   })
 
   it("rejects duplicate plugin ids in a plugin directory", async () => {

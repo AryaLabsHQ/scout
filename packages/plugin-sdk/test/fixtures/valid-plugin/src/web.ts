@@ -1,30 +1,41 @@
 import { defineScoutWebPlugin } from "../../../../src/index.js"
 
 export const web = defineScoutWebPlugin({
-  views: [
+  screens: [
     {
       id: "fixture-valid.list",
       pluginId: "fixture-valid",
-      kind: "list",
+      kind: "entity-list",
       title: "Fixtures",
       entityKind: "thing",
-      sections: [
-        {
-          _tag: "entity-table",
-          title: "Fixtures",
-          entityKind: "thing",
-          columns: [
-            {
-              id: "name",
-              label: "Name",
-              source: {
-                _tag: "field",
-                path: "displayName",
-              },
+      spec: {
+        root: "page",
+        elements: {
+          page: {
+            type: "Page",
+            props: {
+              title: "Fixtures",
             },
-          ],
+            children: ["fixtures-table"],
+          },
+          "fixtures-table": {
+            type: "EntityTable",
+            props: {
+              entityKind: "thing",
+              columns: [
+                {
+                  id: "name",
+                  label: "Name",
+                  source: {
+                    type: "field",
+                    path: "displayName",
+                  },
+                },
+              ],
+            },
+          },
         },
-      ],
+      },
     },
   ],
 })

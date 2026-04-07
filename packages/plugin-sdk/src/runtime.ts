@@ -10,9 +10,9 @@ import type {
   PluginCapability,
   PluginManifest,
   PluginPermission,
+  PluginUiScreen,
   SessionChunk,
   StreamDefinition,
-  ViewDefinition,
 } from "./schemas.js"
 
 export type AnySchema<A = unknown> = Schema.Schema<A>
@@ -82,7 +82,7 @@ export interface ScoutHubPlugin {
 }
 
 export interface ScoutWebPlugin {
-  readonly views: ReadonlyArray<ViewDefinition>
+  readonly screens: ReadonlyArray<PluginUiScreen>
 }
 
 export interface ScoutPluginPackage<E = never, R = never> {

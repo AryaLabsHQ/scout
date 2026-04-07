@@ -4,7 +4,7 @@ import {
   decodeActionRequest,
   decodeEntitySnapshot,
   decodePluginManifest,
-  decodeViewDefinition,
+  decodePluginUiScreen,
   PluginExecutionError,
 } from "../src/index.js"
 
@@ -135,48 +135,46 @@ describe("@scout/plugin-sdk schemas", () => {
     expect(entity.labels?.app).toBe("edge")
   })
 
-  it("decodes schema-driven view definitions", async () => {
-    const view = await run(
-      decodeViewDefinition({
-        id: "docker.container.list",
+  it("decodes plugin ui screens", async () => {
+    const screen = await run(
+      decodePluginUiScreen({
+        id: "docker.overview",
         pluginId: "docker",
-        kind: "list",
-        title: "Containers",
-        entityKind: "container",
-        sections: [
-          {
-            _tag: "entity-table",
-            title: "Containers",
-            entityKind: "container",
-            columns: [
-              {
-                id: "name",
-                label: "Name",
-                source: {
-                  _tag: "field",
-                  path: "displayName",
+        kind: "overview",
+        title: "Docker",
+        spec: {
+          root: "page",
+          elements: {
+            page: {
+              type: "Page",
+              props: {
+                title: "Docker",
+              },
+              children: ["restart-button"],
+            },
+            "restart-button": {
+              type: "Button",
+              props: {
+                label: "Restart",
+              },
+              on: {
+                press: {
+                  action: "plugin.runAction",
+                  params: {
+                    pluginId: "docker",
+                    actionId: "restart",
+                  },
                 },
               },
-              {
-                id: "status",
-                label: "Status",
-                source: {
-                  _tag: "status",
-                },
-              },
-            ],
-            actions: [
-              {
-                actionId: "restart",
-              },
-            ],
+            },
           },
-        ],
+        },
       }),
     )
 
-    expect(view.sections).toHaveLength(1)
-    expect(view.sections[0]?._tag).toBe("entity-table")
+    expect(screen.spec.root).toBe("page")
+    expect(screen.kind).toBe("overview")
+    expect(screen.spec.elements["restart-button"]?.on?.press).toBeDefined()
   })
 
   it("creates typed plugin execution errors", () => {

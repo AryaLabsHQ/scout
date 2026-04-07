@@ -32,7 +32,11 @@ export const StreamKindSchema = Schema.Literals([
   "custom",
 ])
 
-export const ViewKindSchema = Schema.Literals(["dashboard", "list", "detail"])
+export const PluginUiScreenKindSchema = Schema.Literals([
+  "overview",
+  "entity-list",
+  "entity-detail",
+])
 
 export const EventSeveritySchema = Schema.Literals(["info", "warning", "error"])
 
@@ -209,83 +213,81 @@ export const StreamChunkSchema = Schema.Union([
   EventChunkSchema,
 ])
 
-export const ViewValueSourceSchema = Schema.Union([
+export const PluginUiActionConfirmSchema = Schema.Struct({
+  title: Schema.String,
+  message: Schema.String,
+  confirmLabel: Schema.optionalKey(Schema.String),
+  cancelLabel: Schema.optionalKey(Schema.String),
+  variant: Schema.optionalKey(Schema.Literals(["default", "danger"])),
+})
+
+export const PluginUiActionSuccessSchema = Schema.Union([
   Schema.Struct({
-    _tag: Schema.Literal("field"),
-    path: Schema.String,
+    navigate: Schema.String,
   }),
   Schema.Struct({
-    _tag: Schema.Literal("metric"),
-    metricId: Schema.String,
+    set: Schema.Record(Schema.String, Schema.Unknown),
   }),
   Schema.Struct({
-    _tag: Schema.Literal("label"),
-    key: Schema.String,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("status"),
+    action: Schema.String,
   }),
 ])
 
-export const ViewColumnSchema = Schema.Struct({
-  id: Schema.String,
-  label: Schema.String,
-  source: ViewValueSourceSchema,
-})
-
-export const ViewMetricRefSchema = Schema.Struct({
-  metricId: Schema.String,
-  label: Schema.optionalKey(Schema.String),
-  unit: Schema.optionalKey(Schema.String),
-})
-
-export const ViewActionRefSchema = Schema.Struct({
-  actionId: Schema.String,
-  label: Schema.optionalKey(Schema.String),
-})
-
-export const ViewSectionSchema = Schema.Union([
+export const PluginUiActionErrorSchema = Schema.Union([
   Schema.Struct({
-    _tag: Schema.Literal("stat-grid"),
-    title: Schema.optionalKey(Schema.String),
-    metrics: Schema.Array(ViewMetricRefSchema),
+    set: Schema.Record(Schema.String, Schema.Unknown),
   }),
   Schema.Struct({
-    _tag: Schema.Literal("timeseries"),
-    title: Schema.optionalKey(Schema.String),
-    metrics: Schema.Array(ViewMetricRefSchema),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("entity-table"),
-    title: Schema.optionalKey(Schema.String),
-    entityKind: Schema.String,
-    columns: Schema.Array(ViewColumnSchema),
-    actions: Schema.optionalKey(Schema.Array(ViewActionRefSchema)),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("detail"),
-    title: Schema.optionalKey(Schema.String),
-    fields: Schema.Array(ViewColumnSchema),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("actions"),
-    title: Schema.optionalKey(Schema.String),
-    actions: Schema.Array(ViewActionRefSchema),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("logs"),
-    title: Schema.optionalKey(Schema.String),
-    streamId: Schema.String,
+    action: Schema.String,
   }),
 ])
 
-export const ViewDefinitionSchema = Schema.Struct({
+export const PluginUiActionBindingSchema = Schema.Struct({
+  action: Schema.String,
+  params: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+  confirm: Schema.optionalKey(PluginUiActionConfirmSchema),
+  onSuccess: Schema.optionalKey(PluginUiActionSuccessSchema),
+  onError: Schema.optionalKey(PluginUiActionErrorSchema),
+  preventDefault: Schema.optionalKey(Schema.Boolean),
+})
+
+export const PluginUiRepeatSchema = Schema.Struct({
+  statePath: Schema.String,
+  key: Schema.optionalKey(Schema.String),
+})
+
+export const PluginUiActionBindingOrBindingsSchema = Schema.Union([
+  PluginUiActionBindingSchema,
+  Schema.Array(PluginUiActionBindingSchema),
+])
+
+export const PluginUiElementSchema = Schema.Struct({
+  type: Schema.String,
+  props: Schema.Record(Schema.String, Schema.Unknown),
+  children: Schema.optionalKey(Schema.Array(Schema.String)),
+  visible: Schema.optionalKey(Schema.Unknown),
+  on: Schema.optionalKey(
+    Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema),
+  ),
+  repeat: Schema.optionalKey(PluginUiRepeatSchema),
+  watch: Schema.optionalKey(
+    Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema),
+  ),
+})
+
+export const PluginUiSpecSchema = Schema.Struct({
+  root: Schema.String,
+  elements: Schema.Record(Schema.String, PluginUiElementSchema),
+  state: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+})
+
+export const PluginUiScreenSchema = Schema.Struct({
   id: Schema.String,
   pluginId: Schema.String,
-  kind: ViewKindSchema,
+  kind: PluginUiScreenKindSchema,
   title: Schema.String,
   entityKind: Schema.optionalKey(Schema.String),
-  sections: Schema.Array(ViewSectionSchema),
+  spec: PluginUiSpecSchema,
 })
 
 export class PluginExecutionError extends Schema.ErrorClass<PluginExecutionError>(
@@ -313,7 +315,7 @@ export type PluginPermission = typeof PluginPermissionSchema.Type
 export type PluginCapabilityStatus = typeof PluginCapabilityStatusSchema.Type
 export type MetricKind = typeof MetricKindSchema.Type
 export type StreamKind = typeof StreamKindSchema.Type
-export type ViewKind = typeof ViewKindSchema.Type
+export type PluginUiScreenKind = typeof PluginUiScreenKindSchema.Type
 export type EventSeverity = typeof EventSeveritySchema.Type
 export type PluginCapabilityDefinition = typeof PluginCapabilityDefinitionSchema.Type
 export type EntityKindDefinition = typeof EntityKindDefinitionSchema.Type
@@ -337,12 +339,14 @@ export type LogChunk = typeof LogChunkSchema.Type
 export type SessionChunk = typeof SessionChunkSchema.Type
 export type EventChunk = typeof EventChunkSchema.Type
 export type StreamChunk = typeof StreamChunkSchema.Type
-export type ViewValueSource = typeof ViewValueSourceSchema.Type
-export type ViewColumn = typeof ViewColumnSchema.Type
-export type ViewMetricRef = typeof ViewMetricRefSchema.Type
-export type ViewActionRef = typeof ViewActionRefSchema.Type
-export type ViewSection = typeof ViewSectionSchema.Type
-export type ViewDefinition = typeof ViewDefinitionSchema.Type
+export type PluginUiActionConfirm = typeof PluginUiActionConfirmSchema.Type
+export type PluginUiActionSuccess = typeof PluginUiActionSuccessSchema.Type
+export type PluginUiActionError = typeof PluginUiActionErrorSchema.Type
+export type PluginUiActionBinding = typeof PluginUiActionBindingSchema.Type
+export type PluginUiRepeat = typeof PluginUiRepeatSchema.Type
+export type PluginUiElement = typeof PluginUiElementSchema.Type
+export type PluginUiSpec = typeof PluginUiSpecSchema.Type
+export type PluginUiScreen = typeof PluginUiScreenSchema.Type
 
 export const decodePluginManifest = Schema.decodeUnknownEffect(PluginManifestSchema)
 export const decodeEntitySnapshot = Schema.decodeUnknownEffect(EntitySnapshotSchema)
@@ -351,4 +355,4 @@ export const decodePluginCollectionResult = Schema.decodeUnknownEffect(
   PluginCollectionResultSchema,
 )
 export const decodeActionRequest = Schema.decodeUnknownEffect(ActionRequestSchema)
-export const decodeViewDefinition = Schema.decodeUnknownEffect(ViewDefinitionSchema)
+export const decodePluginUiScreen = Schema.decodeUnknownEffect(PluginUiScreenSchema)
