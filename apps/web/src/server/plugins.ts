@@ -11,7 +11,7 @@ export interface PluginDetailResponse {
     readonly alerts: ReadonlyArray<Record<string, any>>
   }
   readonly web?: {
-    readonly views: ReadonlyArray<Record<string, any>>
+    readonly screens: ReadonlyArray<Record<string, any>>
   }
 }
 
