@@ -3,8 +3,8 @@ import type {
   ActionDefinition,
   EntityKindDefinition,
   MetricDefinition,
+  PluginUiScreen,
   StreamDefinition,
-  ViewDefinition,
 } from "@scout/plugin-sdk"
 
 export const K8S_PLUGIN_ID = "@scout/plugin-k8s"
@@ -246,131 +246,479 @@ export const K8S_STREAM_DEFINITIONS: ReadonlyArray<StreamDefinition> = [
   },
 ]
 
-export const K8S_VIEW_DEFINITIONS: ReadonlyArray<ViewDefinition> = [
+export const K8S_UI_SCREENS: ReadonlyArray<PluginUiScreen> = [
   {
     id: "k8s.cluster-overview",
     pluginId: K8S_PLUGIN_ID,
-    kind: "dashboard",
+    kind: "overview",
     title: "Kubernetes Overview",
-    sections: [
-      {
-        _tag: "stat-grid",
-        title: "Cluster Health",
-        metrics: [
-          {
-            metricId: K8S_METRIC_IDS.clusterNodesReady,
+    spec: {
+      root: "page",
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Kubernetes Overview",
+            description: "Cluster health, namespaces, and workload inventory.",
+          },
+          children: ["cluster-health", "namespace-table", "workload-table"],
+        },
+        "cluster-health": {
+          type: "Section",
+          props: {
+            title: "Cluster Health",
+          },
+          children: ["nodes-ready-card"],
+        },
+        "nodes-ready-card": {
+          type: "MetricStatCard",
+          props: {
             label: "Nodes Ready",
+            metricId: K8S_METRIC_IDS.clusterNodesReady,
             unit: "count",
+            latestStatePath: `/metricsLatest/${K8S_METRIC_IDS.clusterNodesReady}`,
           },
-        ],
+        },
+        "namespace-table": {
+          type: "EntityTable",
+          props: {
+            title: "Namespaces",
+            entityKind: K8S_ENTITY_KINDS.namespace,
+            statePath: `/entitiesByKind/${K8S_ENTITY_KINDS.namespace}`,
+            detailScreenId: "k8s.namespace-detail",
+            columns: [
+              {
+                id: "name",
+                label: "Name",
+                source: { type: "field", path: "displayName" },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: { type: "status" },
+              },
+              {
+                id: "workloads-ready",
+                label: "Workloads Ready",
+                source: {
+                  type: "metric",
+                  metricId: K8S_METRIC_IDS.namespaceWorkloadsReady,
+                },
+              },
+            ],
+          },
+        },
+        "workload-table": {
+          type: "EntityTable",
+          props: {
+            title: "Workloads",
+            entityKind: K8S_ENTITY_KINDS.deployment,
+            statePath: `/entitiesByKind/${K8S_ENTITY_KINDS.deployment}`,
+            detailScreenId: "k8s.workload-detail",
+            columns: [
+              {
+                id: "name",
+                label: "Workload",
+                source: { type: "field", path: "displayName" },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: { type: "status" },
+              },
+              {
+                id: "replicas-ready",
+                label: "Replicas Ready",
+                source: {
+                  type: "metric",
+                  metricId: K8S_METRIC_IDS.workloadReplicasReady,
+                },
+              },
+            ],
+          },
+        },
       },
-      {
-        _tag: "entity-table",
-        title: "Namespaces",
-        entityKind: K8S_ENTITY_KINDS.namespace,
-        columns: [
-          {
-            id: "name",
-            label: "Name",
-            source: { _tag: "field", path: "displayName" },
-          },
-          {
-            id: "status",
-            label: "Status",
-            source: { _tag: "status" },
-          },
-        ],
-      },
-    ],
+    },
   },
   {
     id: "k8s.namespace-detail",
     pluginId: K8S_PLUGIN_ID,
-    kind: "detail",
+    kind: "entity-detail",
     title: "Namespace Detail",
     entityKind: K8S_ENTITY_KINDS.namespace,
-    sections: [
-      {
-        _tag: "timeseries",
-        title: "Workload Readiness",
-        metrics: [
-          {
+    spec: {
+      root: "page",
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Namespace Detail",
+            entityStatePath: "/selectedEntity",
+          },
+          children: ["namespace-fields", "workload-readiness", "namespace-actions"],
+        },
+        "namespace-fields": {
+          type: "DetailList",
+          props: {
+            title: "Namespace",
+            entityStatePath: "/selectedEntity",
+            fields: [
+              {
+                id: "name",
+                label: "Name",
+                source: { type: "field", path: "displayName" },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: { type: "status" },
+              },
+            ],
+          },
+        },
+        "workload-readiness": {
+          type: "MetricChart",
+          props: {
+            title: "Workload Readiness",
             metricId: K8S_METRIC_IDS.namespaceWorkloadsReady,
-            label: "Workloads Ready",
             unit: "count",
+            entityStatePath: "/selectedEntity",
+            historyStatePath: `/metricsHistory/${K8S_METRIC_IDS.namespaceWorkloadsReady}`,
           },
-        ],
-      },
-      {
-        _tag: "actions",
-        title: "Namespace Actions",
-        actions: [
-          {
-            actionId: K8S_ACTION_IDS.describeResource,
+        },
+        "namespace-actions": {
+          type: "Section",
+          props: {
+            title: "Namespace Actions",
+          },
+          children: ["describe-resource"],
+        },
+        "describe-resource": {
+          type: "ActionButton",
+          props: {
             label: "Describe",
+            variant: "secondary",
           },
-        ],
+          on: {
+            press: {
+              action: "plugin.runAction",
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.describeResource,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {},
+              },
+            },
+          },
+        },
       },
-    ],
+    },
   },
   {
     id: "k8s.workload-detail",
     pluginId: K8S_PLUGIN_ID,
-    kind: "detail",
+    kind: "entity-detail",
     title: "Workload Detail",
-    entityKind: K8S_ENTITY_KINDS.workload,
-    sections: [
-      {
-        _tag: "stat-grid",
-        title: "Workload Stats",
-        metrics: [
-          {
-            metricId: K8S_METRIC_IDS.workloadReplicasReady,
-            label: "Replicas Ready",
-            unit: "count",
+    entityKind: K8S_ENTITY_KINDS.deployment,
+    spec: {
+      root: "page",
+      state: {
+        forms: {
+          scaleWorkload: {
+            replicas: 1,
           },
-        ],
+        },
       },
-      {
-        _tag: "logs",
-        title: "Pod Logs",
-        streamId: K8S_STREAM_IDS.podLogs,
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Workload Detail",
+            entityStatePath: "/selectedEntity",
+          },
+          children: [
+            "workload-fields",
+            "workload-replicas",
+            "scale-form",
+            "workload-actions",
+            "workload-logs",
+          ],
+        },
+        "workload-fields": {
+          type: "DetailList",
+          props: {
+            title: "Workload",
+            entityStatePath: "/selectedEntity",
+            fields: [
+              {
+                id: "name",
+                label: "Name",
+                source: { type: "field", path: "displayName" },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: { type: "status" },
+              },
+            ],
+          },
+        },
+        "workload-replicas": {
+          type: "MetricStatCard",
+          props: {
+            label: "Replicas Ready",
+            metricId: K8S_METRIC_IDS.workloadReplicasReady,
+            unit: "count",
+            entityStatePath: "/selectedEntity",
+            latestStatePath: `/metricsLatest/${K8S_METRIC_IDS.workloadReplicasReady}`,
+          },
+        },
+        "scale-form": {
+          type: "Form",
+          props: {
+            title: "Scale Workload",
+          },
+          children: ["scale-replicas-input", "scale-submit-button"],
+        },
+        "scale-replicas-input": {
+          type: "NumberField",
+          props: {
+            label: "Replicas",
+            min: 0,
+            bindState: "/forms/scaleWorkload/replicas",
+          },
+        },
+        "scale-submit-button": {
+          type: "ActionButton",
+          props: {
+            label: "Apply Scale",
+          },
+          on: {
+            press: {
+              action: "plugin.runAction",
+              confirm: {
+                title: "Scale workload",
+                message: "Apply the requested replica count to this workload?",
+                confirmLabel: "Scale",
+              },
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.scaleWorkload,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {
+                  replicas: {
+                    $state: "/forms/scaleWorkload/replicas",
+                  },
+                },
+              },
+            },
+          },
+        },
+        "workload-actions": {
+          type: "Section",
+          props: {
+            title: "Actions",
+          },
+          children: ["workload-describe-button"],
+        },
+        "workload-describe-button": {
+          type: "ActionButton",
+          props: {
+            label: "Describe",
+            variant: "secondary",
+          },
+          on: {
+            press: {
+              action: "plugin.runAction",
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.describeResource,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {},
+              },
+            },
+          },
+        },
+        "workload-logs": {
+          type: "LogPanel",
+          props: {
+            title: "Pod Logs",
+            streamId: K8S_STREAM_IDS.podLogs,
+            targetEntityStatePath: "/selectedEntity",
+            fallbackTargetKinds: [K8S_ENTITY_KINDS.pod],
+            relationshipTypes: ["contains", "owns", "selects", "targets"],
+          },
+        },
       },
-    ],
+    },
   },
   {
     id: "k8s.pod-detail",
     pluginId: K8S_PLUGIN_ID,
-    kind: "detail",
+    kind: "entity-detail",
     title: "Pod Detail",
     entityKind: K8S_ENTITY_KINDS.pod,
-    sections: [
-      {
-        _tag: "detail",
-        title: "Pod Fields",
-        fields: [
-          {
-            id: "name",
-            label: "Name",
-            source: { _tag: "field", path: "displayName" },
+    spec: {
+      root: "page",
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Pod Detail",
+            entityStatePath: "/selectedEntity",
           },
-          {
-            id: "status",
-            label: "Status",
-            source: { _tag: "status" },
+          children: ["pod-fields", "pod-stats", "pod-logs", "pod-actions"],
+        },
+        "pod-fields": {
+          type: "DetailList",
+          props: {
+            title: "Pod Fields",
+            entityStatePath: "/selectedEntity",
+            fields: [
+              {
+                id: "name",
+                label: "Name",
+                source: { type: "field", path: "displayName" },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: { type: "status" },
+              },
+            ],
           },
-        ],
+        },
+        "pod-stats": {
+          type: "Section",
+          props: {
+            title: "Pod Health",
+          },
+          children: ["pod-ready-card", "pod-restarts-card"],
+        },
+        "pod-ready-card": {
+          type: "MetricStatCard",
+          props: {
+            label: "Ready",
+            metricId: K8S_METRIC_IDS.podReady,
+            entityStatePath: "/selectedEntity",
+            latestStatePath: `/metricsLatest/${K8S_METRIC_IDS.podReady}`,
+          },
+        },
+        "pod-restarts-card": {
+          type: "MetricStatCard",
+          props: {
+            label: "Restarts",
+            metricId: K8S_METRIC_IDS.podRestartsTotal,
+            unit: "count",
+            entityStatePath: "/selectedEntity",
+            latestStatePath: `/metricsLatest/${K8S_METRIC_IDS.podRestartsTotal}`,
+          },
+        },
+        "pod-logs": {
+          type: "LogPanel",
+          props: {
+            title: "Pod Logs",
+            streamId: K8S_STREAM_IDS.podLogs,
+            targetEntityStatePath: "/selectedEntity",
+          },
+        },
+        "pod-actions": {
+          type: "Section",
+          props: {
+            title: "Pod Actions",
+          },
+          children: ["pod-describe-button", "restart-pod", "delete-pod"],
+        },
+        "pod-describe-button": {
+          type: "ActionButton",
+          props: {
+            label: "Describe",
+            variant: "secondary",
+          },
+          on: {
+            press: {
+              action: "plugin.runAction",
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.describeResource,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {},
+              },
+            },
+          },
+        },
+        "restart-pod": {
+          type: "ActionButton",
+          props: {
+            label: "Restart Pod",
+            variant: "secondary",
+          },
+          on: {
+            press: {
+              action: "plugin.runAction",
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.restartPod,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {},
+              },
+              confirm: {
+                title: "Restart Pod",
+                message: "Delete this pod so Kubernetes recreates it?",
+                confirmLabel: "Restart",
+              },
+            },
+          },
+        },
+        "delete-pod": {
+          type: "ActionButton",
+          props: {
+            label: "Delete Pod",
+            variant: "destructive",
+          },
+          on: {
+            press: {
+              action: "plugin.runAction",
+              params: {
+                pluginId: K8S_PLUGIN_ID,
+                actionId: K8S_ACTION_IDS.deletePod,
+                target: {
+                  entityRef: {
+                    $state: "/selectedEntity/ref",
+                  },
+                },
+                input: {},
+              },
+              confirm: {
+                title: "Delete Pod",
+                message: "Delete this pod immediately?",
+                confirmLabel: "Delete",
+                variant: "danger",
+              },
+            },
+          },
+        },
       },
-      {
-        _tag: "actions",
-        title: "Pod Actions",
-        actions: [
-          {
-            actionId: K8S_ACTION_IDS.restartPod,
-            label: "Restart",
-          },
-        ],
-      },
-    ],
+    },
   },
 ]

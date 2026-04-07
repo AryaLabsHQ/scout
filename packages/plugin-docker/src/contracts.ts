@@ -3,8 +3,8 @@ import type {
   ActionDefinition,
   EntityKindDefinition,
   MetricDefinition,
+  PluginUiScreen,
   StreamDefinition,
-  ViewDefinition,
 } from "@scout/plugin-sdk"
 
 export const DOCKER_PLUGIN_ID = "@scout/plugin-docker"
@@ -231,123 +231,438 @@ export const DOCKER_STREAM_DEFINITIONS: ReadonlyArray<StreamDefinition> = [
   },
 ]
 
-export const DOCKER_VIEW_DEFINITIONS: ReadonlyArray<ViewDefinition> = [
+export const DOCKER_UI_SCREENS: ReadonlyArray<PluginUiScreen> = [
   {
     id: "docker.overview",
     pluginId: DOCKER_PLUGIN_ID,
-    kind: "dashboard",
+    kind: "overview",
     title: "Docker Overview",
-    sections: [
-      {
-        _tag: "stat-grid",
-        title: "Container Health",
-        metrics: [
-          { metricId: DOCKER_METRIC_IDS.runningContainers, label: "Running", unit: "count" },
-          { metricId: DOCKER_METRIC_IDS.pausedContainers, label: "Paused", unit: "count" },
-          { metricId: DOCKER_METRIC_IDS.stoppedContainers, label: "Stopped", unit: "count" },
-        ],
+    spec: {
+      root: "page",
+      state: {
+        ui: {
+          selectedEntityId: null,
+        },
       },
-      {
-        _tag: "entity-table",
-        title: "Containers",
-        entityKind: DOCKER_ENTITY_KINDS.container,
-        columns: [
-          { id: "name", label: "Name", source: { _tag: "field", path: "displayName" } },
-          { id: "status", label: "Status", source: { _tag: "status" } },
-          { id: "image", label: "Image", source: { _tag: "field", path: "state.image" } },
-        ],
-        actions: [
-          { actionId: DOCKER_ACTION_IDS.startContainer, label: "Start" },
-          { actionId: DOCKER_ACTION_IDS.stopContainer, label: "Stop" },
-          { actionId: DOCKER_ACTION_IDS.restartContainer, label: "Restart" },
-        ],
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Docker Overview",
+            description: "Inspect Docker daemon health and containers on this node.",
+          },
+          children: ["health-section", "containers-section"],
+        },
+        "health-section": {
+          type: "Section",
+          props: {
+            title: "Container Health",
+          },
+          children: ["health-stats"],
+        },
+        "health-stats": {
+          type: "StatGrid",
+          props: {
+            items: [
+              {
+                id: DOCKER_METRIC_IDS.runningContainers,
+                label: "Running",
+                metricId: DOCKER_METRIC_IDS.runningContainers,
+                unit: "count",
+              },
+              {
+                id: DOCKER_METRIC_IDS.pausedContainers,
+                label: "Paused",
+                metricId: DOCKER_METRIC_IDS.pausedContainers,
+                unit: "count",
+              },
+              {
+                id: DOCKER_METRIC_IDS.stoppedContainers,
+                label: "Stopped",
+                metricId: DOCKER_METRIC_IDS.stoppedContainers,
+                unit: "count",
+              },
+            ],
+          },
+        },
+        "containers-section": {
+          type: "Section",
+          props: {
+            title: "Containers",
+          },
+          children: ["containers-table"],
+        },
+        "containers-table": {
+          type: "EntityTable",
+          props: {
+            entityKind: DOCKER_ENTITY_KINDS.container,
+            columns: [
+              {
+                id: "name",
+                label: "Name",
+                source: {
+                  kind: "field",
+                  path: "displayName",
+                },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: {
+                  kind: "status",
+                },
+              },
+              {
+                id: "image",
+                label: "Image",
+                source: {
+                  kind: "field",
+                  path: "state.image",
+                },
+              },
+            ],
+            rowActions: [
+              {
+                label: "Start",
+                actionId: DOCKER_ACTION_IDS.startContainer,
+              },
+              {
+                label: "Stop",
+                actionId: DOCKER_ACTION_IDS.stopContainer,
+              },
+              {
+                label: "Restart",
+                actionId: DOCKER_ACTION_IDS.restartContainer,
+              },
+            ],
+          },
+          on: {
+            rowSelect: {
+              action: "ui.selectEntity",
+              params: {
+                entityRef: {
+                  $state: "/event/entityRef",
+                },
+              },
+            },
+          },
+        },
       },
-    ],
+    },
   },
   {
     id: "docker.containers",
     pluginId: DOCKER_PLUGIN_ID,
-    kind: "list",
+    kind: "entity-list",
     title: "Docker Containers",
     entityKind: DOCKER_ENTITY_KINDS.container,
-    sections: [
-      {
-        _tag: "entity-table",
-        title: "Containers",
-        entityKind: DOCKER_ENTITY_KINDS.container,
-        columns: [
-          { id: "name", label: "Name", source: { _tag: "field", path: "displayName" } },
-          { id: "status", label: "Status", source: { _tag: "status" } },
-          { id: "restarts", label: "Restarts", source: { _tag: "metric", metricId: DOCKER_METRIC_IDS.containerRestarts } },
-        ],
+    spec: {
+      root: "page",
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Docker Containers",
+          },
+          children: ["containers-table"],
+        },
+        "containers-table": {
+          type: "EntityTable",
+          props: {
+            entityKind: DOCKER_ENTITY_KINDS.container,
+            columns: [
+              {
+                id: "name",
+                label: "Name",
+                source: {
+                  kind: "field",
+                  path: "displayName",
+                },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: {
+                  kind: "status",
+                },
+              },
+              {
+                id: "restarts",
+                label: "Restarts",
+                source: {
+                  kind: "metric",
+                  metricId: DOCKER_METRIC_IDS.containerRestarts,
+                },
+              },
+            ],
+          },
+          on: {
+            rowSelect: [
+              {
+                action: "ui.selectEntity",
+                params: {
+                  entityRef: {
+                    $state: "/event/entityRef",
+                  },
+                },
+              },
+              {
+                action: "ui.navigate",
+                params: {
+                  screenId: "docker.container-detail",
+                  entityRef: {
+                    $state: "/event/entityRef",
+                  },
+                },
+              },
+            ],
+          },
+        },
       },
-    ],
+    },
   },
   {
     id: "docker.container-detail",
     pluginId: DOCKER_PLUGIN_ID,
-    kind: "detail",
+    kind: "entity-detail",
     title: "Container Detail",
     entityKind: DOCKER_ENTITY_KINDS.container,
-    sections: [
-      {
-        _tag: "detail",
-        title: "Container Fields",
-        fields: [
-          { id: "name", label: "Name", source: { _tag: "field", path: "displayName" } },
-          { id: "status", label: "Status", source: { _tag: "status" } },
-          { id: "image", label: "Image", source: { _tag: "field", path: "state.image" } },
-        ],
+    spec: {
+      root: "page",
+      state: {
+        forms: {
+          logs: {
+            tail: 200,
+          },
+        },
       },
-      {
-        _tag: "timeseries",
-        title: "Runtime Metrics",
-        metrics: [
-          { metricId: DOCKER_METRIC_IDS.containerCpuPercent, label: "CPU", unit: "percent" },
-          { metricId: DOCKER_METRIC_IDS.containerMemoryUsageBytes, label: "Memory", unit: "bytes" },
-          { metricId: DOCKER_METRIC_IDS.containerNetworkRxBytes, label: "RX", unit: "bytes" },
-          { metricId: DOCKER_METRIC_IDS.containerNetworkTxBytes, label: "TX", unit: "bytes" },
-        ],
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Container Detail",
+          },
+          children: [
+            "container-fields",
+            "runtime-metrics",
+            "container-actions",
+            "container-logs",
+          ],
+        },
+        "container-fields": {
+          type: "DetailList",
+          props: {
+            title: "Container Fields",
+            fields: [
+              {
+                id: "name",
+                label: "Name",
+                source: {
+                  kind: "field",
+                  path: "displayName",
+                },
+              },
+              {
+                id: "status",
+                label: "Status",
+                source: {
+                  kind: "status",
+                },
+              },
+              {
+                id: "image",
+                label: "Image",
+                source: {
+                  kind: "field",
+                  path: "state.image",
+                },
+              },
+            ],
+          },
+        },
+        "runtime-metrics": {
+          type: "MetricChart",
+          props: {
+            title: "Runtime Metrics",
+            metrics: [
+              {
+                metricId: DOCKER_METRIC_IDS.containerCpuPercent,
+                label: "CPU",
+                unit: "percent",
+              },
+              {
+                metricId: DOCKER_METRIC_IDS.containerMemoryUsageBytes,
+                label: "Memory",
+                unit: "bytes",
+              },
+              {
+                metricId: DOCKER_METRIC_IDS.containerNetworkRxBytes,
+                label: "RX",
+                unit: "bytes",
+              },
+              {
+                metricId: DOCKER_METRIC_IDS.containerNetworkTxBytes,
+                label: "TX",
+                unit: "bytes",
+              },
+            ],
+          },
+        },
+        "container-actions": {
+          type: "ActionBar",
+          props: {
+            title: "Container Actions",
+            actions: [
+              {
+                id: DOCKER_ACTION_IDS.inspectContainer,
+                label: "Inspect",
+                action: {
+                  action: "plugin.runAction",
+                  params: {
+                    actionId: DOCKER_ACTION_IDS.inspectContainer,
+                    entityRef: {
+                      $state: "/selectedEntity/ref",
+                    },
+                  },
+                },
+              },
+              {
+                id: DOCKER_ACTION_IDS.startContainer,
+                label: "Start",
+                action: {
+                  action: "plugin.runAction",
+                  params: {
+                    actionId: DOCKER_ACTION_IDS.startContainer,
+                    entityRef: {
+                      $state: "/selectedEntity/ref",
+                    },
+                  },
+                },
+              },
+              {
+                id: DOCKER_ACTION_IDS.stopContainer,
+                label: "Stop",
+                action: {
+                  action: "plugin.runAction",
+                  params: {
+                    actionId: DOCKER_ACTION_IDS.stopContainer,
+                    entityRef: {
+                      $state: "/selectedEntity/ref",
+                    },
+                  },
+                  confirm: {
+                    title: "Stop container?",
+                    message: "Stop the selected container on this node.",
+                    confirmLabel: "Stop",
+                    variant: "danger",
+                  },
+                },
+              },
+              {
+                id: DOCKER_ACTION_IDS.restartContainer,
+                label: "Restart",
+                action: {
+                  action: "plugin.runAction",
+                  params: {
+                    actionId: DOCKER_ACTION_IDS.restartContainer,
+                    entityRef: {
+                      $state: "/selectedEntity/ref",
+                    },
+                  },
+                  confirm: {
+                    title: "Restart container?",
+                    message: "Restart the selected container on this node.",
+                    confirmLabel: "Restart",
+                  },
+                },
+              },
+            ],
+          },
+        },
+        "container-logs": {
+          type: "LogPanel",
+          props: {
+            title: "Container Logs",
+            streamId: DOCKER_STREAM_IDS.containerLogs,
+            targetEntityStatePath: "/selectedEntity",
+            statePath: "/forms/logs",
+          },
+        },
       },
-      {
-        _tag: "actions",
-        title: "Container Actions",
-        actions: [
-          { actionId: DOCKER_ACTION_IDS.inspectContainer, label: "Inspect" },
-          { actionId: DOCKER_ACTION_IDS.startContainer, label: "Start" },
-          { actionId: DOCKER_ACTION_IDS.stopContainer, label: "Stop" },
-          { actionId: DOCKER_ACTION_IDS.restartContainer, label: "Restart" },
-        ],
-      },
-      {
-        _tag: "logs",
-        title: "Container Logs",
-        streamId: DOCKER_STREAM_IDS.containerLogs,
-      },
-    ],
+    },
   },
   {
     id: "docker.image-detail",
     pluginId: DOCKER_PLUGIN_ID,
-    kind: "detail",
+    kind: "entity-detail",
     title: "Image Detail",
     entityKind: DOCKER_ENTITY_KINDS.image,
-    sections: [
-      {
-        _tag: "detail",
-        title: "Image Fields",
-        fields: [
-          { id: "name", label: "Image", source: { _tag: "field", path: "displayName" } },
-          { id: "digest", label: "Digest", source: { _tag: "field", path: "state.digest" } },
-        ],
+    spec: {
+      root: "page",
+      state: {
+        forms: {
+          pull: {},
+        },
       },
-      {
-        _tag: "actions",
-        title: "Image Actions",
-        actions: [
-          { actionId: DOCKER_ACTION_IDS.pullImage, label: "Pull" },
-        ],
+      elements: {
+        page: {
+          type: "Page",
+          props: {
+            title: "Image Detail",
+          },
+          children: ["image-fields", "image-actions"],
+        },
+        "image-fields": {
+          type: "DetailList",
+          props: {
+            title: "Image Fields",
+            fields: [
+              {
+                id: "name",
+                label: "Image",
+                source: {
+                  kind: "field",
+                  path: "displayName",
+                },
+              },
+              {
+                id: "digest",
+                label: "Digest",
+                source: {
+                  kind: "field",
+                  path: "state.digest",
+                },
+              },
+            ],
+          },
+        },
+        "image-actions": {
+          type: "ActionBar",
+          props: {
+            title: "Image Actions",
+            actions: [
+              {
+                id: DOCKER_ACTION_IDS.pullImage,
+                label: "Pull",
+                action: {
+                  action: "plugin.runAction",
+                  params: {
+                    actionId: DOCKER_ACTION_IDS.pullImage,
+                    entityRef: {
+                      $state: "/selectedEntity/ref",
+                    },
+                    input: {
+                      repository: {
+                        $state: "/selectedEntity/displayName",
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
       },
-    ],
+    },
   },
 ]

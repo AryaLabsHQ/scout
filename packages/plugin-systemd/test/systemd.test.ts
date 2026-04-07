@@ -1,6 +1,10 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import { executePluginAction, openPluginStream } from "@scout/plugin-sdk"
+import {
+  decodePluginUiScreen,
+  executePluginAction,
+  openPluginStream,
+} from "@scout/plugin-sdk"
 import {
   SYSTEMD_ACTION_IDS,
   SYSTEMD_PLUGIN_ID,
@@ -14,6 +18,7 @@ import {
   parseSystemctlShow,
   type SystemdDependencies,
 } from "../src/systemd.js"
+import { web } from "../src/web.js"
 
 const makeDeps = (
   overrides: Partial<SystemdDependencies> = {},
@@ -294,5 +299,33 @@ describe("systemd plugin", () => {
     expect([...chunks]).toEqual([
       { lines: ["line one", "line two"], ts: 123 },
     ])
+  })
+
+  it("exports valid json-render screens for the web runtime", async () => {
+    const screens = await Promise.all(
+      web.screens.map((screen) => Effect.runPromise(decodePluginUiScreen(screen))),
+    )
+
+    expect(screens).toHaveLength(2)
+    expect(screens.map((screen) => screen.id)).toEqual([
+      "systemd.overview",
+      "systemd.unit-detail",
+    ])
+    expect(screens[0]?.kind).toBe("overview")
+    expect(screens[1]).toMatchObject({
+      kind: "entity-detail",
+      entityKind: SYSTEMD_UNIT_KIND,
+    })
+    expect(screens[1]?.spec.elements.readUnitFileButton).toMatchObject({
+      type: "ActionButton",
+      on: {
+        press: {
+          action: "plugin.runAction",
+          params: {
+            actionId: SYSTEMD_ACTION_IDS.readUnitFile,
+          },
+        },
+      },
+    })
   })
 })

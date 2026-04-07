@@ -1,12 +1,18 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import { decodePluginManifest, executePluginAction, openPluginStream } from "@scout/plugin-sdk"
+import {
+  decodePluginManifest,
+  decodePluginUiScreen,
+  executePluginAction,
+  openPluginStream,
+} from "@scout/plugin-sdk"
 import { agent } from "../src/agent.js"
 import {
   DOCKER_ACTION_IDS,
   DOCKER_ENTITY_KINDS,
   DOCKER_FEATURES,
   DOCKER_PLUGIN_ID,
+  DOCKER_STREAM_IDS,
 } from "../src/contracts.js"
 import {
   createDockerAgentPlugin,
@@ -573,11 +579,25 @@ describe("docker plugin", () => {
     ).resolves.toEqual({ entities: [] })
   })
 
-  it("exports schema-driven views for the web", () => {
-    expect(web.views).toHaveLength(4)
-    expect(web.views.map((view) => view.id)).toEqual(
+  it("exports JSON-rendered screens for the web", async () => {
+    expect(web.screens).toHaveLength(4)
+    expect(web.screens.map((screen) => screen.id)).toEqual(
       expect.arrayContaining(["docker.overview", "docker.container-detail"]),
     )
+
+    await Promise.all(web.screens.map((screen) => Effect.runPromise(decodePluginUiScreen(screen))))
+
+    const containerDetail = web.screens.find((screen) => screen.id === "docker.container-detail")
+
+    expect(containerDetail?.kind).toBe("entity-detail")
+    expect(containerDetail?.spec.root).toBe("page")
+    expect(containerDetail?.spec.elements["container-actions"]?.props).toMatchObject({
+      title: "Container Actions",
+    })
+    expect(containerDetail?.spec.elements["container-logs"]?.props).toMatchObject({
+      streamId: DOCKER_STREAM_IDS.containerLogs,
+      targetEntityStatePath: "/selectedEntity",
+    })
   })
 
   it("parses Docker CLI helpers safely", () => {

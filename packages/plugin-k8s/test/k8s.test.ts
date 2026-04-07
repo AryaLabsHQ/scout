@@ -322,17 +322,13 @@ describe("kubernetes plugin", () => {
     })
   })
 
-  it("opens pod log and session streams through the generic plugin stream path", async () => {
+  it("opens pod log streams through the generic plugin stream path", async () => {
     const plugin = {
       manifest,
       agent: createK8sAgentPlugin({
         exec: createKubectlExecFixture({
           "logs api-7d9bc6b5f6-abcde -n team-a --tail 2 -c api": {
             stdout: "line one\nline two\n",
-            exitCode: 0,
-          },
-          "exec -n team-a api-7d9bc6b5f6-abcde -c api -- sh -lc echo hi": {
-            stdout: "hi\n",
             exitCode: 0,
           },
         }),
@@ -370,10 +366,44 @@ describe("kubernetes plugin", () => {
 
   })
 
-  it("exports schema-driven views for the web", () => {
-    expect(web.views).toHaveLength(4)
-    expect(web.views.map((view) => view.id)).toEqual(
+  it("exports json-render plugin screens for the web", () => {
+    expect(web.screens).toHaveLength(4)
+    expect(web.screens.map((screen) => screen.id)).toEqual(
       expect.arrayContaining(["k8s.cluster-overview", "k8s.pod-detail"]),
     )
+    expect(web.screens.find((screen) => screen.id === "k8s.cluster-overview")).toMatchObject({
+      kind: "overview",
+      spec: {
+        root: "page",
+      },
+    })
+
+    expect(
+      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements[
+        "scale-submit-button"
+      ],
+    ).toMatchObject({
+      type: "ActionButton",
+      on: {
+        press: {
+          action: "plugin.runAction",
+          params: {
+            actionId: K8S_ACTION_IDS.scaleWorkload,
+          },
+        },
+      },
+    })
+
+    expect(
+      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements[
+        "workload-logs"
+      ],
+    ).toMatchObject({
+      type: "LogPanel",
+      props: {
+        streamId: K8S_STREAM_IDS.podLogs,
+        fallbackTargetKinds: [K8S_ENTITY_KINDS.pod],
+      },
+    })
   })
 })

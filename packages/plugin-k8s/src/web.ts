@@ -1,6 +1,6 @@
 import { defineScoutWebPlugin } from "@scout/plugin-sdk"
-import { K8S_VIEW_DEFINITIONS } from "./contracts.js"
+import { K8S_UI_SCREENS } from "./contracts.js"
 
 export const web = defineScoutWebPlugin({
-  views: K8S_VIEW_DEFINITIONS,
+  screens: K8S_UI_SCREENS,
 })
