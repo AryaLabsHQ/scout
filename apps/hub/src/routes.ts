@@ -265,7 +265,7 @@ export const GetPluginRoute = HttpRouter.add(
         },
       }),
       ...(plugin.hub !== undefined && { hub: { alerts: plugin.hub.alerts ?? [] } }),
-      ...(plugin.web !== undefined && { web: { views: plugin.web.views } }),
+      ...(plugin.web !== undefined && { web: { screens: plugin.web.screens } }),
     })
   }),
 )

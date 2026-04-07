@@ -43,7 +43,7 @@ describe("GET /api/plugins", () => {
 })
 
 describe("GET /api/plugins/:id", () => {
-  it.effect("returns manifest, agent action metadata, views, and alerts for the requested plugin", () =>
+  it.effect("returns manifest, agent action metadata, screens, and alerts for the requested plugin", () =>
     Effect.gen(function* () {
       yield* AppRoutes.pipe(HttpRouter.serve, Layer.build)
 
@@ -59,7 +59,7 @@ describe("GET /api/plugins/:id", () => {
       expect(manifest["id"]).toBe("systemd")
       expect(Array.isArray(agent["actions"])).toBe(true)
       expect(Array.isArray(hub["alerts"])).toBe(true)
-      expect(Array.isArray(web["views"])).toBe(true)
+      expect(Array.isArray(web["screens"])).toBe(true)
     }).pipe(Effect.provide(HttpInfraLayer)),
   )
 })
