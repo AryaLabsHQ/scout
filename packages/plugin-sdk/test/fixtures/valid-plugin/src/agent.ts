@@ -1,15 +1,20 @@
 import { Effect, Schema, Stream } from "effect"
-import { defineScoutAgentPlugin } from "../../../../src/index.js"
+import type {
+  CollectContext,
+  ScoutAgentPlugin,
+  StreamContext,
+} from "../../../../src/index.js"
+import { defineAgent } from "../../../../src/index.js"
 
-export const agent = defineScoutAgentPlugin({
-  detect: ({ now, nodeId }) =>
+export const agent = defineAgent({
+  detect: ({ now, nodeId }: CollectContext) =>
     Effect.succeed({
       pluginId: "fixture-valid",
       version: "0.1.0",
-      status: "available",
+      status: "available" as const,
       features: [nodeId, String(now)],
     }),
-  collect: ({ now, nodeId }) =>
+  collect: ({ now, nodeId }: CollectContext) =>
     Effect.succeed({
       entities: [
         {
@@ -77,7 +82,7 @@ export const agent = defineScoutAgentPlugin({
           payload: Schema.optionalKey(Schema.Unknown),
         }),
       }),
-      open: ({ nodeId }) =>
+      open: ({ nodeId }: StreamContext) =>
         Stream.make({
           event: {
             pluginId: "fixture-valid",
@@ -95,4 +100,4 @@ export const agent = defineScoutAgentPlugin({
         }),
     },
   ],
-})
+} satisfies ScoutAgentPlugin)

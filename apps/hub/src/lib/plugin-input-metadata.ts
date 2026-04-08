@@ -1,5 +1,5 @@
 import { SchemaAST } from "effect"
-import type { LoadedPluginPackage } from "@scout/plugin-sdk"
+import type { LoadedScoutPlugin } from "@scout/plugin-sdk"
 
 export interface PluginFormOptionMetadata {
   readonly label: string
@@ -174,7 +174,7 @@ export const serializeInputSchema = (
 }
 
 export const serializePluginActionMetadata = (
-  plugin: LoadedPluginPackage,
+  plugin: LoadedScoutPlugin,
 ): ReadonlyArray<PluginActionMetadata> =>
   (plugin.agent?.actions ?? []).map((action) => ({
     id: action.definition.id,
@@ -186,7 +186,7 @@ export const serializePluginActionMetadata = (
   }))
 
 export const serializePluginStreamMetadata = (
-  plugin: LoadedPluginPackage,
+  plugin: LoadedScoutPlugin,
 ): ReadonlyArray<PluginStreamMetadata> =>
   (plugin.agent?.streams ?? []).map((stream) => ({
     id: stream.definition.id,

@@ -1,12 +1,11 @@
-import { definePluginManifest } from "../../../../src/index.js"
+import type { PluginManifest } from "../../../../src/index.js"
 
-export const manifest = definePluginManifest({
+export const manifest = {
   apiVersion: "v0alpha1",
   id: "fixture-valid",
   displayName: "Fixture Valid Plugin",
   version: "0.1.0",
   description: "Fixture plugin used for loader tests",
-  runtimes: ["agent", "hub", "web"],
   permissions: ["node:read-files"],
   capabilities: [
     {
@@ -48,4 +47,4 @@ export const manifest = definePluginManifest({
     },
   ],
   alerts: [],
-})
+} satisfies PluginManifest

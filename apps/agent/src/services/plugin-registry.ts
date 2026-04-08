@@ -4,12 +4,12 @@ import { Effect, Layer } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import {
   loadPluginsFromDirectory,
-  type LoadedPluginPackage,
+  type LoadedScoutPlugin,
   type ScoutAgentPlugin,
 } from "@scout/plugin-sdk"
 import { AgentConfig } from "../config.js"
 
-export interface LoadedAgentPlugin extends LoadedPluginPackage {
+export interface LoadedAgentPlugin extends LoadedScoutPlugin {
   readonly agent: ScoutAgentPlugin
 }
 
@@ -22,15 +22,15 @@ const isDirectoryReadable = (path: string) =>
     catch: () => false,
   })
 
-const hasAgentRuntime = (plugin: LoadedPluginPackage): plugin is LoadedAgentPlugin =>
+const hasAgentRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedAgentPlugin =>
   plugin.agent !== undefined
 
 export class AgentPluginRegistry extends ServiceMap.Service<
   AgentPluginRegistry,
   {
-    readonly list: () => Effect.Effect<ReadonlyArray<LoadedPluginPackage>>
+    readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>
     readonly listAgentPlugins: () => Effect.Effect<ReadonlyArray<LoadedAgentPlugin>>
-    readonly get: (pluginId: string) => Effect.Effect<LoadedPluginPackage | null>
+    readonly get: (pluginId: string) => Effect.Effect<LoadedScoutPlugin | null>
     readonly getAgentPlugin: (pluginId: string) => Effect.Effect<LoadedAgentPlugin | null>
   }
 >()(
@@ -39,7 +39,7 @@ export class AgentPluginRegistry extends ServiceMap.Service<
     make: Effect.gen(function* () {
       const config = yield* AgentConfig.load
       const hasDirectory = yield* isDirectoryReadable(config.pluginDir)
-      const loadedPlugins: ReadonlyArray<LoadedPluginPackage> = hasDirectory
+      const loadedPlugins: ReadonlyArray<LoadedScoutPlugin> = hasDirectory
         ? yield* loadPluginsFromDirectory(config.pluginDir)
         : []
 
@@ -49,7 +49,7 @@ export class AgentPluginRegistry extends ServiceMap.Service<
         pluginCount: String(loadedPlugins.length),
       })
 
-      const pluginsById = new Map<string, LoadedPluginPackage>(
+      const pluginsById = new Map<string, LoadedScoutPlugin>(
         loadedPlugins.map((plugin) => [plugin.manifest.id, plugin] as const),
       )
       const agentPlugins: ReadonlyArray<LoadedAgentPlugin> = loadedPlugins.filter(hasAgentRuntime)

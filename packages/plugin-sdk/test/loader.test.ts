@@ -35,7 +35,7 @@ describe("@scout/plugin-sdk loader", () => {
     }
   })
 
-  it("skips directories without plugin manifests", async () => {
+  it("skips directories without plugin entrypoints", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "scout-plugin-loader-"))
     const pluginRoot = path.join(tempRoot, "fixture-valid")
     const nonPluginRoot = path.join(tempRoot, "not-a-plugin")
@@ -50,16 +50,16 @@ describe("@scout/plugin-sdk loader", () => {
     }
   })
 
-  it("loads and validates a plugin manifest before runtime entrypoints", async () => {
+  it("loads and validates a unified plugin manifest from the canonical plugin entrypoint", async () => {
     const loaded = await run(
       loadPluginManifest(path.join(fixturesDir, "valid-plugin")),
     )
 
     expect(loaded.manifest.id).toBe("fixture-valid")
-    expect(loaded.manifest.runtimes).toEqual(["agent", "hub", "web"])
+    expect(loaded.pluginPath).toContain("plugin.ts")
   })
 
-  it("loads a full plugin package with runtime entrypoints", async () => {
+  it("loads a full unified plugin package", async () => {
     const plugin = await run(
       loadPluginPackage(path.join(fixturesDir, "valid-plugin")),
     )
@@ -68,6 +68,7 @@ describe("@scout/plugin-sdk loader", () => {
     expect(plugin.agent).toBeDefined()
     expect(plugin.hub).toBeDefined()
     expect(plugin.web).toBeDefined()
+    expect(plugin.operator).toBeDefined()
     expect(plugin.web?.screens).toHaveLength(1)
   })
 

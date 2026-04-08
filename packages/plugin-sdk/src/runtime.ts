@@ -5,17 +5,20 @@ import type {
   ActionTarget,
   EventChunk,
   LogChunk,
-  PluginCollectionResult,
   PluginAlertDefinition,
   PluginCapability,
   PluginManifest,
   PluginPermission,
   PluginUiScreen,
+  PluginCollectionResult,
   SessionChunk,
   StreamDefinition,
 } from "./schemas.js"
+import type { ScoutOperatorSurface } from "./operator.js"
 
 export type AnySchema<A = unknown> = Schema.Schema<A>
+
+export type ScoutPluginLoadedRuntime = "agent" | "hub" | "web" | "operator"
 
 export interface DetectContext {
   readonly nodeId: string
@@ -85,19 +88,33 @@ export interface ScoutWebPlugin {
   readonly screens: ReadonlyArray<PluginUiScreen>
 }
 
-export interface ScoutPluginPackage<E = never, R = never> {
+export interface ScoutPlugin<E = never, R = never> {
   readonly manifest: PluginManifest
   readonly agent?: ScoutAgentPlugin<E, R>
   readonly hub?: ScoutHubPlugin
   readonly web?: ScoutWebPlugin
+  readonly operator?: ScoutOperatorSurface
 }
 
-export const definePluginManifest = <const T extends PluginManifest>(manifest: T): T => manifest
+export interface LoadedScoutPlugin<E = never, R = never> extends ScoutPlugin<E, R> {
+  readonly rootDir: string
+  readonly pluginPath: string
+}
 
-export const defineScoutAgentPlugin = <const T extends ScoutAgentPlugin>(
-  plugin: T,
-): T => plugin
+export const defineAgent = <const T extends ScoutAgentPlugin<any, any>>(agent: T): T => agent
 
-export const defineScoutHubPlugin = <const T extends ScoutHubPlugin>(plugin: T): T => plugin
+export const defineHub = <const T extends ScoutHubPlugin>(hub: T): T => hub
 
-export const defineScoutWebPlugin = <const T extends ScoutWebPlugin>(plugin: T): T => plugin
+export const defineWeb = <const T extends ScoutWebPlugin>(web: T): T => web
+
+export const definePlugin = <const T extends ScoutPlugin<any, any>>(plugin: T): T => plugin
+
+export const getLoadedPluginRuntimes = (
+  plugin: Pick<ScoutPlugin, "agent" | "hub" | "web" | "operator">,
+): ReadonlyArray<ScoutPluginLoadedRuntime> =>
+  [
+    ...(plugin.agent !== undefined ? ["agent" as const] : []),
+    ...(plugin.hub !== undefined ? ["hub" as const] : []),
+    ...(plugin.web !== undefined ? ["web" as const] : []),
+    ...(plugin.operator !== undefined ? ["operator" as const] : []),
+  ]

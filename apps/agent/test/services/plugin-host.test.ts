@@ -16,17 +16,13 @@ const configLayer = ConfigProvider.layer(
 
 const makeSystemdPlugin = (): LoadedAgentPlugin => ({
   rootDir: "/plugins/systemd",
-  manifestPath: "/plugins/systemd/manifest.ts",
-  entrypoints: {
-    agent: "/plugins/systemd/agent.ts",
-  },
+  pluginPath: "/plugins/systemd/src/plugin.ts",
   manifest: {
     apiVersion: "v0alpha1",
     id: "systemd",
     displayName: "systemd",
     version: "0.0.1",
     description: "systemd test plugin",
-    runtimes: ["agent"],
     permissions: ["node:systemd", "node:stream-logs"],
     capabilities: [],
     entityKinds: [],

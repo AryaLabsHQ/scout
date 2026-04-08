@@ -19,7 +19,6 @@ describe("@scout/plugin-sdk schemas", () => {
         displayName: "systemd",
         version: "0.1.0",
         description: "Manage and observe systemd units",
-        runtimes: ["agent", "hub", "web"],
         permissions: ["node:systemd", "node:stream-logs"],
         capabilities: [
           {
@@ -86,7 +85,6 @@ describe("@scout/plugin-sdk schemas", () => {
           displayName: "broken",
           version: "0.1.0",
           description: "Invalid permission example",
-          runtimes: ["agent"],
           permissions: ["node:root"],
           capabilities: [],
           entityKinds: [],

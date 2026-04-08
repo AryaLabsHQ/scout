@@ -4,52 +4,18 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
   decodePluginManifest,
-  type PluginManifest,
   PluginLoadError,
-  type PluginRuntime,
 } from "./schemas.js"
-import type {
-  ScoutAgentPlugin,
-  ScoutHubPlugin,
-  ScoutWebPlugin,
-} from "./runtime.js"
+import type { LoadedScoutPlugin, ScoutPlugin } from "./runtime.js"
 
-type EntrypointKind = PluginRuntime | "manifest"
-
-const ENTRYPOINT_CANDIDATES: Record<EntrypointKind, string[]> = {
-  manifest: [
-    "manifest.ts",
-    "manifest.js",
-    "manifest.mjs",
-    path.join("src", "manifest.ts"),
-    path.join("src", "manifest.js"),
-    path.join("src", "manifest.mjs"),
-  ],
-  agent: [
-    "agent.ts",
-    "agent.js",
-    "agent.mjs",
-    path.join("src", "agent.ts"),
-    path.join("src", "agent.js"),
-    path.join("src", "agent.mjs"),
-  ],
-  hub: [
-    "hub.ts",
-    "hub.js",
-    "hub.mjs",
-    path.join("src", "hub.ts"),
-    path.join("src", "hub.js"),
-    path.join("src", "hub.mjs"),
-  ],
-  web: [
-    "web.ts",
-    "web.js",
-    "web.mjs",
-    path.join("src", "web.ts"),
-    path.join("src", "web.js"),
-    path.join("src", "web.mjs"),
-  ],
-}
+const PLUGIN_ENTRYPOINT_CANDIDATES = [
+  "plugin.ts",
+  "plugin.js",
+  "plugin.mjs",
+  path.join("src", "plugin.ts"),
+  path.join("src", "plugin.js"),
+  path.join("src", "plugin.mjs"),
+]
 
 const failLoad = (code: string, message: string, opts?: { pluginId?: string; path?: string }) =>
   new PluginLoadError({
@@ -83,178 +49,80 @@ const statIfExists = (filePath: string) =>
       }),
   })
 
-const resolveEntrypoint = (
+const resolvePluginEntrypoint = (
   rootDir: string,
-  kind: EntrypointKind,
 ): Effect.Effect<string | null, PluginLoadError> =>
   Effect.gen(function* () {
-    for (const relativePath of ENTRYPOINT_CANDIDATES[kind]) {
+    for (const relativePath of PLUGIN_ENTRYPOINT_CANDIDATES) {
       const candidate = path.join(rootDir, relativePath)
       const stat = yield* statIfExists(candidate)
-      if (stat?.isFile()) return candidate
+      if (stat?.isFile()) {
+        return candidate
+      }
     }
     return null
   })
 
-const hasEntrypoint = (
+const hasPluginEntrypoint = (
   rootDir: string,
-  kind: EntrypointKind,
 ): Effect.Effect<boolean, PluginLoadError> =>
-  resolveEntrypoint(rootDir, kind).pipe(
+  resolvePluginEntrypoint(rootDir).pipe(
     Effect.map((entrypoint) => entrypoint !== null),
   )
 
-const pickManifestExport = (module: Record<string, unknown>) =>
-  module["manifest"] ?? module["default"] ?? null
+const pickPluginExport = (module: Record<string, unknown>) =>
+  module["plugin"] ?? module["default"] ?? null
 
-const pickRuntimeExport = <T>(module: Record<string, unknown>, runtime: PluginRuntime): T | null => {
-  const named = module[runtime]
-  if (named !== undefined) return named as T
-  const fallback = module["default"]
-  return fallback !== undefined ? (fallback as T) : null
-}
-
-export interface LoadedPluginManifest {
-  readonly rootDir: string
-  readonly manifestPath: string
-  readonly manifest: PluginManifest
-}
-
-export interface LoadedPluginPackage {
-  readonly rootDir: string
-  readonly manifestPath: string
-  readonly entrypoints: Partial<Record<PluginRuntime, string>>
-  readonly manifest: PluginManifest
-  readonly agent?: ScoutAgentPlugin
-  readonly hub?: ScoutHubPlugin
-  readonly web?: ScoutWebPlugin
-}
-
-export const loadPluginManifest = (
+export const loadPluginPackage = (
   rootDir: string,
-): Effect.Effect<LoadedPluginManifest, PluginLoadError> =>
+): Effect.Effect<LoadedScoutPlugin, PluginLoadError> =>
   Effect.gen(function* () {
-    const manifestPath = yield* resolveEntrypoint(rootDir, "manifest")
-    if (manifestPath === null) {
+    const pluginPath = yield* resolvePluginEntrypoint(rootDir)
+    if (pluginPath === null) {
       return yield* Effect.fail(
-        failLoad("manifest-not-found", "Plugin manifest entrypoint not found", {
+        failLoad("plugin-entrypoint-not-found", "Plugin entrypoint not found", {
           path: rootDir,
         }),
       )
     }
 
-    const module = yield* importModule(manifestPath)
-    const rawManifest = pickManifestExport(module as Record<string, unknown>)
-    if (rawManifest === null) {
+    const module = yield* importModule(pluginPath)
+    const rawPlugin = pickPluginExport(module as Record<string, unknown>)
+    if (rawPlugin === null || typeof rawPlugin !== "object") {
       return yield* Effect.fail(
-        failLoad("manifest-export-missing", "Plugin manifest module exports no manifest", {
-          path: manifestPath,
+        failLoad("plugin-export-missing", "Plugin module exports no plugin definition", {
+          path: pluginPath,
         }),
       )
     }
 
-    const manifest = yield* decodePluginManifest(rawManifest).pipe(
+    const plugin = rawPlugin as ScoutPlugin
+    const manifest = yield* decodePluginManifest(plugin.manifest).pipe(
       Effect.mapError((cause) =>
         failLoad("manifest-invalid", `Plugin manifest failed validation: ${String(cause)}`, {
-          path: manifestPath,
+          path: pluginPath,
         }),
       ),
     )
 
     return {
-      rootDir,
-      manifestPath,
+      ...plugin,
       manifest,
-    }
-  })
-
-export const loadPluginPackage = (
-  rootDir: string,
-): Effect.Effect<LoadedPluginPackage, PluginLoadError> =>
-  Effect.gen(function* () {
-    const loadedManifest = yield* loadPluginManifest(rootDir)
-    const entrypoints: Partial<Record<PluginRuntime, string>> = {}
-    let agent: ScoutAgentPlugin | undefined
-    let hub: ScoutHubPlugin | undefined
-    let web: ScoutWebPlugin | undefined
-
-    for (const runtime of loadedManifest.manifest.runtimes) {
-      const entryPath = yield* resolveEntrypoint(rootDir, runtime)
-      if (entryPath === null) {
-        return yield* Effect.fail(
-          failLoad(
-            "runtime-entrypoint-missing",
-            `Plugin ${loadedManifest.manifest.id} is missing a ${runtime} entrypoint`,
-            { pluginId: loadedManifest.manifest.id, path: rootDir },
-          ),
-        )
-      }
-
-      const module = yield* importModule(entryPath)
-      entrypoints[runtime] = entryPath
-
-      switch (runtime) {
-        case "agent": {
-          const runtimeExport = pickRuntimeExport<ScoutAgentPlugin>(
-            module as Record<string, unknown>,
-            runtime,
-          )
-          if (runtimeExport === null) {
-            return yield* Effect.fail(
-              failLoad("runtime-export-missing", "Agent runtime entrypoint exports no plugin", {
-                pluginId: loadedManifest.manifest.id,
-                path: entryPath,
-              }),
-            )
-          }
-          agent = runtimeExport
-          break
-        }
-        case "hub": {
-          const runtimeExport = pickRuntimeExport<ScoutHubPlugin>(
-            module as Record<string, unknown>,
-            runtime,
-          )
-          if (runtimeExport === null) {
-            return yield* Effect.fail(
-              failLoad("runtime-export-missing", "Hub runtime entrypoint exports no plugin", {
-                pluginId: loadedManifest.manifest.id,
-                path: entryPath,
-              }),
-            )
-          }
-          hub = runtimeExport
-          break
-        }
-        case "web": {
-          const runtimeExport = pickRuntimeExport<ScoutWebPlugin>(
-            module as Record<string, unknown>,
-            runtime,
-          )
-          if (runtimeExport === null) {
-            return yield* Effect.fail(
-              failLoad("runtime-export-missing", "Web runtime entrypoint exports no plugin", {
-                pluginId: loadedManifest.manifest.id,
-                path: entryPath,
-              }),
-            )
-          }
-          web = runtimeExport
-          break
-        }
-      }
-    }
-
-    return {
       rootDir,
-      manifestPath: loadedManifest.manifestPath,
-      entrypoints,
-      manifest: loadedManifest.manifest,
-      ...(agent !== undefined && { agent }),
-      ...(hub !== undefined && { hub }),
-      ...(web !== undefined && { web }),
-    }
+      pluginPath,
+    } satisfies LoadedScoutPlugin
   })
+
+export const loadPluginManifest = (
+  rootDir: string,
+) =>
+  loadPluginPackage(rootDir).pipe(
+    Effect.map(({ rootDir, pluginPath, manifest }) => ({
+      rootDir,
+      pluginPath,
+      manifest,
+    })),
+  )
 
 export const discoverPluginRoots = (
   pluginDirectory: string,
@@ -277,8 +145,8 @@ export const discoverPluginRoots = (
           const stat = yield* statIfExists(candidate)
           if (!stat?.isDirectory()) return null
 
-          const hasManifest = yield* hasEntrypoint(candidate, "manifest")
-          return hasManifest ? candidate : null
+          const hasPlugin = yield* hasPluginEntrypoint(candidate)
+          return hasPlugin ? candidate : null
         }),
       ),
       { concurrency: "unbounded" },
@@ -291,7 +159,7 @@ export const discoverPluginRoots = (
 
 export const loadPluginsFromDirectory = (
   pluginDirectory: string,
-): Effect.Effect<ReadonlyArray<LoadedPluginPackage>, PluginLoadError> =>
+): Effect.Effect<ReadonlyArray<LoadedScoutPlugin>, PluginLoadError> =>
   Effect.gen(function* () {
     const roots = yield* discoverPluginRoots(pluginDirectory)
     const loadedPlugins = yield* Effect.all(roots.map((root) => loadPluginPackage(root)))

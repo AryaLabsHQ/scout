@@ -3,6 +3,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter"
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { desc, gte, or, eq, count } from "drizzle-orm"
+import { getLoadedPluginRuntimes } from "@scout/plugin-sdk"
 import type { SystemMetricsSample } from "@scout/shared"
 import { Database } from "./services/database.js"
 import { MetricsIngestion } from "./services/metrics-ingestion.js"
@@ -230,7 +231,7 @@ export const ListPluginsRoute = HttpRouter.add(
         displayName: plugin.manifest.displayName,
         version: plugin.manifest.version,
         description: plugin.manifest.description,
-        runtimes: plugin.manifest.runtimes,
+        runtimes: getLoadedPluginRuntimes(plugin),
         capabilities: plugin.manifest.capabilities,
         entityKinds: plugin.manifest.entityKinds,
         metrics: plugin.manifest.metrics,
@@ -266,6 +267,13 @@ export const GetPluginRoute = HttpRouter.add(
       }),
       ...(plugin.hub !== undefined && { hub: { alerts: plugin.hub.alerts ?? [] } }),
       ...(plugin.web !== undefined && { web: { screens: plugin.web.screens } }),
+      ...(plugin.operator !== undefined && {
+        operator: {
+          toolNames: (plugin.operator.tools ?? []).map((tool) => tool.name),
+          resourceIds: (plugin.operator.resources ?? []).map((resource) => resource.id),
+          skillIds: (plugin.operator.skills ?? []).map((skill) => skill.id),
+        },
+      }),
     })
   }),
 )

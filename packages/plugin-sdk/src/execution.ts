@@ -12,7 +12,7 @@ import {
 import type {
   ActionContext,
   ScoutActionHandler,
-  ScoutPluginPackage,
+  ScoutPlugin,
   ScoutStreamHandler,
   StreamContext,
 } from "./runtime.js"
@@ -76,19 +76,25 @@ const mapUnexpectedError = (
     : failExecution("plugin-execution-failed", String(error), opts)
 
 const findActionHandler = <E, R>(
-  plugin: ScoutPluginPackage<E, R>,
+  plugin: ScoutPlugin<E, R>,
   actionId: string,
 ): ScoutActionHandler<unknown, unknown, E, R> | null =>
-  plugin.agent?.actions?.find((candidate) => candidate.definition.id === actionId) ?? null
+  plugin.agent?.actions?.find(
+    (candidate: ScoutActionHandler<unknown, unknown, E, R>) =>
+      candidate.definition.id === actionId,
+  ) ?? null
 
 const findStreamHandler = <E, R>(
-  plugin: ScoutPluginPackage<E, R>,
+  plugin: ScoutPlugin<E, R>,
   streamId: string,
 ): ScoutStreamHandler<unknown, unknown, E, R> | null =>
-  plugin.agent?.streams?.find((candidate) => candidate.definition.id === streamId) ?? null
+  plugin.agent?.streams?.find(
+    (candidate: ScoutStreamHandler<unknown, unknown, E, R>) =>
+      candidate.definition.id === streamId,
+  ) ?? null
 
 export const executePluginAction = <E, R>(
-  plugin: ScoutPluginPackage<E, R>,
+  plugin: ScoutPlugin<E, R>,
   ctx: ActionContext,
   request: ActionRequest,
 ): Effect.Effect<ActionResult, PluginExecutionError> =>
@@ -176,7 +182,7 @@ export const executePluginAction = <E, R>(
   }) as Effect.Effect<ActionResult, PluginExecutionError>
 
 export const openPluginStream = <E, R>(
-  plugin: ScoutPluginPackage<E, R>,
+  plugin: ScoutPlugin<E, R>,
   ctx: StreamContext,
   request: StreamRequest,
 ): Effect.Effect<Stream.Stream<StreamChunk, PluginExecutionError>, PluginExecutionError> =>

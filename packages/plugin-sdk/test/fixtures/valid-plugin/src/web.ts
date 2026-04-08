@@ -1,6 +1,7 @@
-import { defineScoutWebPlugin } from "../../../../src/index.js"
+import type { ScoutWebPlugin } from "../../../../src/index.js"
+import { defineWeb } from "../../../../src/index.js"
 
-export const web = defineScoutWebPlugin({
+export const web = defineWeb({
   screens: [
     {
       id: "fixture-valid.list",
@@ -38,4 +39,4 @@ export const web = defineScoutWebPlugin({
       },
     },
   ],
-})
+} satisfies ScoutWebPlugin)

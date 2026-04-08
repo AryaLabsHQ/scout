@@ -2,8 +2,6 @@ import { Schema } from "effect"
 
 export const PluginApiVersionSchema = Schema.Literal("v0alpha1")
 
-export const PluginRuntimeSchema = Schema.Literals(["agent", "hub", "web"])
-
 export const PluginPermissionSchema = Schema.Literals([
   "node:read-files",
   "node:write-files",
@@ -95,7 +93,6 @@ export const PluginManifestSchema = Schema.Struct({
   displayName: Schema.String,
   version: Schema.String,
   description: Schema.String,
-  runtimes: Schema.Array(PluginRuntimeSchema),
   permissions: Schema.Array(PluginPermissionSchema),
   capabilities: Schema.Array(PluginCapabilityDefinitionSchema),
   entityKinds: Schema.Array(EntityKindDefinitionSchema),
@@ -310,7 +307,6 @@ export class PluginLoadError extends Schema.ErrorClass<PluginLoadError>(
 }) {}
 
 export type PluginApiVersion = typeof PluginApiVersionSchema.Type
-export type PluginRuntime = typeof PluginRuntimeSchema.Type
 export type PluginPermission = typeof PluginPermissionSchema.Type
 export type PluginCapabilityStatus = typeof PluginCapabilityStatusSchema.Type
 export type MetricKind = typeof MetricKindSchema.Type
