@@ -41,13 +41,13 @@ const AllRoutes = Layer.merge(AppRoutes, RpcLayer)
 const AppServerLayer = AllRoutes.pipe(
   HttpRouter.serve,
   Layer.provide(ServerLayer),
+  Layer.provide(AppLayer),
 )
 
-const FullLayer = AppServerLayer.pipe(
-  Layer.merge(RetentionBackgroundLayer),
-  Layer.provide(AppLayer),
-  Layer.provide(LoggingLayer),
-)
+const FullLayer = Layer.merge(
+  AppServerLayer,
+  RetentionBackgroundLayer.pipe(Layer.provide(AppLayer)),
+).pipe(Layer.provide(LoggingLayer))
 
 // ── Run ───────────────────────────────────────────────────────────────────────
 

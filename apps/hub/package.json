@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.43",
+    "@mariozechner/pi-agent-core": "^0.65.0",
+    "@mariozechner/pi-ai": "^0.65.0",
     "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
     "drizzle-orm": "^1.0.0-beta.20",
