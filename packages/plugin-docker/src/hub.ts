@@ -1,5 +1,5 @@
-import { defineScoutHubPlugin } from "@scout/plugin-sdk"
+import { defineHub } from "@scout/plugin-sdk"
 
-export const hub = defineScoutHubPlugin({
+export const hub = defineHub({
   alerts: [],
 })

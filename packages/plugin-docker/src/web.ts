@@ -1,6 +1,6 @@
-import { defineScoutWebPlugin } from "@scout/plugin-sdk"
+import { defineWeb } from "@scout/plugin-sdk"
 import { DOCKER_UI_SCREENS } from "./contracts.js"
 
-export const web = defineScoutWebPlugin({
+export const web = defineWeb({
   screens: DOCKER_UI_SCREENS,
 })

@@ -1,4 +1,4 @@
-import { definePluginManifest } from "@scout/plugin-sdk"
+import type { PluginManifest } from "@scout/plugin-sdk"
 import {
   K8S_ACTION_DEFINITIONS,
   K8S_CAPABILITIES,
@@ -8,13 +8,12 @@ import {
   K8S_STREAM_DEFINITIONS,
 } from "./contracts.js"
 
-export const manifest = definePluginManifest({
+export const manifest = {
   apiVersion: "v0alpha1",
   id: K8S_PLUGIN_ID,
   displayName: "Kubernetes",
   version: "0.0.1",
   description: "Inspect Kubernetes clusters and workloads from Scout.",
-  runtimes: ["agent", "hub", "web"],
   permissions: [
     "node:k8s-api",
     "node:spawn-process",
@@ -27,4 +26,4 @@ export const manifest = definePluginManifest({
   actions: K8S_ACTION_DEFINITIONS,
   streams: K8S_STREAM_DEFINITIONS,
   alerts: [],
-})
+} satisfies PluginManifest

@@ -1,4 +1,4 @@
-import { definePluginManifest } from "@scout/plugin-sdk"
+import type { PluginManifest } from "@scout/plugin-sdk"
 import {
   DOCKER_ACTION_DEFINITIONS,
   DOCKER_CAPABILITIES,
@@ -8,13 +8,12 @@ import {
   DOCKER_STREAM_DEFINITIONS,
 } from "./contracts.js"
 
-export const manifest = definePluginManifest({
+export const manifest = {
   apiVersion: "v0alpha1",
   id: DOCKER_PLUGIN_ID,
   displayName: "Docker",
   version: "0.0.1",
   description: "Inspect Docker daemons, containers, images, networks, and volumes from Scout.",
-  runtimes: ["agent", "hub", "web"],
   permissions: [
     "node:docker-socket",
     "node:stream-logs",
@@ -27,4 +26,4 @@ export const manifest = definePluginManifest({
   actions: DOCKER_ACTION_DEFINITIONS,
   streams: DOCKER_STREAM_DEFINITIONS,
   alerts: [],
-})
+} satisfies PluginManifest

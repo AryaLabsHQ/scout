@@ -1,6 +1,6 @@
-import { defineScoutWebPlugin } from "@scout/plugin-sdk"
+import { defineWeb } from "@scout/plugin-sdk"
 import { systemdScreens } from "./contracts.js"
 
-export const web = defineScoutWebPlugin({
+export const web = defineWeb({
   screens: systemdScreens,
 })

@@ -1,6 +1,2 @@
 export * from "./contracts.js"
-export * from "./manifest.js"
-export * from "./systemd.js"
-export * from "./agent.js"
-export * from "./hub.js"
-export * from "./web.js"
+export * from "./plugin.js"

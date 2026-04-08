@@ -3,11 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./manifest": "./src/manifest.ts",
-    "./agent": "./src/agent.ts",
-    "./hub": "./src/hub.ts",
-    "./web": "./src/web.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,6 @@
-import { defineScoutHubPlugin } from "@scout/plugin-sdk"
+import { defineHub } from "@scout/plugin-sdk"
 import { manifest } from "./manifest.js"
 
-export const hub = defineScoutHubPlugin({
+export const hub = defineHub({
   alerts: manifest.alerts,
 })

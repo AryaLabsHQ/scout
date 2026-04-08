@@ -1,4 +1,4 @@
-import { definePluginManifest } from "@scout/plugin-sdk"
+import type { PluginManifest } from "@scout/plugin-sdk"
 import {
   SYSTEMD_ACTION_IDS,
   SYSTEMD_CAPABILITY_ID,
@@ -8,13 +8,12 @@ import {
   SYSTEMD_UNIT_KIND,
 } from "./contracts.js"
 
-export const manifest = definePluginManifest({
+export const manifest = {
   apiVersion: "v0alpha1",
   id: SYSTEMD_PLUGIN_ID,
   displayName: "Systemd",
   version: "0.0.1",
   description: "Monitor and control systemd units on Linux nodes.",
-  runtimes: ["agent", "hub", "web"],
   permissions: [
     "node:systemd",
     "node:spawn-process",
@@ -148,4 +147,4 @@ export const manifest = definePluginManifest({
       metricIds: [SYSTEMD_METRIC_IDS.failedUnits],
     },
   ],
-})
+} satisfies PluginManifest
