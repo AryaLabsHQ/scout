@@ -1,3 +1,4 @@
+export * from "./operator.js"
 export * from "./alerts.js"
 export * from "./logs.js"
 export * from "./management.js"

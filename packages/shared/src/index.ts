@@ -10,3 +10,4 @@ export * from "./schemas/index.js"
 
 // M9 RPC groups (client-hub, hub-agent, agent-hub) + DuplexRpcSocket adapter.
 export * from "./rpc/index.js"
+export type { OperatorResource } from "./schemas/operator.js"

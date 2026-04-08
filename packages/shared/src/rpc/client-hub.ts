@@ -2,6 +2,25 @@ import { Schema } from "effect"
 import * as Rpc from "effect/unstable/rpc/Rpc"
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 
+import {
+  OperatorApprovalResolveParamsSchema,
+  OperatorBypassSetParamsSchema,
+  OperatorEventsSubscribeParamsSchema,
+  OperatorModelDescriptorSchema,
+  OperatorPromptParamsSchema,
+  OperatorSessionArchiveParamsSchema,
+  OperatorSessionBranchParamsSchema,
+  OperatorSessionCreateParamsSchema,
+  OperatorSessionDeleteParamsSchema,
+  OperatorSessionDetailSchema,
+  OperatorSessionForkParamsSchema,
+  OperatorSessionGetParamsSchema,
+  OperatorSessionSetSkillsParamsSchema,
+  OperatorSessionSetTitleParamsSchema,
+  OperatorSessionEventSchema,
+  OperatorSkillSchema,
+  OperatorSessionSummarySchema,
+} from "../schemas/operator.js"
 import { AlertEventSchema, AlertSchema, AlertRuleSchema } from "../schemas/alerts.js"
 import { LogBatchSchema } from "../schemas/logs.js"
 import {
@@ -65,6 +84,29 @@ export const ClientHubRpcs = RpcGroup.make(
     payload: Schema.Struct({ id: Schema.String }),
     success: Schema.NullOr(SystemSchema),
   }),
+  Rpc.make("operator.sessions.list", {
+    success: Schema.Array(OperatorSessionSummarySchema),
+  }),
+  Rpc.make("operator.sessions.get", {
+    payload: OperatorSessionGetParamsSchema,
+    success: Schema.NullOr(OperatorSessionDetailSchema),
+  }),
+  Rpc.make("operator.skills.list", {
+    success: Schema.Array(OperatorSkillSchema),
+  }),
+  Rpc.make("operator.models.list", {
+    success: Schema.Array(OperatorModelDescriptorSchema),
+  }),
+  Rpc.make("operator.sessions.branch", {
+    payload: OperatorSessionBranchParamsSchema,
+    success: OperatorSessionDetailSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.fork", {
+    payload: OperatorSessionForkParamsSchema,
+    success: OperatorSessionDetailSchema,
+    error: ManagementError,
+  }),
   Rpc.make("systems.metrics", {
     payload: Schema.Struct({
       id: Schema.String,
@@ -109,6 +151,40 @@ export const ClientHubRpcs = RpcGroup.make(
     payload: Schema.Struct({ id: Schema.String }),
     error: ManagementError,
   }),
+  Rpc.make("operator.sessions.create", {
+    payload: OperatorSessionCreateParamsSchema,
+    success: OperatorSessionDetailSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.setTitle", {
+    payload: OperatorSessionSetTitleParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.prompt", {
+    payload: OperatorPromptParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.approvals.resolve", {
+    payload: OperatorApprovalResolveParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.bypass.set", {
+    payload: OperatorBypassSetParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.setSkills", {
+    payload: OperatorSessionSetSkillsParamsSchema,
+    success: OperatorSessionDetailSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.archive", {
+    payload: OperatorSessionArchiveParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.delete", {
+    payload: OperatorSessionDeleteParamsSchema,
+    error: ManagementError,
+  }),
 
   // Generic plugin control
   Rpc.make("plugins.runAction", {
@@ -148,6 +224,12 @@ export const ClientHubRpcs = RpcGroup.make(
   /** System lifecycle events (connected | disconnected | updated). */
   Rpc.make("systems.subscribe", {
     success: SystemUpdateSchema,
+    stream: true,
+  }),
+  Rpc.make("operator.events.subscribe", {
+    payload: OperatorEventsSubscribeParamsSchema,
+    success: OperatorSessionEventSchema,
+    error: ManagementError,
     stream: true,
   }),
 
