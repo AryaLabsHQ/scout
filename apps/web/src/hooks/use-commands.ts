@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import {
+  ArtificialIntelligence04Icon,
   DashboardCircleIcon,
   ServerStack01Icon,
   Alert01Icon,
@@ -12,11 +13,17 @@ import {
 import type { IconSvgElement } from "@hugeicons/react"
 import { useAtomValue } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
+import { useOperator } from "@/providers/operator-provider"
 import { useTerminalPanel } from "@/providers/terminal-provider"
 
 // ── Command type ──────────────────────────────────────────────────────────────
 
-export type CommandGroup = "Navigation" | "Terminal" | "System" | "Alerts"
+export type CommandGroup =
+  | "Navigation"
+  | "Operator"
+  | "Terminal"
+  | "System"
+  | "Alerts"
 
 export interface Command {
   /** Stable unique id across renders */
@@ -46,6 +53,7 @@ export function useCommands(): Command[] {
   const navigate = useNavigate()
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
+  const { openDrawer, toggleDrawer } = useOperator()
   const {
     sessions,
     activeTab,
@@ -61,6 +69,7 @@ export function useCommands(): Command[] {
 
     // ── Navigation: static routes ─────────────────────────────────────────────
     const staticNav: Array<{ to: string; label: string; icon: IconSvgElement }> = [
+      { to: "/operator", label: "Operator", icon: ArtificialIntelligence04Icon },
       { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
       { to: "/alerts", label: "Alerts", icon: Alert01Icon },
       { to: "/terminal", label: "Terminal", icon: TerminalIcon },
@@ -78,6 +87,24 @@ export function useCommands(): Command[] {
         perform: () => void navigate({ to: item.to as "/" }),
       })
     }
+
+    commands.push({
+      id: "operator:open-drawer",
+      label: "Open operator drawer",
+      group: "Operator",
+      keywords: ["operator", "drawer", "chat", "sidebar"],
+      icon: ArtificialIntelligence04Icon,
+      perform: () => openDrawer(),
+    })
+
+    commands.push({
+      id: "operator:toggle-drawer",
+      label: "Toggle operator drawer",
+      group: "Operator",
+      keywords: ["operator", "drawer", "toggle", "sidebar"],
+      icon: ArtificialIntelligence04Icon,
+      perform: toggleDrawer,
+    })
 
     // ── Navigation: one entry per connected system ────────────────────────────
     for (const s of systemsList) {
@@ -119,8 +146,11 @@ export function useCommands(): Command[] {
         id: `term:focus:${tab.id}`,
         label: `Focus tab: ${tab.label}`,
         group: "Terminal",
-        keywords: [tab.label, tab.agentId, "focus", "switch"],
-        icon: TerminalIcon,
+        keywords:
+          tab.kind === "interactive"
+            ? [tab.label, tab.agentId, "focus", "switch"]
+            : [tab.label, tab.nodeId, "operator", "mirror", "focus"],
+        icon: tab.kind === "interactive" ? TerminalIcon : ArtificialIntelligence04Icon,
         perform: () => {
           setActiveTab(tab.id)
           if (!isOpen) togglePanel()
@@ -142,21 +172,23 @@ export function useCommands(): Command[] {
     if (activeTab) {
       const active = sessions.find((t) => t.id === activeTab)
       if (active) {
-        commands.push({
-          id: "term:rename-active",
-          label: `Rename active tab (${active.label})`,
-          group: "Terminal",
-          keywords: ["rename", "label", "edit"],
-          icon: Edit02Icon,
-          perform: () => {
-            // Dispatch a custom event that the tab component listens for.
-            // This keeps the command decoupled from React refs.
-            window.dispatchEvent(
-              new CustomEvent("scout:rename-active-tab", { detail: active.id }),
-            )
-            if (!isOpen) togglePanel()
-          },
-        })
+        if (active.kind === "interactive") {
+          commands.push({
+            id: "term:rename-active",
+            label: `Rename active tab (${active.label})`,
+            group: "Terminal",
+            keywords: ["rename", "label", "edit"],
+            icon: Edit02Icon,
+            perform: () => {
+              // Dispatch a custom event that the tab component listens for.
+              // This keeps the command decoupled from React refs.
+              window.dispatchEvent(
+                new CustomEvent("scout:rename-active-tab", { detail: active.id }),
+              )
+              if (!isOpen) togglePanel()
+            },
+          })
+        }
         commands.push({
           id: "term:close-active",
           label: `Close active tab (${active.label})`,
@@ -172,6 +204,8 @@ export function useCommands(): Command[] {
   }, [
     navigate,
     systemsList,
+    openDrawer,
+    toggleDrawer,
     sessions,
     activeTab,
     isOpen,

@@ -208,7 +208,9 @@ function SystemDetailPage() {
           {/* Capability badges + actions */}
           <div className="flex flex-col gap-2 items-end">
             {(() => {
-              const sessionCount = sessions.filter((t) => t.agentId === systemId).length
+              const sessionCount = sessions.filter(
+                (t) => t.kind === "interactive" && t.agentId === systemId,
+              ).length
               const hasSessions = sessionCount > 0
               return (
                 <Button

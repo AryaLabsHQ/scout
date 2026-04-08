@@ -1,0 +1,42 @@
+.operator-editor .ProseMirror {
+  outline: none;
+  min-height: 1.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.operator-editor .ProseMirror p { margin: 0; }
+.operator-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+.operator-editor .mention-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+.tippy-box[data-theme~="suggestion-dropdown"] {
+  background: var(--color-popover);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  min-width: 14rem;
+  max-width: 22rem;
+  padding: 0;
+  overflow: hidden;
+}
+.tippy-box[data-theme~="suggestion-dropdown"] .tippy-content {
+  padding: 0;
+}

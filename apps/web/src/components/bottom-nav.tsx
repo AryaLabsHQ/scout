@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
+  ArtificialIntelligence04Icon,
   DashboardCircleIcon,
   Alert01Icon,
   TerminalIcon,
@@ -9,6 +10,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const NAV_ITEMS = [
+  { to: "/operator", label: "Operator", icon: ArtificialIntelligence04Icon },
   { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
   { to: "/alerts", label: "Alerts", icon: Alert01Icon },
   { to: "/terminal", label: "Terminal", icon: TerminalIcon },

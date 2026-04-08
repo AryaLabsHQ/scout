@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as OverviewRouteImport } from './routes/overview'
+import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SystemsSystemIdRouteImport } from './routes/systems.$systemId'
+import { Route as OperatorSessionIdRouteImport } from './routes/operator_.$sessionId'
 import { Route as SystemsSystemIdPluginsPluginIdRouteImport } from './routes/systems_.$systemId.plugins.$pluginId'
 
 const TerminalRoute = TerminalRouteImport.update({
@@ -32,6 +34,11 @@ const OverviewRoute = OverviewRouteImport.update({
   path: '/overview',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OperatorRoute = OperatorRouteImport.update({
+  id: '/operator',
+  path: '/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -47,6 +54,11 @@ const SystemsSystemIdRoute = SystemsSystemIdRouteImport.update({
   path: '/systems/$systemId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OperatorSessionIdRoute = OperatorSessionIdRouteImport.update({
+  id: '/operator_/$sessionId',
+  path: '/operator/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SystemsSystemIdPluginsPluginIdRoute =
   SystemsSystemIdPluginsPluginIdRouteImport.update({
     id: '/systems_/$systemId/plugins/$pluginId',
@@ -57,18 +69,22 @@ const SystemsSystemIdPluginsPluginIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/operator': typeof OperatorRoute
   '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
+  '/operator/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
   '/systems/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/operator': typeof OperatorRoute
   '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
+  '/operator/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
   '/systems/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
 }
@@ -76,9 +92,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/operator': typeof OperatorRoute
   '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
+  '/operator_/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
   '/systems_/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
 }
@@ -87,27 +105,33 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/alerts'
+    | '/operator'
     | '/overview'
     | '/settings'
     | '/terminal'
+    | '/operator/$sessionId'
     | '/systems/$systemId'
     | '/systems/$systemId/plugins/$pluginId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/alerts'
+    | '/operator'
     | '/overview'
     | '/settings'
     | '/terminal'
+    | '/operator/$sessionId'
     | '/systems/$systemId'
     | '/systems/$systemId/plugins/$pluginId'
   id:
     | '__root__'
     | '/'
     | '/alerts'
+    | '/operator'
     | '/overview'
     | '/settings'
     | '/terminal'
+    | '/operator_/$sessionId'
     | '/systems/$systemId'
     | '/systems_/$systemId/plugins/$pluginId'
   fileRoutesById: FileRoutesById
@@ -115,9 +139,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
+  OperatorRoute: typeof OperatorRoute
   OverviewRoute: typeof OverviewRoute
   SettingsRoute: typeof SettingsRoute
   TerminalRoute: typeof TerminalRoute
+  OperatorSessionIdRoute: typeof OperatorSessionIdRoute
   SystemsSystemIdRoute: typeof SystemsSystemIdRoute
   SystemsSystemIdPluginsPluginIdRoute: typeof SystemsSystemIdPluginsPluginIdRoute
 }
@@ -145,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OverviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/operator': {
+      id: '/operator'
+      path: '/operator'
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts': {
       id: '/alerts'
       path: '/alerts'
@@ -166,6 +199,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SystemsSystemIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/operator_/$sessionId': {
+      id: '/operator_/$sessionId'
+      path: '/operator/$sessionId'
+      fullPath: '/operator/$sessionId'
+      preLoaderRoute: typeof OperatorSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/systems_/$systemId/plugins/$pluginId': {
       id: '/systems_/$systemId/plugins/$pluginId'
       path: '/systems/$systemId/plugins/$pluginId'
@@ -179,9 +219,11 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
+  OperatorRoute: OperatorRoute,
   OverviewRoute: OverviewRoute,
   SettingsRoute: SettingsRoute,
   TerminalRoute: TerminalRoute,
+  OperatorSessionIdRoute: OperatorSessionIdRoute,
   SystemsSystemIdRoute: SystemsSystemIdRoute,
   SystemsSystemIdPluginsPluginIdRoute: SystemsSystemIdPluginsPluginIdRoute,
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
+  ArtificialIntelligence04Icon,
   TerminalIcon,
   Cancel01Icon,
   ArrowDown01Icon,
@@ -12,6 +13,7 @@ import { useTerminalPanel, type TerminalTab as TerminalTabType } from "@/provide
 import { useAtomValue } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
 import { TerminalView } from "./terminal-view"
+import { OperatorProjectionView } from "./operator-projection-view"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -30,8 +32,6 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-
-// ── Single tab ────────────────────────────────────────────────────────────────
 
 function TerminalTab({
   tab,
@@ -55,33 +55,31 @@ function TerminalTab({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(tab.label)
   const inputRef = useRef<HTMLInputElement>(null)
+  const canRename = tab.kind === "interactive"
 
   const startEdit = () => {
+    if (!canRename) return
     setDraft(tab.label)
     setEditing(true)
   }
 
-  // External rename trigger (from context menu)
   useEffect(() => {
     if (renameSignal > 0) startEdit()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renameSignal])
 
-  // External rename trigger (from command palette via window event)
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
       if (detail === tab.id) startEdit()
     }
     window.addEventListener("scout:rename-active-tab", handler)
     return () => window.removeEventListener("scout:rename-active-tab", handler)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.id])
 
   useEffect(() => {
     if (editing) {
-      // Defer to next frame so we win against any focus restore from a closing
-      // context menu (Base UI restores focus to the trigger on close).
       const raf = requestAnimationFrame(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
@@ -94,6 +92,7 @@ function TerminalTab({
     onRename(draft)
     setEditing(false)
   }
+
   const cancel = () => {
     setDraft(tab.label)
     setEditing(false)
@@ -107,60 +106,71 @@ function TerminalTab({
             onClick={() => {
               if (!editing) onSelect()
             }}
-            onDoubleClick={(e) => {
-              e.stopPropagation()
+            onDoubleClick={(event) => {
+              event.stopPropagation()
               startEdit()
             }}
             className={cn(
-              "flex items-center gap-1.5 px-3 h-9 text-[11px] border-r border-border whitespace-nowrap transition-colors",
+              "flex h-9 items-center gap-1.5 border-r border-border px-3 text-[11px] whitespace-nowrap transition-colors",
               isActive
                 ? "bg-background text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+                : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
             )}
           />
         }
       >
-          {editing ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key === "Enter") commit()
-                else if (e.key === "Escape") cancel()
-              }}
-              onBlur={commit}
-              className="bg-transparent text-[11px] outline-none border-b border-primary/60 max-w-[160px] min-w-[40px]"
-              style={{ width: `${Math.max(draft.length, 4)}ch` }}
-            />
-          ) : (
-            <span className="max-w-[160px] truncate">{tab.label}</span>
-          )}
-          <span
-            role="button"
-            tabIndex={0}
-            className="ml-0.5 rounded hover:text-red-400 focus:outline-none"
-            onClick={(e) => {
-              e.stopPropagation()
+        {tab.kind === "operator_projection" ? (
+          <HugeiconsIcon icon={ArtificialIntelligence04Icon} size={11} />
+        ) : null}
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+              if (event.key === "Enter") commit()
+              else if (event.key === "Escape") cancel()
+            }}
+            onBlur={commit}
+            className="max-w-[160px] min-w-[40px] border-b border-primary/60 bg-transparent text-[11px] outline-none"
+            style={{ width: `${Math.max(draft.length, 4)}ch` }}
+          />
+        ) : (
+          <span className="max-w-[160px] truncate">{tab.label}</span>
+        )}
+        {tab.kind === "operator_projection" ? (
+          <span className="text-[10px] uppercase text-muted-foreground/70">RO</span>
+        ) : null}
+        <span
+          role="button"
+          tabIndex={0}
+          className="ml-0.5 rounded hover:text-red-400 focus:outline-none"
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.stopPropagation()
               onClose()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.stopPropagation()
-                onClose()
-              }
-            }}
-          >
-            <HugeiconsIcon icon={Cancel01Icon} size={11} />
-          </span>
+            }
+          }}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={11} />
+        </span>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
-        <ContextMenuItem onSelect={onRequestRename}>
-          <HugeiconsIcon icon={Edit02Icon} size={12} className="mr-2" />
-          Rename
-        </ContextMenuItem>
+        {canRename ? (
+          <>
+            <ContextMenuItem onSelect={onRequestRename}>
+              <HugeiconsIcon icon={Edit02Icon} size={12} className="mr-2" />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
         <ContextMenuItem onSelect={onClose}>
           <HugeiconsIcon icon={Cancel01Icon} size={12} className="mr-2" />
           Close
@@ -171,8 +181,6 @@ function TerminalTab({
     </ContextMenu>
   )
 }
-
-// ── Tab bar ───────────────────────────────────────────────────────────────────
 
 function TerminalTabBar() {
   const {
@@ -188,20 +196,14 @@ function TerminalTabBar() {
   } = useTerminalPanel()
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
-
-  // Per-tab signal that bumps to trigger an external rename (from context menu)
   const [renameSignals, setRenameSignals] = useState<Record<string, number>>({})
   const requestRename = (id: string) =>
     setRenameSignals((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
 
-  const onlineAgents = systemsList.filter((s) => s.status === "online")
+  const onlineAgents = systemsList.filter((system) => system.status === "online")
 
-  // When collapsed, clicking any empty area of the tab bar expands the panel.
-  // We skip if the click target is inside a button (tabs, toggle, + dropdown)
-  // because those have their own handlers. This is more reliable than
-  // stopPropagation, which Base UI's internal handlers sometimes bypass.
-  const handleBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isOpen && !(e.target as HTMLElement).closest("button")) {
+  const handleBarClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isOpen && !(event.target as HTMLElement).closest("button")) {
       togglePanel()
     }
   }
@@ -209,14 +211,13 @@ function TerminalTabBar() {
   return (
     <div
       className={cn(
-        "flex h-9 items-center border-b border-border bg-card shrink-0",
+        "flex h-9 shrink-0 items-center border-b border-border bg-card",
         !isOpen && "cursor-pointer",
       )}
       onClick={handleBarClick}
     >
-      {/* Collapse/expand toggle */}
       <button
-        className="flex items-center gap-1.5 px-3 h-full text-muted-foreground hover:text-foreground transition-colors border-r border-border"
+        className="flex h-full items-center gap-1.5 border-r border-border px-3 text-muted-foreground transition-colors hover:text-foreground"
         onClick={togglePanel}
         title={isOpen ? "Collapse terminal (Ctrl+`)" : "Expand terminal (Ctrl+`)"}
       >
@@ -229,7 +230,6 @@ function TerminalTabBar() {
         />
       </button>
 
-      {/* Session tabs */}
       <div className="flex flex-1 items-center overflow-x-auto scrollbar-none">
         {sessions.map((tab) => (
           <TerminalTab
@@ -249,10 +249,9 @@ function TerminalTabBar() {
         ))}
       </div>
 
-      {/* New session button */}
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex h-9 w-9 items-center justify-center rounded-none border-l border-border bg-card text-muted-foreground transition-colors hover:text-foreground shrink-0"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-none border-l border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
           title="New terminal session"
         >
           <HugeiconsIcon icon={Add01Icon} size={14} />
@@ -266,20 +265,20 @@ function TerminalTabBar() {
                 No agents online
               </DropdownMenuItem>
             ) : (
-              onlineAgents.map((s) => (
+              onlineAgents.map((system) => (
                 <DropdownMenuItem
-                  key={s.id}
+                  key={system.id}
                   className="text-[11px]"
                   onClick={() =>
                     openSession({
-                      agentId: s.id,
+                      agentId: system.id,
                       mode: "shell",
-                      label: s.hostname,
+                      label: system.hostname,
                     })
                   }
                 >
                   <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-2" />
-                  {s.hostname}
+                  {system.hostname}
                 </DropdownMenuItem>
               ))
             )}
@@ -290,39 +289,12 @@ function TerminalTabBar() {
   )
 }
 
-// ── Panel body ────────────────────────────────────────────────────────────────
-
 export function TerminalPanel({ className }: { className?: string }) {
   const { sessions, activeTab, isOpen } = useTerminalPanel()
 
   return (
     <div className={cn("flex flex-col border-t border-border bg-[#0d0d0d]", className)}>
       <TerminalTabBar />
-
-      {/* Terminal body — keep mounted across collapse/expand and tab switches.
-       *
-       * Previously this was guarded with `{isOpen && ...}`, which unmounted
-       * every TerminalView whenever the user collapsed the panel. That ran
-       * each session's cleanup effect (runClose → agent kills PTY,
-       * ghostty term disposed) and then re-mounted fresh components on
-       * expand, spawning brand-new shells. The user lost cwd, shell
-       * history, running processes, scrollback — every collapse/expand
-       * cycle was a full reset.
-       *
-       * By switching to a CSS `hidden` toggle we keep all TerminalView
-       * instances mounted across collapse/expand. React does NOT run effect
-       * cleanup for `display: none`, so ghostty terms stay alive, PTY
-       * sessions stay open on the agent, and expanding the panel restores
-       * the exact state the user left behind.
-       *
-       * (Note: React's <Activity> component also hides via `display: none`
-       * but explicitly tears down effects on hide — which is exactly what
-       * we DON'T want here, so we use the plain CSS approach.)
-       *
-       * The inner `sessions.map` retains its per-tab visibility toggle so
-       * only the active tab's view is actually visible when the panel is
-       * open; all tabs' sessions remain alive in the background regardless.
-       */}
       <div className={cn("flex-1 overflow-hidden", !isOpen && "hidden")}>
         {sessions.length === 0 ? (
           <EmptyTerminalState />
@@ -330,16 +302,18 @@ export function TerminalPanel({ className }: { className?: string }) {
           sessions.map((tab) => (
             <div
               key={tab.id}
-              className={cn(
-                "h-full w-full p-1",
-                activeTab === tab.id ? "block" : "hidden",
-              )}
+              className={cn("h-full w-full p-1", activeTab === tab.id ? "block" : "hidden")}
             >
-              <TerminalView
-                agentId={tab.agentId}
-                mode={tab.mode}
-                className="h-full"
-              />
+              {tab.kind === "interactive" ? (
+                <TerminalView agentId={tab.agentId} mode={tab.mode} className="h-full" />
+              ) : (
+                <OperatorProjectionView
+                  className="h-full"
+                  label={tab.label}
+                  nodeId={tab.nodeId}
+                  content={tab.content}
+                />
+              )}
             </div>
           ))
         )}
@@ -352,39 +326,39 @@ function EmptyTerminalState() {
   const { openSession } = useTerminalPanel()
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
-  const onlineAgents = systemsList.filter((s) => s.status === "online")
+  const onlineAgents = systemsList.filter((system) => system.status === "online")
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
       <HugeiconsIcon icon={TerminalIcon} size={28} className="text-muted-foreground/40" />
       <div>
         <p className="text-sm font-medium text-foreground">No terminal sessions</p>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Open a session from any system page, or connect to an agent below
         </p>
       </div>
-      {onlineAgents.length > 0 && (
-        <div className="flex flex-wrap gap-2 justify-center mt-1">
-          {onlineAgents.slice(0, 5).map((s) => (
+      {onlineAgents.length > 0 ? (
+        <div className="mt-1 flex flex-wrap justify-center gap-2">
+          {onlineAgents.slice(0, 5).map((system) => (
             <Button
-              key={s.id}
+              key={system.id}
               variant="outline"
               size="sm"
               className="h-7 text-xs"
               onClick={() =>
                 openSession({
-                  agentId: s.id,
+                  agentId: system.id,
                   mode: "shell",
-                  label: s.hostname,
+                  label: system.hostname,
                 })
               }
             >
               <HugeiconsIcon icon={TerminalIcon} size={12} className="mr-1.5" />
-              {s.hostname}
+              {system.hostname}
             </Button>
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

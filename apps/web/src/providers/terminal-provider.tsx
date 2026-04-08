@@ -1,14 +1,26 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
 import type { TerminalMode } from "@scout/shared"
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface TerminalTab {
+export interface InteractiveTerminalTab {
   id: string
+  kind: "interactive"
   label: string
   agentId: string
   mode: TerminalMode
 }
+
+export interface OperatorProjectionTab {
+  id: string
+  kind: "operator_projection"
+  projectionId: string
+  sessionId: string
+  toolCallId: string
+  nodeId: string
+  label: string
+  content: string
+}
+
+export type TerminalTab = InteractiveTerminalTab | OperatorProjectionTab
 
 export interface OpenSessionParams {
   agentId: string
@@ -16,11 +28,22 @@ export interface OpenSessionParams {
   label: string
 }
 
+export interface OperatorProjectionParams {
+  projectionId: string
+  sessionId: string
+  toolCallId: string
+  nodeId: string
+  label: string
+  content: string
+}
+
 export interface TerminalState {
   sessions: TerminalTab[]
   activeTab: string | null
   isOpen: boolean
   openSession: (params: OpenSessionParams) => void
+  openOperatorProjection: (params: OperatorProjectionParams) => void
+  updateOperatorProjection: (params: OperatorProjectionParams) => void
   closeSession: (tabId: string) => void
   closeOtherSessions: (tabId: string) => void
   renameSession: (tabId: string, label: string) => void
@@ -29,13 +52,13 @@ export interface TerminalState {
   openPanel: () => void
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
-
 const TerminalContext = createContext<TerminalState>({
   sessions: [],
   activeTab: null,
   isOpen: false,
   openSession: () => {},
+  openOperatorProjection: () => {},
+  updateOperatorProjection: () => {},
   closeSession: () => {},
   closeOtherSessions: () => {},
   renameSession: () => {},
@@ -44,7 +67,16 @@ const TerminalContext = createContext<TerminalState>({
   openPanel: () => {},
 })
 
-// ── Provider ──────────────────────────────────────────────────────────────────
+function nextActiveTabId(
+  sessions: ReadonlyArray<TerminalTab>,
+  closedTabId: string,
+): string | null {
+  const idx = sessions.findIndex((session) => session.id === closedTabId)
+  const remaining = sessions.filter((session) => session.id !== closedTabId)
+  if (remaining.length === 0) return null
+  const nextIdx = Math.min(Math.max(idx, 0), remaining.length - 1)
+  return remaining[nextIdx]?.id ?? null
+}
 
 export function TerminalProvider({ children }: { children: React.ReactNode }) {
   const [sessions, setSessions] = useState<TerminalTab[]>([])
@@ -55,8 +87,9 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
   const openSession = useCallback((params: OpenSessionParams) => {
     sessionCounter.current += 1
     const id = `term-${sessionCounter.current}-${crypto.randomUUID()}`
-    const tab: TerminalTab = {
+    const tab: InteractiveTerminalTab = {
       id,
+      kind: "interactive",
       label: params.label,
       agentId: params.agentId,
       mode: params.mode,
@@ -66,24 +99,70 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     setIsOpen(true)
   }, [])
 
+  const openOperatorProjection = useCallback((params: OperatorProjectionParams) => {
+    const projectionTabId = `operator-projection:${params.projectionId}`
+
+    setSessions((prev) => {
+      const existing = prev.find((session) => session.id === projectionTabId)
+      if (existing && existing.kind === "operator_projection") {
+        return prev.map((session) =>
+          session.id === projectionTabId
+            ? {
+                ...session,
+                label: params.label,
+                nodeId: params.nodeId,
+                content: params.content,
+              }
+            : session,
+        )
+      }
+
+      const tab: OperatorProjectionTab = {
+        id: projectionTabId,
+        kind: "operator_projection",
+        projectionId: params.projectionId,
+        sessionId: params.sessionId,
+        toolCallId: params.toolCallId,
+        nodeId: params.nodeId,
+        label: params.label,
+        content: params.content,
+      }
+
+      return [...prev, tab]
+    })
+
+    setActiveTabState(projectionTabId)
+    setIsOpen(true)
+  }, [])
+
+  const updateOperatorProjection = useCallback((params: OperatorProjectionParams) => {
+    const projectionTabId = `operator-projection:${params.projectionId}`
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === projectionTabId && session.kind === "operator_projection"
+          ? {
+              ...session,
+              label: params.label,
+              nodeId: params.nodeId,
+              content: params.content,
+            }
+          : session,
+      ),
+    )
+  }, [])
+
   const closeSession = useCallback((tabId: string) => {
     setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== tabId)
+      const next = prev.filter((session) => session.id !== tabId)
+      setActiveTabState((currentActiveTab) =>
+        currentActiveTab === tabId ? nextActiveTabId(prev, tabId) : currentActiveTab,
+      )
       return next
     })
-    setActiveTabState((prev) => {
-      if (prev !== tabId) return prev
-      // Switch to adjacent tab
-      const idx = sessions.findIndex((s) => s.id === tabId)
-      const remaining = sessions.filter((s) => s.id !== tabId)
-      if (remaining.length === 0) return null
-      const nextIdx = Math.min(idx, remaining.length - 1)
-      return remaining[nextIdx]?.id ?? null
-    })
-  }, [sessions])
+  }, [])
 
   const closeOtherSessions = useCallback((tabId: string) => {
-    setSessions((prev) => prev.filter((s) => s.id === tabId))
+    setSessions((prev) => prev.filter((session) => session.id === tabId))
     setActiveTabState(tabId)
   }, [])
 
@@ -91,7 +170,11 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     const trimmed = label.trim()
     if (trimmed.length === 0) return
     setSessions((prev) =>
-      prev.map((s) => (s.id === tabId ? { ...s, label: trimmed } : s)),
+      prev.map((session) =>
+        session.id === tabId && session.kind === "interactive"
+          ? { ...session, label: trimmed }
+          : session,
+      ),
     )
   }, [])
 
@@ -107,11 +190,10 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     setIsOpen(true)
   }, [])
 
-  // Keyboard shortcut: Ctrl+` to toggle panel
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey && e.key === "`") {
-        e.preventDefault()
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey && event.key === "`") {
+        event.preventDefault()
         setIsOpen((prev) => !prev)
       }
     }
@@ -126,6 +208,8 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
         activeTab,
         isOpen,
         openSession,
+        openOperatorProjection,
+        updateOperatorProjection,
         closeSession,
         closeOtherSessions,
         renameSession,
@@ -138,8 +222,6 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     </TerminalContext.Provider>
   )
 }
-
-// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useTerminalPanel(): TerminalState {
   return useContext(TerminalContext)

@@ -18,7 +18,7 @@ function TerminalPage() {
   const offlineAgents = systemsList.filter((s) => s.status !== "online")
 
   const sessionCountFor = (agentId: string) =>
-    sessions.filter((t) => t.agentId === agentId).length
+    sessions.filter((t) => t.kind === "interactive" && t.agentId === agentId).length
 
   return (
     <div className="p-4 md:p-6">
