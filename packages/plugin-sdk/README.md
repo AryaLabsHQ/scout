@@ -33,4 +33,8 @@ Concrete plugin packages depend on this SDK for their public contract shape, whi
 
 ## More Detail
 
-Implementation-oriented guidance lives in [`AGENTS.md`](./AGENTS.md).
+Canonical plugin authoring guidance lives in [`../../docs/plugins/authoring.md`](../../docs/plugins/authoring.md).
+
+Operator-specific guidance lives in [`../../docs/plugins/operator.md`](../../docs/plugins/operator.md).
+
+Implementation-oriented package guidance lives in [`AGENTS.md`](./AGENTS.md).
