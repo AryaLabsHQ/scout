@@ -33,7 +33,7 @@ const toPluginSessionContext = (session: OperatorSessionSummary): OperatorSessio
   selectedNodeIds: session.selectedNodeIds,
   attachedSkillIds: session.attachedSkillIds,
   approvalMode: session.approvalMode,
-  bypassMode: session.bypassMode,
+  planMode: session.planMode,
   modelProviderId: session.modelProviderId,
   modelId: session.modelId,
 })

@@ -38,10 +38,7 @@ const rowToSessionSummary = (
   selectedNodeIds: (row.selectedNodeIds as string[]) ?? [],
   attachedSkillIds: (row.attachedSkillIds as string[]) ?? [],
   approvalMode: row.approvalMode as OperatorSessionSummary["approvalMode"],
-  bypassMode: row.bypassMode as OperatorSessionSummary["bypassMode"],
-  ...(dateToMillis(row.bypassExpiresAt) !== undefined
-    ? { bypassExpiresAt: dateToMillis(row.bypassExpiresAt)! }
-    : {}),
+  ...((row as any).planMode != null ? { planMode: (row as any).planMode as "off" | "plan_first" } : {}),
   ...(row.summary !== null && row.summary !== undefined ? { summary: row.summary } : {}),
   modelProviderId: row.modelProviderId,
   modelId: row.modelId,
@@ -190,7 +187,7 @@ const getEntryPath = (
 
 const eventToSessionUpdates = (
   event: OperatorSessionEvent,
-  session: typeof schema.operatorSessions.$inferSelect,
+  _session: typeof schema.operatorSessions.$inferSelect,
   currentLeafEntryId?: string | null,
 ): Partial<typeof schema.operatorSessions.$inferInsert> => {
   const updates: Partial<typeof schema.operatorSessions.$inferInsert> = {
@@ -212,12 +209,6 @@ const eventToSessionUpdates = (
     (event.type === "message.created" && event.message?.role === "user")
   ) {
     updates.status = "active"
-  }
-
-  if (event.type === "bypass.updated") {
-    updates.bypassMode = event.bypassMode ?? session.bypassMode
-    updates.bypassExpiresAt =
-      event.bypassExpiresAt !== undefined ? new Date(event.bypassExpiresAt) : null
   }
 
   return updates
@@ -249,6 +240,18 @@ export class OperatorSessions extends ServiceMap.Service<
     readonly setTitle: (
       sessionId: string,
       title: string,
+    ) => Effect.Effect<void, ManagementError>
+    readonly setApprovalMode: (
+      sessionId: string,
+      approvalMode: string,
+    ) => Effect.Effect<void, ManagementError>
+    readonly setPlanMode: (
+      sessionId: string,
+      planMode: string,
+    ) => Effect.Effect<void, ManagementError>
+    readonly setSummary: (
+      sessionId: string,
+      summary: string,
     ) => Effect.Effect<void, ManagementError>
     readonly archive: (
       sessionId: string,
@@ -372,7 +375,6 @@ export class OperatorSessions extends ServiceMap.Service<
               selectedNodeIds: [...params.selectedNodeIds],
               attachedSkillIds: [...params.attachedSkillIds],
               approvalMode: "confirm_each_mutation",
-              bypassMode: "off",
               modelProviderId: params.modelProviderId,
               modelId: params.modelId,
               createdAt: now.getTime(),
@@ -895,6 +897,102 @@ export class OperatorSessions extends ServiceMap.Service<
           })
         })
 
+      const setApprovalMode: (
+        sessionId: string,
+        approvalMode: string,
+      ) => Effect.Effect<void, ManagementError> = (sessionId, approvalMode) =>
+        Effect.gen(function* () {
+          const session = yield* Effect.sync(() =>
+            db.select()
+              .from(schema.operatorSessions)
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .get(),
+          )
+
+          if (!session) {
+            return yield* Effect.fail(
+              operatorManagementError(
+                "session-not-found",
+                `Operator session ${sessionId} not found`,
+              ),
+            )
+          }
+
+          yield* Effect.sync(() => {
+            db.update(schema.operatorSessions)
+              .set({
+                approvalMode,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .run()
+          })
+        })
+
+      const setPlanMode: (
+        sessionId: string,
+        planMode: string,
+      ) => Effect.Effect<void, ManagementError> = (sessionId, planMode) =>
+        Effect.gen(function* () {
+          const session = yield* Effect.sync(() =>
+            db.select()
+              .from(schema.operatorSessions)
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .get(),
+          )
+
+          if (!session) {
+            return yield* Effect.fail(
+              operatorManagementError(
+                "session-not-found",
+                `Operator session ${sessionId} not found`,
+              ),
+            )
+          }
+
+          yield* Effect.sync(() => {
+            db.update(schema.operatorSessions)
+              .set({
+                planMode,
+                updatedAt: new Date(),
+              } as any)
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .run()
+          })
+        })
+
+      const setSummary: (
+        sessionId: string,
+        summary: string,
+      ) => Effect.Effect<void, ManagementError> = (sessionId, summary) =>
+        Effect.gen(function* () {
+          const session = yield* Effect.sync(() =>
+            db.select()
+              .from(schema.operatorSessions)
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .get(),
+          )
+
+          if (!session) {
+            return yield* Effect.fail(
+              operatorManagementError(
+                "session-not-found",
+                `Operator session ${sessionId} not found`,
+              ),
+            )
+          }
+
+          yield* Effect.sync(() => {
+            db.update(schema.operatorSessions)
+              .set({
+                summary,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.operatorSessions.id, sessionId))
+              .run()
+          })
+        })
+
       const archive: (
         sessionId: string,
       ) => Effect.Effect<void, ManagementError> = (sessionId) =>
@@ -1000,6 +1098,9 @@ export class OperatorSessions extends ServiceMap.Service<
         appendEvent,
         setSkills,
         setTitle,
+        setApprovalMode,
+        setPlanMode,
+        setSummary,
         archive,
         delete: del,
         branch,

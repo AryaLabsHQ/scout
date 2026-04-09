@@ -310,13 +310,21 @@ export class OperatorSessionManager extends ServiceMap.Service<
           const resolvedModelConfig = yield* modelRegistry.resolveSession(detail.session)
           const promptSections = yield* beforePromptSections(detail.session)
 
+          const systemPromptParts = [
+            resolvedModelConfig.systemPrompt,
+            ...promptSections,
+          ]
+
+          if (detail.session.planMode === "plan_first") {
+            systemPromptParts.push(
+              "Plan mode is active. You MUST propose a step-by-step plan before taking any mutating action. Use observe tools freely to investigate, but do not execute bash mutations or plugin actions until the user approves your plan.",
+            )
+          }
+
           return {
             detail,
             resolvedModelConfig,
-            systemPrompt: [
-              resolvedModelConfig.systemPrompt,
-              ...promptSections,
-            ].filter((section) => section.trim().length > 0).join("\n\n"),
+            systemPrompt: systemPromptParts.filter((section) => section.trim().length > 0).join("\n\n"),
             messages: sessionEntriesToAgentMessages(detail, resolvedModelConfig.model),
           } satisfies OperatorPreparedRuntimeSession
         })
