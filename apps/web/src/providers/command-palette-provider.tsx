@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useState } from "react"
+import { useHotkeys } from "react-hotkeys-hook"
 
 interface CommandPaletteState {
   isOpen: boolean
@@ -23,19 +24,9 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
   const close = useCallback(() => setIsOpen(false), [])
   const toggle = useCallback(() => setIsOpen((prev) => !prev), [])
 
-  // Global keyboard listener for Cmd+K / Ctrl+K. Uses capture phase so it wins
-  // over focused terminals and other components that might swallow the key.
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        e.stopPropagation()
-        setIsOpen((prev) => !prev)
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown, true)
-    return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [])
+  useHotkeys("mod+k", () => {
+    setIsOpen((prev) => !prev)
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true })
 
   return (
     <CommandPaletteContext.Provider value={{ isOpen, open, close, toggle, setOpen: setIsOpen }}>

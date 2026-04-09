@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
+import { createContext, useContext, useState, useCallback, useRef } from "react"
+import { useHotkeys } from "react-hotkeys-hook"
 import type { TerminalMode } from "@scout/shared"
 
 export interface InteractiveTerminalTab {
@@ -17,7 +18,7 @@ export interface OperatorProjectionTab {
   toolCallId: string
   nodeId: string
   label: string
-  content: string
+  base64Chunks: string[]
 }
 
 export type TerminalTab = InteractiveTerminalTab | OperatorProjectionTab
@@ -34,7 +35,7 @@ export interface OperatorProjectionParams {
   toolCallId: string
   nodeId: string
   label: string
-  content: string
+  base64Chunks: string[]
 }
 
 export interface TerminalState {
@@ -111,7 +112,7 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
                 ...session,
                 label: params.label,
                 nodeId: params.nodeId,
-                content: params.content,
+                base64Chunks: params.base64Chunks,
               }
             : session,
         )
@@ -125,7 +126,7 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
         toolCallId: params.toolCallId,
         nodeId: params.nodeId,
         label: params.label,
-        content: params.content,
+        base64Chunks: params.base64Chunks,
       }
 
       return [...prev, tab]
@@ -144,7 +145,7 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
               ...session,
               label: params.label,
               nodeId: params.nodeId,
-              content: params.content,
+              base64Chunks: params.base64Chunks,
             }
           : session,
       ),
@@ -190,16 +191,9 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     setIsOpen(true)
   }, [])
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.ctrlKey && event.key === "`") {
-        event.preventDefault()
-        setIsOpen((prev) => !prev)
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  useHotkeys("ctrl+`", () => {
+    setIsOpen((prev) => !prev)
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true })
 
   return (
     <TerminalContext.Provider
