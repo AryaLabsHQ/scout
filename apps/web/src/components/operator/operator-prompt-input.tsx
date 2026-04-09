@@ -4,7 +4,14 @@ import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
 import Mention from "@tiptap/extension-mention"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowUp01Icon, Image02Icon } from "@hugeicons/core-free-icons"
+import {
+  Alert01Icon,
+  ArrowUp01Icon,
+  Edit02Icon,
+  Image02Icon,
+  Shield01Icon,
+  ShieldCheck,
+} from "@hugeicons/core-free-icons"
 import type { OperatorModelDescriptor, OperatorSkill, System } from "@scout/shared"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -32,7 +39,10 @@ interface OperatorPromptInputProps {
   setDraft: (v: string) => void
   isSubmitting: boolean
   onSubmit: () => void
-  bypassMode: string
+  approvalMode: string
+  onApprovalModeChange?: (mode: string) => void
+  planMode?: string
+  onPlanModeChange?: (mode: string) => void
   nodeCount: number
   systems: ReadonlyArray<System>
   skills: ReadonlyArray<OperatorSkill>
@@ -50,7 +60,10 @@ export function OperatorPromptInput({
   setDraft,
   isSubmitting,
   onSubmit,
-  bypassMode,
+  approvalMode,
+  onApprovalModeChange,
+  planMode,
+  onPlanModeChange,
   systems,
   skills,
   models,
@@ -276,7 +289,7 @@ export function OperatorPromptInput({
   }, [])
 
   return (
-    <div className="border-t border-border">
+    <div className={cn("border-t border-border", approvalMode === "auto_approve_all" && "border-t-2 border-red-500/30")}>
       {/* Image thumbnails */}
       {attachments.length > 0 && (
         <div className="flex gap-2 px-4 pt-3">
@@ -407,11 +420,78 @@ export function OperatorPromptInput({
             </span>
           )}
 
-          {/* Bypass indicator */}
-          {bypassMode === "timed_override" && (
-            <Badge variant="outline" className="text-[10px] uppercase">
-              bypass
-            </Badge>
+          {/* Approval mode */}
+          {onApprovalModeChange ? (
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button size="sm" variant="ghost" className={cn(
+                    "h-7 text-xs",
+                    approvalMode === "auto_approve_all" && "text-red-400",
+                  )} />
+                }
+              >
+                {approvalMode === "confirm_each_mutation" ? (
+                  <><HugeiconsIcon icon={Shield01Icon} size={12} className="mr-1 inline" />confirm</>
+                ) : approvalMode === "auto_approve_reads" ? (
+                  <><HugeiconsIcon icon={ShieldCheck} size={12} className="mr-1 inline" />auto-reads</>
+                ) : (
+                  <><HugeiconsIcon icon={Alert01Icon} size={12} className="mr-1 inline" />auto-all</>
+                )}
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2" align="start">
+                {[
+                  { value: "confirm_each_mutation", label: "Confirm mutations", desc: "Approve every write action", icon: Shield01Icon },
+                  { value: "auto_approve_reads", label: "Auto-approve reads", desc: "Only prompt for writes", icon: ShieldCheck },
+                  { value: "auto_approve_all", label: "Auto-approve all", desc: "No approval required", icon: Alert01Icon },
+                ].map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    onClick={() => onApprovalModeChange(mode.value)}
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/40",
+                      approvalMode === mode.value && "bg-accent",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <HugeiconsIcon icon={mode.icon} size={12} />
+                      {mode.label}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{mode.desc}</span>
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <HugeiconsIcon icon={approvalMode === "auto_approve_all" ? Alert01Icon : approvalMode === "auto_approve_reads" ? ShieldCheck : Shield01Icon} size={12} />
+              {approvalMode === "confirm_each_mutation" ? "confirm" : approvalMode === "auto_approve_reads" ? "auto-reads" : "auto-all"}
+            </span>
+          )}
+
+          {/* Plan mode */}
+          {onPlanModeChange && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant={planMode === "plan_first" ? "default" : "ghost"}
+                    className="h-7 text-xs gap-1"
+                    onClick={() => onPlanModeChange(planMode === "plan_first" ? "off" : "plan_first")}
+                  />
+                }
+              >
+                <HugeiconsIcon icon={Edit02Icon} size={12} />
+                {planMode === "plan_first" ? "Plan" : "Build"}
+              </TooltipTrigger>
+              <TooltipContent>
+                {planMode === "plan_first"
+                  ? "Plan mode — observe and propose before acting. Click to switch to Build."
+                  : "Build mode — execute tools directly. Click to switch to Plan."}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
 

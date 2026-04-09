@@ -41,17 +41,6 @@ export function applyOperatorEvent(
     }
   }
 
-  if (event.type === "bypass.updated") {
-    if (event.bypassMode) {
-      nextSession.bypassMode = event.bypassMode
-    }
-    if (event.bypassExpiresAt !== undefined) {
-      nextSession.bypassExpiresAt = event.bypassExpiresAt
-    } else {
-      delete nextSession.bypassExpiresAt
-    }
-  }
-
   if (event.type === "skills.updated") {
     nextSession.attachedSkillIds = event.skillIds ?? []
   }
@@ -139,25 +128,13 @@ export function getEntryIdBySourceEventMap(
   return entries
 }
 
-export function getProjectionContent(
+export function getProjectionBase64Chunks(
   events: ReadonlyArray<OperatorSessionEvent>,
   toolCallId: string,
-): string {
-  const streamedOutput = events
-    .filter((event) => event.toolCallId === toolCallId && event.outputText)
-    .map((event) => event.outputText ?? "")
-    .join("")
-
-  if (streamedOutput.trim().length > 0) {
-    return streamedOutput
-  }
-
-  return (
-    [...events]
-      .reverse()
-      .find((event) => event.toolCall?.id === toolCallId)
-      ?.toolCall?.summary ?? ""
-  )
+): string[] {
+  return events
+    .filter((event) => event.toolCallId === toolCallId && event.outputBase64)
+    .map((event) => event.outputBase64!)
 }
 
 export const formatDuration = (startedAt: number, finishedAt?: number): string => {
@@ -169,9 +146,6 @@ export const formatDuration = (startedAt: number, finishedAt?: number): string =
   const seconds = Math.floor((durationMs % 60_000) / 1000)
   return `${minutes}m ${seconds}s`
 }
-
-export const formatBypassExpiry = (expiresAt: number | undefined): string =>
-  expiresAt === undefined ? "manual disable" : new Date(expiresAt).toLocaleString()
 
 export const defaultSessionTitle = (selectedCount: number): string =>
   selectedCount > 0

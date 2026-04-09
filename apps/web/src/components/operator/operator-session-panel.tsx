@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useHotkeys } from "react-hotkeys-hook"
 import { Link } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -46,7 +47,7 @@ import {
   applyOperatorEvent,
   getApprovalStateMap,
   getEntryIdBySourceEventMap,
-  getProjectionContent,
+  getProjectionBase64Chunks,
   getProjectionMap,
 } from "./operator-utils"
 import { ManageSkillsDialog } from "./operator-dialogs"
@@ -87,7 +88,10 @@ export function OperatorSessionPanel({
   const resolveApproval = useAtomSet(HubClient.mutation("operator.approvals.resolve"), {
     mode: "promise",
   })
-  const setBypass = useAtomSet(HubClient.mutation("operator.bypass.set"), {
+  const setApprovalMode = useAtomSet(HubClient.mutation("operator.sessions.setApprovalMode"), {
+    mode: "promise",
+  })
+  const setPlanMode = useAtomSet(HubClient.mutation("operator.sessions.setPlanMode"), {
     mode: "promise",
   })
   const setTitle = useAtomSet(HubClient.mutation("operator.sessions.setTitle"), {
@@ -105,7 +109,6 @@ export function OperatorSessionPanel({
   const [branchingEntryId, setBranchingEntryId] = useState<string | null>(null)
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null)
-  const [isUpdatingBypass, setIsUpdatingBypass] = useState(false)
 
   // Collapsible metadata panel
   const metaPanelRef = usePanelRef()
@@ -143,11 +146,19 @@ export function OperatorSessionPanel({
 
   useEffect(() => {
     if (!detail) return
-    setLiveDetail((current) =>
-      current === null || detail.session.lastEventSeq >= current.session.lastEventSeq
-        ? detail
-        : current,
-    )
+    setLiveDetail((current) => {
+      if (current === null) return detail
+      // Always take the latest session metadata (title, status, etc.) from the
+      // query result, but keep the richer event list from streaming if ahead.
+      if (detail.session.lastEventSeq >= current.session.lastEventSeq) {
+        return detail
+      }
+      // Query is behind on events but may have fresher metadata (e.g. title update)
+      return {
+        ...current,
+        session: { ...current.session, title: detail.session.title },
+      }
+    })
   }, [detail])
 
   const streamAtom = useMemo(
@@ -174,9 +185,34 @@ export function OperatorSessionPanel({
     if (streamResult._tag === "Success") {
       const { done, items } = streamResult.value
       if (items.length > 0) {
-        // Separate transient streaming events from persistent events
-        const persistentItems = items.filter((e) => e.type !== "message.streaming")
+        // Separate transient events from persistent events
+        const transientTypes = new Set(["message.streaming", "session.title_updated", "session.summary_updated"])
+        const persistentItems = items.filter((e) => !transientTypes.has(e.type))
         const streamingItems = items.filter((e) => e.type === "message.streaming")
+
+        // Handle title updates from server-side LLM generation
+        const titleUpdate = items.find((e) => e.type === "session.title_updated")
+        if (titleUpdate?.summary) {
+          setLiveDetail((current) => {
+            if (!current) return current
+            return {
+              ...current,
+              session: { ...current.session, title: titleUpdate.summary! },
+            }
+          })
+        }
+
+        // Handle summary updates from server-side generation
+        const summaryUpdate = items.find((e) => e.type === "session.summary_updated")
+        if (summaryUpdate?.summary) {
+          setLiveDetail((current) => {
+            if (!current) return current
+            return {
+              ...current,
+              session: { ...current.session, summary: summaryUpdate.summary! },
+            }
+          })
+        }
 
         if (persistentItems.length > 0) {
           setLiveDetail((current) => {
@@ -263,6 +299,11 @@ export function OperatorSessionPanel({
     [resolvedDetail?.approvals],
   )
 
+  const firstPendingApprovalId = useMemo(
+    () => resolvedDetail?.approvals.find((a) => a.status === "pending")?.id ?? null,
+    [resolvedDetail?.approvals],
+  )
+
   useEffect(() => {
     if (!resolvedDetail) return
 
@@ -273,7 +314,7 @@ export function OperatorSessionPanel({
         toolCallId: projection.toolCallId,
         nodeId: projection.nodeId,
         label: `${resolvedDetail.session.title} • ${projection.nodeId}`,
-        content: getProjectionContent(resolvedDetail.events, projection.toolCallId),
+        base64Chunks: getProjectionBase64Chunks(resolvedDetail.events, projection.toolCallId),
       })
     }
   }, [projectionByToolCallId, resolvedDetail, sessionId, updateOperatorProjection])
@@ -329,7 +370,7 @@ export function OperatorSessionPanel({
     }
   }
 
-  const handleResolveApproval = async (
+  const handleResolveApproval = useCallback(async (
     approvalId: string,
     decision: "approved" | "rejected",
   ) => {
@@ -342,26 +383,27 @@ export function OperatorSessionPanel({
     } finally {
       setResolvingApprovalId(null)
     }
-  }
+  }, [resolveApproval, sessionId])
 
-  const handleBypassUpdate = async (minutes: number | null) => {
-    setIsUpdatingBypass(true)
-    try {
-      await setBypass({
-        payload:
-          minutes === null
-            ? { sessionId, enabled: false }
-            : {
-                sessionId,
-                enabled: true,
-                expiresAt: Date.now() + minutes * 60_000,
-              },
-        reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
-      })
-    } finally {
-      setIsUpdatingBypass(false)
-    }
-  }
+  const handleApprovalModeChange = useCallback(async (mode: string) => {
+    await setApprovalMode({
+      payload: { sessionId, approvalMode: mode as any },
+      reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
+    })
+    setLiveDetail((current) =>
+      current ? { ...current, session: { ...current.session, approvalMode: mode as any } } : current,
+    )
+  }, [setApprovalMode, sessionId])
+
+  const handlePlanModeChange = useCallback(async (mode: string) => {
+    await setPlanMode({
+      payload: { sessionId, planMode: mode as any },
+      reactivityKeys: [`operator:session:${sessionId}`],
+    })
+    setLiveDetail((current) =>
+      current ? { ...current, session: { ...current.session, planMode: mode as any } } : current,
+    )
+  }, [setPlanMode, sessionId])
 
   const handleBranch = async (entryId: string) => {
     setBranchingEntryId(entryId)
@@ -410,6 +452,46 @@ export function OperatorSessionPanel({
       setIsUpdatingSkills(false)
     }
   }
+
+  // ── Keyboard shortcuts (react-hotkeys-hook) ────────────────────────────────
+
+  useHotkeys("/", () => {
+    document.querySelector<HTMLElement>(".operator-editor .ProseMirror")?.focus()
+  }, { preventDefault: true })
+
+  useHotkeys("mod+shift+p", () => {
+    void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail?.session.planMode, handlePlanModeChange])
+
+  useHotkeys("mod+shift+a", () => {
+    const modes = ["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"] as const
+    const idx = modes.indexOf(resolvedDetail?.session.approvalMode as any)
+    void handleApprovalModeChange(modes[(idx + 1) % modes.length])
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail?.session.approvalMode, handleApprovalModeChange])
+
+  useHotkeys("mod+.", () => {
+    if (firstPendingApprovalId) void handleResolveApproval(firstPendingApprovalId, "approved")
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true, enabled: !!firstPendingApprovalId }, [firstPendingApprovalId, handleResolveApproval])
+
+  // Command palette custom event listeners
+  useEffect(() => {
+    const onTogglePlan = () => void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
+    const onCycleApproval = () => {
+      const modes = ["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"] as const
+      const idx = modes.indexOf(resolvedDetail?.session.approvalMode as any)
+      void handleApprovalModeChange(modes[(idx + 1) % modes.length])
+    }
+    const onApprovePending = () => { if (firstPendingApprovalId) void handleResolveApproval(firstPendingApprovalId, "approved") }
+
+    window.addEventListener("scout:operator:toggle-plan-mode", onTogglePlan)
+    window.addEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
+    window.addEventListener("scout:operator:approve-pending", onApprovePending)
+    return () => {
+      window.removeEventListener("scout:operator:toggle-plan-mode", onTogglePlan)
+      window.removeEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
+      window.removeEventListener("scout:operator:approve-pending", onApprovePending)
+    }
+  }, [resolvedDetail?.session.planMode, resolvedDetail?.session.approvalMode, firstPendingApprovalId, handleApprovalModeChange, handlePlanModeChange, handleResolveApproval])
 
   if (detailResult._tag === "Initial" && !detail) {
     return (
@@ -465,8 +547,6 @@ export function OperatorSessionPanel({
         session={resolvedDetail.session}
         pendingApprovals={pendingApprovals}
         variant={variant}
-        isUpdatingBypass={isUpdatingBypass}
-        onBypassUpdate={handleBypassUpdate}
         onOpenSkillsDialog={openSkillsDialog}
         onToggleMeta={variant === "page" ? () => {
           const panel = metaPanelRef.current
@@ -544,7 +624,7 @@ export function OperatorSessionPanel({
                             toolCallId: projection.toolCallId,
                             nodeId: projection.nodeId,
                             label: `${resolvedDetail.session.title} • ${projection.nodeId}`,
-                            content: getProjectionContent(resolvedDetail.events, projection.toolCallId),
+                            base64Chunks: getProjectionBase64Chunks(resolvedDetail.events, projection.toolCallId),
                           })
                         }
                       />
@@ -578,7 +658,10 @@ export function OperatorSessionPanel({
               setDraft={setDraft}
               isSubmitting={isSubmitting}
               onSubmit={() => void handlePromptSubmit()}
-              bypassMode={resolvedDetail.session.bypassMode}
+              approvalMode={resolvedDetail.session.approvalMode}
+              onApprovalModeChange={(mode) => void handleApprovalModeChange(mode)}
+              planMode={resolvedDetail.session.planMode ?? "off"}
+              onPlanModeChange={(mode) => void handlePlanModeChange(mode)}
               nodeCount={resolvedDetail.session.selectedNodeIds.length}
               systems={systems}
               skills={resolvedDetail.availableSkills ?? []}
@@ -632,16 +715,12 @@ function SessionHeader({
   session,
   pendingApprovals,
   variant,
-  isUpdatingBypass,
-  onBypassUpdate,
   onOpenSkillsDialog,
   onToggleMeta,
 }: {
   session: OperatorSessionSummary
   pendingApprovals: number
   variant: OperatorShellVariant
-  isUpdatingBypass: boolean
-  onBypassUpdate: (minutes: number | null) => Promise<void>
   onOpenSkillsDialog: () => void
   onToggleMeta?: () => void
 }) {
@@ -686,25 +765,6 @@ function SessionHeader({
               <span className="sr-only">Session actions</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
-              <DropdownMenuItem
-                disabled={isUpdatingBypass}
-                onClick={() => void onBypassUpdate(15)}
-              >
-                15m bypass
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={isUpdatingBypass}
-                onClick={() => void onBypassUpdate(60)}
-              >
-                1h bypass
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={isUpdatingBypass || session.bypassMode === "off"}
-                onClick={() => void onBypassUpdate(null)}
-              >
-                Disable bypass
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onOpenSkillsDialog}>
                 Manage Skills
               </DropdownMenuItem>

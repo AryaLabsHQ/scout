@@ -144,9 +144,8 @@ export function OperatorEventCard({
     )
   }
 
-  // System events: bypass.updated, skills.updated, session.completed
+  // System events: skills.updated, session.completed
   if (
-    event.type === "bypass.updated" ||
     event.type === "skills.updated" ||
     event.type === "session.completed"
   ) {
@@ -168,15 +167,6 @@ export function OperatorEventCard({
           Mirror in Dock
         </Button>
       </div>
-    )
-  }
-
-  // Fallback: output text
-  if (event.outputText) {
-    return (
-      <pre className="overflow-x-auto border border-border bg-muted/40 p-3 font-mono text-[11px] text-muted-foreground">
-        {event.outputText}
-      </pre>
     )
   }
 
@@ -394,11 +384,6 @@ function ToolCallCard({
               <OperatorMarkdown content={toolCall.summary} />
             </div>
           )}
-          {event.outputText && (
-            <pre className="overflow-x-auto border border-border bg-muted/40 p-3 font-mono text-[11px] text-muted-foreground">
-              {event.outputText}
-            </pre>
-          )}
           {projection && (
             <Button size="sm" variant="outline" onClick={() => onMirrorProjection(projection)}>
               Mirror in Dock
@@ -421,6 +406,33 @@ function ApprovalCard({
   isResolvingApproval: boolean
   onResolveApproval: (approvalId: string, decision: "approved" | "rejected") => Promise<void>
 }) {
+  // Clarification cards get a distinct presentation
+  if (approval.kind === "clarification") {
+    return (
+      <div className="space-y-2 border-l-2 border-blue-500 py-2 pl-3">
+        <div className="flex items-center gap-2 text-[11px]">
+          <Badge variant="outline">question</Badge>
+          <Timestamp at={event.at} className="ml-auto" />
+        </div>
+        <p className="text-xs font-medium">{approval.reason}</p>
+        {approval.status === "pending" && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={isResolvingApproval}
+              onClick={() => void onResolveApproval(approval.id, "approved")}
+            >
+              {isResolvingApproval ? "Working..." : "Continue"}
+            </Button>
+            <span className="self-center text-[10px] text-muted-foreground">
+              or answer in the prompt below
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const borderColor =
     approval.status === "pending"
       ? "border-yellow-500"
@@ -474,11 +486,6 @@ function SystemEventCard({ event }: { event: OperatorSessionEvent }) {
   let description: string
 
   switch (event.type) {
-    case "bypass.updated":
-      description = event.bypassMode === "timed_override"
-        ? "Bypass enabled"
-        : "Bypass disabled"
-      break
     case "skills.updated":
       description = `Skills updated (${event.skillIds?.length ?? 0} attached)`
       break

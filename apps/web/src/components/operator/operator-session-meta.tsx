@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { formatBypassExpiry } from "./operator-utils"
 
 export function OperatorSessionMeta({
   detail,
@@ -47,14 +46,9 @@ export function OperatorSessionMeta({
           </div>
           <div className="grid gap-2 text-[11px] text-muted-foreground">
             <div>Approval mode: {detail.session.approvalMode}</div>
+            <div>Mode: {detail.session.planMode === "plan_first" ? "Plan — observe and propose before acting" : "Build — execute tools directly"}</div>
             <div>Pending approvals: {pendingApprovals}</div>
             <div>Model: {detail.session.modelProviderId}/{detail.session.modelId}</div>
-            <div>
-              Bypass mode:{" "}
-              {detail.session.bypassMode === "timed_override"
-                ? `enabled until ${formatBypassExpiry(detail.session.bypassExpiresAt)}`
-                : "off"}
-            </div>
             {detail.session.parentSessionId ? (
               <div>Parent session: {detail.session.parentSessionId}</div>
             ) : null}
@@ -92,7 +86,7 @@ export function OperatorSessionMeta({
       <Card size="sm">
         <CardHeader>
           <CardTitle>Latest Summary</CardTitle>
-          <CardDescription>Durable summary placeholder for the final operator write-up.</CardDescription>
+          <CardDescription>Auto-generated after each operator turn.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground">{latestSummary ?? "No summary yet."}</p>
