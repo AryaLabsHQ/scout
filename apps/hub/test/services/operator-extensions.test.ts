@@ -73,7 +73,6 @@ describe("OperatorExtensions service", () => {
           selectedNodeIds: ["node-a"],
           attachedSkillIds: [],
           approvalMode: "confirm_each_mutation",
-          bypassMode: "off",
           modelProviderId: "openai",
           modelId: "gpt-5.4",
           createdAt: Date.now(),

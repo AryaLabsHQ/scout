@@ -111,7 +111,7 @@ describe("OperatorRuntime helpers", () => {
         nodeId: "node-a",
         isMutation: true,
         label: "Restart nginx",
-      }, manifests, pluginOperatorTools),
+      }, manifests, pluginOperatorTools, "confirm_each_mutation"),
     ).toEqual({ required: true, reason: "Restart nginx" })
 
     expect(
@@ -119,7 +119,7 @@ describe("OperatorRuntime helpers", () => {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "inspect-container",
-      }, manifests, pluginOperatorTools).required,
+      }, manifests, pluginOperatorTools, "confirm_each_mutation").required,
     ).toBe(false)
 
     expect(
@@ -127,7 +127,7 @@ describe("OperatorRuntime helpers", () => {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "restart-container",
-      }, manifests, pluginOperatorTools).required,
+      }, manifests, pluginOperatorTools, "confirm_each_mutation").required,
     ).toBe(true)
 
     expect(
@@ -135,15 +135,45 @@ describe("OperatorRuntime helpers", () => {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "missing-action",
-      }, manifests, pluginOperatorTools).required,
+      }, manifests, pluginOperatorTools, "confirm_each_mutation").required,
     ).toBe(false)
 
     expect(
-      requiresOperatorApproval("docker.safe-restart", {}, manifests, pluginOperatorTools).required,
+      requiresOperatorApproval("docker.safe-restart", {}, manifests, pluginOperatorTools, "confirm_each_mutation").required,
     ).toBe(true)
 
     expect(
-      requiresOperatorApproval("docker.inspect", {}, manifests, pluginOperatorTools).required,
+      requiresOperatorApproval("docker.inspect", {}, manifests, pluginOperatorTools, "confirm_each_mutation").required,
+    ).toBe(false)
+
+    // auto_approve_all bypasses all approvals
+    expect(
+      requiresOperatorApproval("bash.run", {
+        nodeId: "node-a",
+        isMutation: true,
+        label: "Restart nginx",
+      }, manifests, pluginOperatorTools, "auto_approve_all").required,
+    ).toBe(false)
+
+    // auto_approve_reads passes read-only bash but blocks mutations
+    expect(
+      requiresOperatorApproval("bash.run", {
+        nodeId: "node-a",
+        isMutation: false,
+        label: "Check status",
+      }, manifests, pluginOperatorTools, "auto_approve_reads").required,
+    ).toBe(false)
+
+    expect(
+      requiresOperatorApproval("bash.run", {
+        nodeId: "node-a",
+        isMutation: true,
+        label: "Restart nginx",
+      }, manifests, pluginOperatorTools, "auto_approve_reads").required,
+    ).toBe(true)
+
+    expect(
+      requiresOperatorApproval("observe.systems", {}, manifests, pluginOperatorTools, "auto_approve_reads").required,
     ).toBe(false)
   })
 })
