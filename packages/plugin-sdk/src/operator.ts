@@ -13,7 +13,7 @@ export interface OperatorSessionContext {
   readonly selectedNodeIds: ReadonlyArray<string>
   readonly attachedSkillIds: ReadonlyArray<string>
   readonly approvalMode: string
-  readonly bypassMode: string
+  readonly planMode: string | undefined
   readonly modelProviderId: string
   readonly modelId: string
 }

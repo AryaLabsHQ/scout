@@ -9,9 +9,7 @@ export const OperatorSessionStatusSchema = Schema.Literals([
   "archived",
 ])
 
-export const OperatorApprovalModeSchema = Schema.Literal("confirm_each_mutation")
-
-export const OperatorBypassModeSchema = Schema.Literals(["off", "timed_override"])
+export const OperatorApprovalModeSchema = Schema.Literals(["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"])
 
 export const OperatorMessageRoleSchema = Schema.Literals(["user", "assistant", "system"])
 
@@ -85,6 +83,7 @@ export const OperatorApprovalKindSchema = Schema.Literals([
   "scope_expansion",
   "mutation",
   "bypass_mode",
+  "clarification",
 ])
 
 export const OperatorApprovalStatusSchema = Schema.Literals([
@@ -105,6 +104,15 @@ export const OperatorApprovalRequestSchema = Schema.Struct({
   status: OperatorApprovalStatusSchema,
   requestedAt: Schema.Number,
   resolvedAt: Schema.optionalKey(Schema.Number),
+  questionData: Schema.optionalKey(Schema.Struct({
+    question: Schema.String,
+    header: Schema.String,
+    options: Schema.Array(Schema.Struct({
+      label: Schema.String,
+      description: Schema.String,
+    })),
+    multiple: Schema.optionalKey(Schema.Boolean),
+  })),
 })
 
 export const OperatorToolCallStatusSchema = Schema.Literals([
@@ -193,8 +201,7 @@ export const OperatorSessionSummarySchema = Schema.Struct({
   selectedNodeIds: Schema.Array(Schema.String),
   attachedSkillIds: Schema.Array(Schema.String),
   approvalMode: OperatorApprovalModeSchema,
-  bypassMode: OperatorBypassModeSchema,
-  bypassExpiresAt: Schema.optionalKey(Schema.Number),
+  planMode: Schema.optionalKey(Schema.Literals(["off", "plan_first"])),
   summary: Schema.optionalKey(Schema.String),
   modelProviderId: Schema.String,
   modelId: Schema.String,
@@ -222,8 +229,6 @@ export const OperatorSessionEventSchema = Schema.Struct({
   outputBase64: Schema.optionalKey(Schema.String),
   projection: Schema.optionalKey(OperatorTerminalProjectionSchema),
   status: Schema.optionalKey(OperatorSessionStatusSchema),
-  bypassMode: Schema.optionalKey(OperatorBypassModeSchema),
-  bypassExpiresAt: Schema.optionalKey(Schema.Number),
   skillIds: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
@@ -277,10 +282,14 @@ export const OperatorApprovalResolveParamsSchema = Schema.Struct({
   decision: Schema.Literals(["approved", "rejected"]),
 })
 
-export const OperatorBypassSetParamsSchema = Schema.Struct({
+export const OperatorSessionSetApprovalModeParamsSchema = Schema.Struct({
   sessionId: Schema.String,
-  enabled: Schema.Boolean,
-  expiresAt: Schema.optionalKey(Schema.Number),
+  approvalMode: OperatorApprovalModeSchema,
+})
+
+export const OperatorSessionSetPlanModeParamsSchema = Schema.Struct({
+  sessionId: Schema.String,
+  planMode: Schema.Literals(["off", "plan_first"]),
 })
 
 export const OperatorSessionSetTitleParamsSchema = Schema.Struct({
@@ -303,7 +312,6 @@ export const OperatorEventsSubscribeParamsSchema = Schema.Struct({
 
 export type OperatorSessionStatus = typeof OperatorSessionStatusSchema.Type
 export type OperatorApprovalMode = typeof OperatorApprovalModeSchema.Type
-export type OperatorBypassMode = typeof OperatorBypassModeSchema.Type
 export type OperatorMessage = typeof OperatorMessageSchema.Type
 export type OperatorEntryKind = typeof OperatorEntryKindSchema.Type
 export type OperatorEntry = typeof OperatorEntrySchema.Type
@@ -326,7 +334,8 @@ export type OperatorSessionForkParams = typeof OperatorSessionForkParamsSchema.T
 export type OperatorSessionSetSkillsParams = typeof OperatorSessionSetSkillsParamsSchema.Type
 export type OperatorPromptParams = typeof OperatorPromptParamsSchema.Type
 export type OperatorApprovalResolveParams = typeof OperatorApprovalResolveParamsSchema.Type
-export type OperatorBypassSetParams = typeof OperatorBypassSetParamsSchema.Type
+export type OperatorSessionSetApprovalModeParams = typeof OperatorSessionSetApprovalModeParamsSchema.Type
+export type OperatorSessionSetPlanModeParams = typeof OperatorSessionSetPlanModeParamsSchema.Type
 export type OperatorSessionSetTitleParams = typeof OperatorSessionSetTitleParamsSchema.Type
 export type OperatorSessionArchiveParams = typeof OperatorSessionArchiveParamsSchema.Type
 export type OperatorSessionDeleteParams = typeof OperatorSessionDeleteParamsSchema.Type

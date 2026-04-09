@@ -4,7 +4,6 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 
 import {
   OperatorApprovalResolveParamsSchema,
-  OperatorBypassSetParamsSchema,
   OperatorEventsSubscribeParamsSchema,
   OperatorModelDescriptorSchema,
   OperatorPromptParamsSchema,
@@ -15,6 +14,8 @@ import {
   OperatorSessionDetailSchema,
   OperatorSessionForkParamsSchema,
   OperatorSessionGetParamsSchema,
+  OperatorSessionSetApprovalModeParamsSchema,
+  OperatorSessionSetPlanModeParamsSchema,
   OperatorSessionSetSkillsParamsSchema,
   OperatorSessionSetTitleParamsSchema,
   OperatorSessionEventSchema,
@@ -168,8 +169,12 @@ export const ClientHubRpcs = RpcGroup.make(
     payload: OperatorApprovalResolveParamsSchema,
     error: ManagementError,
   }),
-  Rpc.make("operator.bypass.set", {
-    payload: OperatorBypassSetParamsSchema,
+  Rpc.make("operator.sessions.setApprovalMode", {
+    payload: OperatorSessionSetApprovalModeParamsSchema,
+    error: ManagementError,
+  }),
+  Rpc.make("operator.sessions.setPlanMode", {
+    payload: OperatorSessionSetPlanModeParamsSchema,
     error: ManagementError,
   }),
   Rpc.make("operator.sessions.setSkills", {

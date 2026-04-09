@@ -126,6 +126,7 @@ export const operatorSessions = sqliteTable("operator_sessions", {
   approvalMode: text("approval_mode").notNull(),
   bypassMode: text("bypass_mode").notNull(),
   bypassExpiresAt: integer("bypass_expires_at", { mode: "timestamp_ms" }),
+  planMode: text("plan_mode"),
   summary: text("summary"),
   modelProviderId: text("model_provider_id").notNull(),
   modelId: text("model_id").notNull(),
