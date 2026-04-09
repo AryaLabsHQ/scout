@@ -9,6 +9,7 @@ import {
   Settings01Icon,
   Edit02Icon,
   Cancel01Icon,
+  Shield01Icon,
 } from "@hugeicons/core-free-icons"
 import type { IconSvgElement } from "@hugeicons/react"
 import { useAtomValue } from "@effect/atom-react"
@@ -104,6 +105,55 @@ export function useCommands(): Command[] {
       keywords: ["operator", "drawer", "toggle", "sidebar"],
       icon: ArtificialIntelligence04Icon,
       perform: toggleDrawer,
+    })
+
+    commands.push({
+      id: "operator:toggle-plan-mode",
+      label: "Toggle plan mode",
+      group: "Operator",
+      keywords: ["plan", "mode", "build", "toggle"],
+      icon: Edit02Icon,
+      shortcut: "Cmd+Shift+P",
+      perform: () => {
+        window.dispatchEvent(new CustomEvent("scout:operator:toggle-plan-mode"))
+      },
+    })
+
+    commands.push({
+      id: "operator:cycle-approval-mode",
+      label: "Cycle approval mode",
+      group: "Operator",
+      keywords: ["approval", "permission", "mode", "confirm", "auto"],
+      icon: Shield01Icon,
+      shortcut: "Cmd+Shift+A",
+      perform: () => {
+        window.dispatchEvent(new CustomEvent("scout:operator:cycle-approval-mode"))
+      },
+    })
+
+    commands.push({
+      id: "operator:approve-pending",
+      label: "Approve pending request",
+      group: "Operator",
+      keywords: ["approve", "pending", "accept", "confirm"],
+      icon: Shield01Icon,
+      shortcut: "Cmd+.",
+      perform: () => {
+        window.dispatchEvent(new CustomEvent("scout:operator:approve-pending"))
+      },
+    })
+
+    commands.push({
+      id: "operator:focus-prompt",
+      label: "Focus operator prompt",
+      group: "Operator",
+      keywords: ["focus", "prompt", "input", "type"],
+      icon: ArtificialIntelligence04Icon,
+      shortcut: "/",
+      perform: () => {
+        const editor = document.querySelector<HTMLElement>(".operator-editor .ProseMirror")
+        editor?.focus()
+      },
     })
 
     // ── Navigation: one entry per connected system ────────────────────────────
