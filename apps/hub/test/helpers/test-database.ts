@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS operator_sessions (
   approval_mode TEXT NOT NULL,
   bypass_mode TEXT NOT NULL,
   bypass_expires_at INTEGER,
+  plan_mode TEXT,
   summary TEXT,
   model_provider_id TEXT NOT NULL,
   model_id TEXT NOT NULL,

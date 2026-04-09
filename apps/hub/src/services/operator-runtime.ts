@@ -23,6 +23,7 @@ import type {
   ScoutOperatorTool,
   StreamDefinition,
 } from "@scout/plugin-sdk"
+import { desc, eq } from "drizzle-orm"
 import { AgentRegistry, type HubAgentClient } from "../rpc/agent-bridge.js"
 import * as schema from "../../drizzle/schema.js"
 import type { OperatorResolvedModelConfig } from "./operator-model-registry.js"
@@ -126,6 +127,31 @@ const generateSessionTitle = (
     },
     catch: () =>
       toManagementError("title-generation-failed", "Failed to generate session title"),
+  })
+
+const generateSessionSummary = (
+  model: OperatorResolvedModelConfig["model"],
+  recentContext: string,
+): Effect.Effect<string, ManagementError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const summaryAgent = new Agent({
+        initialState: {
+          systemPrompt: "Summarize this operator session in 1-2 sentences. Focus on what was investigated and what actions were taken. Reply with only the summary.",
+          model,
+          tools: [],
+        },
+        sessionId: `summary-${Date.now()}`,
+      })
+      await summaryAgent.prompt(recentContext)
+      await summaryAgent.waitForIdle()
+      const last = summaryAgent.state.messages.at(-1)
+      if (last?.role === "assistant") {
+        return textFromContentBlocks(last.content as ReadonlyArray<unknown>).trim() || "Session in progress."
+      }
+      return "Session in progress."
+    },
+    catch: () => toManagementError("summary-generation-failed", "Failed to generate summary"),
   })
 
 const persistOperatorMessage = (
@@ -241,10 +267,33 @@ export const requiresOperatorApproval = (
   args: unknown,
   manifests: ReadonlyMap<string, PluginInventoryManifest>,
   pluginOperatorTools: ReadonlyMap<string, PluginOperatorToolPolicy>,
+  approvalMode: string,
 ): {
   readonly required: boolean
   readonly reason: string | null
 } => {
+  // auto_approve_all: never require approval
+  if (approvalMode === "auto_approve_all") return { required: false, reason: null }
+
+  // auto_approve_reads: only require for mutations
+  if (approvalMode === "auto_approve_reads") {
+    // observe tools, ask_user, plugin.logs: always safe
+    if (toolName.startsWith("observe.") || toolName === "ask_user" || toolName === "plugin.logs") {
+      return { required: false, reason: null }
+    }
+    // bash.run with isMutation: false is safe
+    if (
+      toolName === "bash.run" &&
+      typeof args === "object" &&
+      args !== null &&
+      "isMutation" in args &&
+      args.isMutation === false
+    ) {
+      return { required: false, reason: null }
+    }
+  }
+
+  // confirm_each_mutation (and auto_approve_reads for mutations): existing logic
   if (
     toolName === "bash.run" &&
     typeof args === "object" &&
@@ -909,10 +958,6 @@ const createBashRunTool = (
   },
 })
 
-const isBypassActive = (session: OperatorSessionDetail["session"]): boolean =>
-  session.bypassMode === "timed_override" &&
-  (session.bypassExpiresAt === undefined || session.bypassExpiresAt > Date.now())
-
 const toOperatorSessionContext = (
   session: OperatorSessionDetail["session"],
 ): {
@@ -922,7 +967,7 @@ const toOperatorSessionContext = (
   readonly selectedNodeIds: ReadonlyArray<string>
   readonly attachedSkillIds: ReadonlyArray<string>
   readonly approvalMode: string
-  readonly bypassMode: string
+  readonly planMode: string | undefined
   readonly modelProviderId: string
   readonly modelId: string
 } => ({
@@ -932,7 +977,7 @@ const toOperatorSessionContext = (
   selectedNodeIds: session.selectedNodeIds,
   attachedSkillIds: session.attachedSkillIds,
   approvalMode: session.approvalMode,
-  bypassMode: session.bypassMode,
+  planMode: session.planMode,
   modelProviderId: session.modelProviderId,
   modelId: session.modelId,
 })
@@ -962,6 +1007,28 @@ const ensureUniqueToolNames = (tools: ReadonlyArray<AgentTool<any>>): Array<Agen
   return [...tools]
 }
 
+const askUserSchema = Type.Object({
+  question: Type.String({ description: "The complete question to ask" }),
+  header: Type.String({ description: "Short label (max 30 chars)" }),
+  options: Type.Array(Type.Object({
+    label: Type.String({ description: "Choice label (1-5 words)" }),
+    description: Type.String({ description: "What this choice means" }),
+  })),
+  multiple: Type.Optional(Type.Boolean({ description: "Allow multiple selections" })),
+})
+
+const createAskUserTool = (
+  _session: OperatorSessionDetail["session"],
+): AgentTool<typeof askUserSchema> => ({
+  name: "ask_user",
+  label: "ask_user",
+  description: "Ask the user a clarifying question. Use when you need input to choose between approaches or clarify scope.",
+  parameters: askUserSchema,
+  execute: async (_toolCallId, args) => {
+    return textResult(args.question, { options: args.options, multiple: args.multiple })
+  },
+})
+
 const createTools = (
   db: ScoutDatabase,
   ingestion: typeof MetricsIngestion.Service,
@@ -979,6 +1046,7 @@ const createTools = (
     createPluginRunActionTool(manifests, registry, session),
     createPluginLogsTool(operatorSessions, manifests, registry, session),
     createBashRunTool(operatorSessions, registry, session),
+    createAskUserTool(session),
     ...operatorPlugins.flatMap((plugin) =>
       (plugin.operator.tools ?? []).map((tool) => wrapPluginOperatorTool(tool, session)),
     ),
@@ -1214,14 +1282,42 @@ export class OperatorRuntime extends ServiceMap.Service<
                       }).pipe(Effect.ignore),
                     )
 
+                    // ask_user tool always requires a clarification approval
+                    if (context.toolCall.name === "ask_user") {
+                      await Effect.runPromise(
+                        operatorSessions.appendEvent({
+                          id: crypto.randomUUID(),
+                          sessionId,
+                          at: Date.now(),
+                          type: "approval.requested",
+                          approval: {
+                            id: crypto.randomUUID(),
+                            sessionId,
+                            toolCallId: context.toolCall.id,
+                            reason: typeof context.args === "object" && context.args !== null && "question" in context.args ? String(context.args.question) : "Operator question",
+                            affectedNodeIds: [],
+                            kind: "clarification",
+                            status: "pending",
+                            requestedAt: Date.now(),
+                            questionData: context.args as any,
+                          },
+                        }).pipe(Effect.ignore),
+                      )
+                      return {
+                        block: true,
+                        reason: "Waiting for user response to clarifying question.",
+                      }
+                    }
+
                     const approval = requiresOperatorApproval(
                       context.toolCall.name,
                       context.args,
                       pluginManifests,
                       pluginOperatorTools,
+                      detail.session.approvalMode,
                     )
 
-                    if (approval.required && !isBypassActive(detail.session)) {
+                    if (approval.required) {
                       const affectedNodeIds = toolNodeIds(context.args, detail.session.selectedNodeIds)
 
                       await Effect.runPromise(
@@ -1246,6 +1342,26 @@ export class OperatorRuntime extends ServiceMap.Service<
                       return {
                         block: true,
                         reason: "Mutation requires approval. Wait for the user to approve it before proceeding.",
+                      }
+                    }
+
+                    // Plan mode enforcement: block mutating tools
+                    if (detail.session.planMode === "plan_first") {
+                      const isMutationTool =
+                        (context.toolCall.name === "bash.run" &&
+                          typeof context.args === "object" &&
+                          context.args !== null &&
+                          "isMutation" in context.args &&
+                          context.args.isMutation === true) ||
+                        (context.toolCall.name === "plugin.runAction") ||
+                        (pluginOperatorTools.has(context.toolCall.name) &&
+                          pluginOperatorTools.get(context.toolCall.name)?.requiresConfirmation === true)
+
+                      if (isMutationTool) {
+                        return {
+                          block: true,
+                          reason: "Plan mode is active. Propose a plan before executing mutations.",
+                        }
                       }
                     }
 
@@ -1374,12 +1490,88 @@ export class OperatorRuntime extends ServiceMap.Service<
                           Effect.flatMap((prepared) =>
                             generateSessionTitle(prepared.resolvedModelConfig.model, userText),
                           ),
-                          Effect.flatMap((title) => operatorSessions.setTitle(sessionId, title)),
+                          Effect.flatMap((title) =>
+                            operatorSessions.setTitle(sessionId, title).pipe(
+                              Effect.flatMap(() =>
+                                operatorSessions.publishTransient({
+                                  id: `title-${sessionId}-${Date.now()}`,
+                                  sessionId,
+                                  seq: -1,
+                                  at: Date.now(),
+                                  type: "session.title_updated",
+                                  summary: title,
+                                }),
+                              ),
+                            ),
+                          ),
                           Effect.ignore,
                         ),
                       )
                     }
                   }
+
+                  // Title re-generation every 10 user messages
+                  const userMessageCount = detail.events.filter(
+                    (e) => e.message?.role === "user",
+                  ).length
+                  if (userMessageCount > 0 && userMessageCount % 10 === 0) {
+                    const latestUserMessage = [...detail.events]
+                      .reverse()
+                      .find((e) => e.message?.role === "user")
+                    const latestText = latestUserMessage?.message?.content
+                    if (latestText) {
+                      yield* Effect.forkDetach(
+                        operatorSessionManager.prepareRuntime(sessionId).pipe(
+                          Effect.flatMap((prepared) =>
+                            generateSessionTitle(prepared.resolvedModelConfig.model, latestText),
+                          ),
+                          Effect.flatMap((title) =>
+                            operatorSessions.setTitle(sessionId, title).pipe(
+                              Effect.flatMap(() =>
+                                operatorSessions.publishTransient({
+                                  id: `title-${sessionId}-${Date.now()}`,
+                                  sessionId,
+                                  seq: -1,
+                                  at: Date.now(),
+                                  type: "session.title_updated",
+                                  summary: title,
+                                }),
+                              ),
+                            ),
+                          ),
+                          Effect.ignore,
+                        ),
+                      )
+                    }
+                  }
+
+                  // Fire-and-forget summary generation after each turn
+                  yield* Effect.forkDetach(
+                    Effect.gen(function* () {
+                      const events = yield* Effect.sync(() =>
+                        db.select().from(schema.operatorSessionEvents)
+                          .where(eq(schema.operatorSessionEvents.sessionId, sessionId))
+                          .orderBy(desc(schema.operatorSessionEvents.seq))
+                          .limit(10).all()
+                      )
+                      const context = events.reverse().map(e => {
+                        const payload = e.payload as any
+                        return `[${payload.type}] ${payload.message?.content ?? payload.toolCall?.name ?? payload.summary ?? ""}`
+                      }).join("\n")
+
+                      const prepared = yield* operatorSessionManager.prepareRuntime(sessionId)
+                      const summary = yield* generateSessionSummary(prepared.resolvedModelConfig.model, context)
+                      yield* operatorSessions.setSummary(sessionId, summary)
+                      yield* operatorSessions.publishTransient({
+                        id: `summary-${sessionId}-${Date.now()}`,
+                        sessionId,
+                        seq: -1,
+                        at: Date.now(),
+                        type: "session.summary_updated",
+                        summary,
+                      })
+                    }).pipe(Effect.ignore),
+                  )
                 }) as Effect.Effect<void, ManagementError>,
           ),
         )

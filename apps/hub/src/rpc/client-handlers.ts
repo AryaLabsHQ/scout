@@ -481,51 +481,42 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
                       resolvedAt: Date.now(),
                     },
                   }).pipe(
-                    Effect.flatMap(() =>
-                      decision === "approved"
-                        ? operatorSessions.appendEvent({
-                            id: crypto.randomUUID(),
-                            sessionId,
-                            at: Date.now(),
-                            type: "message.created",
-                            message: {
-                              id: crypto.randomUUID(),
-                              sessionId,
-                              role: "user",
-                              content: `Approval granted for "${approval.reason}". Continue with the approved action if it is still necessary.`,
-                              createdAt: Date.now(),
-                            },
-                          }).pipe(
-                            Effect.flatMap(() => operatorRuntime.prompt(sessionId)),
-                          )
-                        : Effect.void,
-                    ),
+                    Effect.flatMap(() => {
+                      if (decision !== "approved") return Effect.void
+
+                      // For clarification approvals, inject the user's answer as context
+                      const isClarification = approval.kind === "clarification"
+                      const messageContent = isClarification
+                        ? `User responded to "${approval.reason}": ${decision}`
+                        : `Approval granted for "${approval.reason}". Continue with the approved action if it is still necessary.`
+
+                      return operatorSessions.appendEvent({
+                        id: crypto.randomUUID(),
+                        sessionId,
+                        at: Date.now(),
+                        type: "message.created",
+                        message: {
+                          id: crypto.randomUUID(),
+                          sessionId,
+                          role: "user",
+                          content: messageContent,
+                          createdAt: Date.now(),
+                        },
+                      }).pipe(
+                        Effect.flatMap(() => operatorRuntime.prompt(sessionId)),
+                      )
+                    }),
                     Effect.asVoid,
                   )
                 })()
           ),
         ),
 
-      "operator.bypass.set": ({ sessionId, enabled, expiresAt }) =>
-        operatorSessionManager.get(sessionId).pipe(
-          Effect.flatMap((session) =>
-            session === null
-              ? Effect.fail(
-                  new ManagementError({
-                    code: "session-not-found",
-                    message: `Operator session ${sessionId} not found`,
-                  }),
-                )
-              : operatorSessions.appendEvent({
-                  id: crypto.randomUUID(),
-                  sessionId,
-                  at: Date.now(),
-                  type: "bypass.updated",
-                  bypassMode: enabled ? "timed_override" : "off",
-                  ...(enabled && expiresAt !== undefined ? { bypassExpiresAt: expiresAt } : {}),
-                }).pipe(Effect.asVoid),
-          ),
-        ),
+      "operator.sessions.setApprovalMode": ({ sessionId, approvalMode }) =>
+        operatorSessions.setApprovalMode(sessionId, approvalMode),
+
+      "operator.sessions.setPlanMode": ({ sessionId, planMode }) =>
+        operatorSessions.setPlanMode(sessionId, planMode),
 
       // ── Terminal — wired through AgentRpcRegistry ─────────────────────────
 
