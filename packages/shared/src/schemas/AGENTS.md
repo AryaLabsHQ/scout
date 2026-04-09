@@ -10,6 +10,7 @@ packages/shared/src/schemas/
 ├── alerts.ts                      # alert and alert-rule contracts
 ├── management.ts                  # plugin action/log params and management errors
 ├── terminal.ts                    # terminal input/output payloads
+├── operator.ts                    # operator session, event, tool call, approval schemas
 ├── protocol.ts                    # low-level request/response/event frames
 └── index.ts                       # public package barrel
 ```
@@ -22,6 +23,7 @@ packages/shared/src/schemas/
 | Alerts and rules | `alerts.ts` | Alert lifecycle data |
 | Terminal messages | `terminal.ts` | Open/input/resize/close payloads and stream chunks |
 | Generic plugin management payloads | `management.ts` | Shared plugin action/log inputs and `ManagementError` |
+| Operator sessions and events | `operator.ts` | Session, entry, tool call, approval, plan snapshot schemas |
 | Raw protocol frames | `protocol.ts` | Lower-level request/response/event schema set |
 
 ## CONVENTIONS

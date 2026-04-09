@@ -13,7 +13,9 @@ scout/
 ├── apps/
 │   ├── agent/      # node-side runtime, collectors, plugin host, hub RPC client
 │   ├── hub/        # DB-backed control plane, REST endpoints, WS RPC servers
+│   │   ├── services/operator-*  # operator session runtime, persistence, models, skills
 │   └── web/        # TanStack Start dashboard, AtomRpc client, SSR bootstrap
+│       ├── src/components/operator/  # operator chat UI + tiptap rich input
 ├── packages/
 │   ├── plugin-sdk/ # plugin contracts, loader, execution/runtime helpers
 │   ├── plugin-*    # concrete plugins: docker, k8s, systemd
@@ -31,6 +33,7 @@ scout/
 | Add or change shared wire contracts | `packages/shared/src/schemas`, `packages/shared/src/rpc` | Shared package is the source of truth for cross-runtime shapes |
 | Add or change plugin capabilities | `packages/plugin-sdk`, `packages/plugin-docker`, `packages/plugin-k8s`, `packages/plugin-systemd` | Plugin manifests, contracts, and runtime adapters live together |
 | Run the full stack against disposable nodes | `e2e/README.md`, `e2e/scripts`, `e2e/nodes` | Hub runs on the host; containers mount the repo at `/opt/scout` |
+| Operator sessions, tools, approvals | `apps/hub/src/services/operator-*`, `apps/web/src/components/operator/` | Hub services own runtime + persistence; web owns chat UI |
 
 ## WHY EFFECT V4
 Effect is the primary application framework here, not a helper library.
@@ -52,6 +55,8 @@ Services are built with `ServiceMap.Service`, dependencies are composed with `La
 - Shared RPC directionality is explicit: browser→hub, agent→hub, and hub→agent each get their own file under `packages/shared/src/rpc`.
 - Plugin packages are split the same way everywhere: `contracts.ts` defines ids/schemas, `manifest.ts` exposes metadata, and `agent.ts` / `hub.ts` / `web.ts` bind runtime-specific behavior.
 - Hub HTTP endpoints in `apps/hub/src/routes.ts` serialize database state for bootstrap and diagnostics; interactive management flows belong in RPC layers instead of bespoke REST routes.
+- Operator sessions are event-sourced: append-only events + projected tables (entries, toolCalls, approvals, projections, planSnapshots). The hub streams transient events (streaming content, title/summary updates) via PubSub without DB persistence.
+- Operator tools run through pi-agent-core's `Agent` class with `beforeToolCall`/`afterToolCall` hooks for approval enforcement, plan mode blocking, and ask-user interception.
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -64,6 +69,11 @@ Services are built with `ServiceMap.Service`, dependencies are composed with `La
 | `HubAgentRpcs` / `AgentHubRpcs` | RPC groups | `packages/shared/src/rpc` | Duplex control channel between hub and agents |
 | `HubClient` | AtomRpc service | `apps/web/src/rpc/client.ts` | Browser RPC client consumed by route/page atoms |
 | `definePluginManifest` | SDK helper | `packages/plugin-sdk/src/runtime.ts` | Canonical plugin manifest typing helper |
+| `OperatorRuntime` | service | `apps/hub/src/services/operator-runtime.ts` | Pi-agent-core adapter, 8 tools, approval interception |
+| `OperatorSessionManager` | service | `apps/hub/src/services/operator-session-manager.ts` | Session lifecycle, branch/fork, skill attachment, prepareRuntime |
+| `OperatorSessions` | service | `apps/hub/src/services/operator-sessions.ts` | DB persistence, event sourcing, PubSub streaming |
+| `OperatorModelRegistry` | service | `apps/hub/src/services/operator-model-registry.ts` | Pi-ai model resolution, provider discovery |
+| `OperatorPromptInput` | component | `apps/web/src/components/operator/operator-prompt-input.tsx` | Tiptap editor with @mentions, /commands, history |
 
 ## CONVENTIONS
 - Root `README.md` is still a template stub. Treat workspace source plus `e2e/README.md` as ground truth instead.
@@ -116,3 +126,8 @@ cd e2e && ./scripts/up.sh
 - `packages/plugin-k8s/AGENTS.md` — Kubernetes plugin package
 - `packages/plugin-systemd/AGENTS.md` — systemd plugin package
 - `e2e/AGENTS.md` — Docker-based end-to-end harness
+- `apps/hub/src/services/AGENTS.md` — hub services including operator runtime, sessions, models, skills
+- `apps/web/src/components/operator/AGENTS.md` — operator chat UI components and tiptap extensions
+- `docs/architecture.md` — full system architecture reference
+- `docs/operator/README.md` — operator user guide
+- `docs/operator/architecture.md` — operator developer architecture

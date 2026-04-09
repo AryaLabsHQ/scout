@@ -9,7 +9,9 @@ apps/web/src/routes/
 ├── __root.tsx                              # app shell, sidebar, terminal panel, seeded loaders
 ├── overview.tsx / alerts.tsx / terminal.tsx / settings.tsx
 ├── systems.$systemId.tsx                   # system detail and metrics
-└── systems_.$systemId.plugins.$pluginId.tsx # plugin detail view
+├── systems_.$systemId.plugins.$pluginId.tsx # plugin detail view
+├── operator.tsx                          # operator session list
+├── operator_.$sessionId.tsx              # operator session detail (flat route)
 ```
 
 ## WHERE TO LOOK
@@ -19,6 +21,7 @@ apps/web/src/routes/
 | Overview / alerts / terminal / settings pages | `overview.tsx`, `alerts.tsx`, `terminal.tsx`, `settings.tsx` | Standard page entry points |
 | System detail pages | `systems.$systemId.tsx` | Metrics and plugin overview live here |
 | Plugin detail page | `systems_.$systemId.plugins.$pluginId.tsx` | Biggest route file; inspect before refactoring |
+| Operator pages | `operator.tsx`, `operator_.$sessionId.tsx` | Session list + detail; flat route pattern |
 
 ## CONVENTIONS
 - Keep route-specific loader logic close to the route and delegate HTTP bootstrap calls to `src/server/*`.

@@ -12,6 +12,10 @@ apps/web/
 ├── src/providers/    # Atom registry/runtime, terminal panel, command palette
 ├── src/components/   # app-specific UI, terminal, charts, shadcn-style primitives
 └── src/hooks/        # browser-side behavior helpers
+├── src/components/operator/  # operator chat UI (7 files + tiptap/)
+├── src/providers/operator-provider.tsx  # drawer state, active session
+├── src/routes/operator.tsx              # session list page
+├── src/routes/operator_.$sessionId.tsx  # session detail page
 ```
 
 ## WHERE TO LOOK
@@ -22,6 +26,8 @@ apps/web/
 | Live queries, mutations, or streams | `src/rpc/client.ts`, `src/rpc/protocol.ts` | `HubClient` is the canonical browser RPC client |
 | Seed or pin atom state | `src/providers/atom-provider.tsx` | Keeps the runtime alive and injects SSR-fetched values |
 | Shared UI shell / terminal panel behavior | `src/routes/__root.tsx`, `src/components/terminal` | Root route owns the app chrome |
+| Operator chat UI | `src/components/operator/`, `src/components/operator/AGENTS.md` | 7 component files + 10 tiptap extensions |
+| Operator session routing | `src/routes/operator.tsx`, `src/routes/operator_.$sessionId.tsx` | List view + detail view as flat routes |
 
 ## CONVENTIONS
 - Prefer `src/server/*` for initial page data and `HubClient` atoms for ongoing live state.
