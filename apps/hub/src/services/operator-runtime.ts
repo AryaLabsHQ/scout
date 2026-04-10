@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
+import { Terminal as HeadlessTerminal } from "@xterm/headless"
 import {
   Agent,
   type AgentMessage,
@@ -200,6 +201,9 @@ export type PluginOperatorToolPolicy = {
 const DEFAULT_PLUGIN_LOG_BATCHES = 4
 const MAX_PLUGIN_LOG_BATCHES = 10
 const MAX_PLUGIN_LOG_LINES = 200
+const BASH_RUN_COLS = 120
+const BASH_RUN_ROWS = 40
+const BASH_RUN_TIMEOUT = "30 seconds"
 
 const requireScopedNode = (
   session: OperatorSessionDetail["session"],
@@ -460,7 +464,22 @@ export const formatPluginInventory = (
     .join("\n")
 }
 
-const appendToolUpdate = (
+const appendToolOutputBase64 = (
+  operatorSessions: OperatorSessionAppender,
+  sessionId: string,
+  toolCallId: string,
+  outputBase64: string,
+) =>
+  operatorSessions.appendEvent({
+    id: crypto.randomUUID(),
+    sessionId,
+    at: Date.now(),
+    type: "tool.updated",
+    toolCallId,
+    outputBase64,
+  })
+
+const appendToolOutputText = (
   operatorSessions: OperatorSessionAppender,
   sessionId: string,
   toolCallId: string,
@@ -496,6 +515,49 @@ const appendTerminalProjection = (
       streamRef: terminalSessionId,
     },
   })
+
+const writeHeadlessChunk = (
+  term: HeadlessTerminal,
+  bytes: Uint8Array,
+): Promise<void> =>
+  new Promise((resolve) => {
+    term.write(bytes, resolve)
+  })
+
+export const extractTerminalText = async (params: {
+  readonly base64Chunks: ReadonlyArray<string>
+  readonly cols: number
+  readonly rows: number
+}): Promise<string> => {
+  const term = new HeadlessTerminal({
+    cols: params.cols,
+    rows: params.rows,
+    scrollback: 10_000,
+    convertEol: true,
+    allowProposedApi: true,
+  })
+
+  for (const chunk of params.base64Chunks) {
+    await writeHeadlessChunk(term, Buffer.from(chunk, "base64"))
+  }
+
+  const lines: Array<string> = []
+
+  for (let index = 0; index < term.buffer.active.length; index += 1) {
+    const line = term.buffer.active.getLine(index)
+    if (line === undefined) continue
+
+    const text = line.translateToString(true)
+    if (line.isWrapped && lines.length > 0) {
+      lines[lines.length - 1] += text
+      continue
+    }
+
+    lines.push(text)
+  }
+
+  return lines.join("\n").trimEnd()
+}
 
 const getConnectedClient = (
   registry: AgentClientRegistry,
@@ -848,7 +910,7 @@ const createPluginLogsTool = (
           if (nextLines.length === 0) return
 
           lines.push(...nextLines)
-          yield* appendToolUpdate(
+          yield* appendToolOutputText(
             operatorSessions,
             session.id,
             toolCallId,
@@ -893,16 +955,14 @@ const createBashRunTool = (
     requireScopedNode(session, args.nodeId)
 
     const client = await Effect.runPromise(getConnectedClient(registry, args.nodeId))
-    const exitMarker = `__SCOUT_EXIT_${toolCallId}__`
-    const commandInput = `${args.command}\nprintf '\\n${exitMarker}:%s\\n' "$?"\nexit\n`
-
     let terminalSessionId: string | null = null
-    let output = ""
+    let exitCode: number | null = null
+    const outputBase64Chunks: Array<string> = []
 
-    const openStream = client["terminal.open"]({
-      mode: "shell",
-      cols: 120,
-      rows: 40,
+    const openStream = client["terminal.exec"]({
+      command: args.command,
+      cols: BASH_RUN_COLS,
+      rows: BASH_RUN_ROWS,
     })
 
     const run = Stream.runForEach(openStream, (chunk: TerminalOutput) =>
@@ -918,33 +978,64 @@ const createBashRunTool = (
             chunk.sessionId,
           )
 
-          yield* client["terminal.input"]({
-            sessionId: chunk.sessionId,
-            dataBase64: Buffer.from(commandInput, "utf8").toString("base64"),
-          }).pipe(Effect.mapError((error) => new Error(error.message)))
-
           return
         }
 
-        const textChunk = Buffer.from(chunk.dataBase64, "base64").toString("utf8")
-        output += textChunk
-        yield* appendToolUpdate(operatorSessions, session.id, toolCallId, textChunk)
+        if (chunk._tag === "exit") {
+          exitCode = chunk.exitCode
+          return
+        }
+
+        outputBase64Chunks.push(chunk.dataBase64)
+        yield* appendToolOutputBase64(operatorSessions, session.id, toolCallId, chunk.dataBase64)
       }),
-    ).pipe(
-      Effect.ensuring(
-        terminalSessionId === null
-          ? Effect.void
-          : client["terminal.close"]({ sessionId: terminalSessionId }).pipe(Effect.ignore),
-      ),
     )
 
-    await Effect.runPromise(Effect.scoped(run))
+    let completion: Option.Option<void> | null = null
+    let runError: unknown = null
 
-    const exitMatch = output.match(new RegExp(`${exitMarker}:(\\d+)`))
-    const exitCode = exitMatch ? Number(exitMatch[1]) : null
-    const cleanedOutput = output.replace(new RegExp(`${exitMarker}:\\d+`, "g"), "").trim()
+    try {
+      completion = await Effect.runPromise(
+        Effect.scoped(run.pipe(Effect.timeoutOption(BASH_RUN_TIMEOUT))),
+      )
+    } catch (error) {
+      runError = error
+    }
 
-    if (exitCode !== null && exitCode !== 0) {
+    const timedOut = completion !== null && Option.isNone(completion)
+
+    if ((timedOut || runError !== null) && terminalSessionId !== null) {
+      await Effect.runPromise(
+        client["terminal.close"]({ sessionId: terminalSessionId }).pipe(Effect.ignore),
+      )
+    }
+
+    const cleanedOutput = await extractTerminalText({
+      base64Chunks: outputBase64Chunks,
+      cols: BASH_RUN_COLS,
+      rows: BASH_RUN_ROWS,
+    })
+
+    if (runError !== null) {
+      throw runError
+    }
+
+    if (timedOut) {
+      return textResult(cleanedOutput || "(command timed out after 30 seconds)", {
+        nodeId: args.nodeId,
+        label: args.label,
+        command: args.command,
+        exitCode: null,
+        terminalSessionId,
+        timedOut: true,
+      })
+    }
+
+    if (exitCode === null) {
+      throw new Error("terminal.exec ended without an exit code")
+    }
+
+    if (exitCode !== 0) {
       throw new Error((cleanedOutput || "(no output)") + `\n\nCommand exited with code ${exitCode}`)
     }
 
