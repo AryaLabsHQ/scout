@@ -7,12 +7,18 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { Cause, Effect, Layer, Option, Stream } from "effect"
-import { HubAgentHandlersLive } from "../../src/rpc/handlers.js"
+import { Cause, Effect, Layer, Option, Ref, Stream } from "effect"
+import {
+  HubAgentHandlersLive,
+  spawnExecTerminalProcess,
+  spawnInteractiveTerminalProcess,
+  startTerminalSession,
+} from "../../src/rpc/handlers.js"
 import { HubAgentRpcs, ManagementError } from "@scout/shared"
 import * as RpcMessage from "effect/unstable/rpc/RpcMessage"
 import { AgentPluginHost } from "../../src/services/plugin-host.js"
 import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
+import type { TerminalOutput } from "@scout/shared"
 
 // ── Test helper ───────────────────────────────────────────────────────────────
 
@@ -50,6 +56,34 @@ const makeStubPluginHost = (
     (() => Effect.succeed(Stream.empty as Stream.Stream<{ lines: readonly string[]; ts: number }, Error>)),
 })
 
+const provideHandlers = <A, E = never, R = never>(
+  effect: Effect.Effect<A, E, R>,
+  pluginHostOverrides?: Partial<{
+    listCapabilities: () => Effect.Effect<ReadonlyArray<PluginCapability>>
+    runAction: (request: {
+      pluginId: string
+      actionId: string
+      target: { nodeId: string; entity?: { pluginId: string; kind: string; nodeId: string; id: string } }
+      input?: unknown
+    }) => Effect.Effect<unknown, Error>
+    openLogStream: (request: {
+      pluginId: string
+      streamId: string
+      target: { nodeId: string; entity?: { pluginId: string; kind: string; nodeId: string; id: string } }
+      input?: unknown
+    }) => Effect.Effect<Stream.Stream<{ lines: readonly string[]; ts: number }, Error>, Error>
+  }>,
+)=>
+  effect.pipe(
+    Effect.provide(HubAgentHandlersLive),
+    Effect.provide(
+      Layer.succeed(
+        AgentPluginHost,
+        makeStubPluginHost(pluginHostOverrides),
+      ),
+    ),
+  )
+
 /**
  * Call a handler and return either { ok: value } or { err: unknown }.
  * This avoids fighting the union return types from accessHandler.
@@ -73,31 +107,26 @@ const callHandler = (
     }) => Effect.Effect<Stream.Stream<{ lines: readonly string[]; ts: number }, Error>, Error>
   }>,
 ): Effect.Effect<CallResult> =>
-  (Effect.gen(function* () {
-    const handler = yield* HubAgentRpcs.accessHandler(tag)
-    const result = (handler as (p: unknown, o: unknown) => Effect.Effect<unknown, unknown, never>)(
-      payload,
-      testOptions,
-    )
-    return yield* result.pipe(
-      Effect.map((v): CallResult => ({ ok: v })),
-      Effect.catchCause((cause) => {
-        const failure = Cause.findErrorOption(cause)
-        if (Option.isSome(failure)) {
-          return Effect.succeed<CallResult>({ err: failure.value })
-        }
-        return Effect.succeed<CallResult>({ err: cause })
-      }),
-    )
-  }).pipe(
-    Effect.provide(HubAgentHandlersLive),
-    Effect.provide(
-      Layer.succeed(
-        AgentPluginHost,
-        makeStubPluginHost(pluginHostOverrides),
-      ),
-    ),
-  )) as Effect.Effect<CallResult>
+  provideHandlers(
+    Effect.gen(function* () {
+      const handler = yield* HubAgentRpcs.accessHandler(tag)
+      const result = (handler as (p: unknown, o: unknown) => Effect.Effect<unknown, unknown, never>)(
+        payload,
+        testOptions,
+      )
+      return yield* result.pipe(
+        Effect.map((value): CallResult => ({ ok: value })),
+        Effect.catchCause((cause) => {
+          const failure = Cause.findErrorOption(cause)
+          if (Option.isSome(failure)) {
+            return Effect.succeed<CallResult>({ err: failure.value })
+          }
+          return Effect.succeed<CallResult>({ err: cause })
+        }),
+      )
+    }),
+    pluginHostOverrides,
+  ) as Effect.Effect<CallResult>
 
 describe("generic plugin handler delegation", () => {
   it("plugins.runAction delegates through the plugin host", async () => {
@@ -166,6 +195,63 @@ describe("generic plugin handler delegation", () => {
 // ── Terminal session tests ────────────────────────────────────────────────────
 
 describe("terminal session management", () => {
+  it("startTerminalSession queues end normally with an exit chunk", async () => {
+    const chunks = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const terminals = yield* Ref.make(new Map())
+          const queue = yield* startTerminalSession(
+            terminals,
+            spawnExecTerminalProcess({
+              command: "printf 'hello\\n'; exit 7",
+              cols: 80,
+              rows: 24,
+            }),
+          )
+
+          return yield* Stream.runCollect(Stream.fromQueue(queue)).pipe(
+            Effect.map((items) => Array.from(items) as Array<TerminalOutput>),
+          )
+        }),
+      ),
+    )
+
+    expect(chunks[0]?._tag).toBe("session-start")
+    expect(chunks.at(-1)).toEqual({ _tag: "exit", exitCode: 7 })
+  })
+
+  it("terminal.exec spawn path exits with the child status and captures command output", async () => {
+    const proc = await Effect.runPromise(
+      spawnExecTerminalProcess({
+        command: "printf 'hello\\n'; exit 7",
+        cols: 80,
+        rows: 24,
+      }),
+    )
+
+    const [exitCode, outputText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+    ])
+
+    expect(exitCode).toBe(7)
+    expect(outputText).toContain("hello")
+  })
+
+  it("terminal.open spawn path exits when the shell receives exit", async () => {
+    const proc = await Effect.runPromise(
+      spawnInteractiveTerminalProcess({
+        cols: 80,
+        rows: 24,
+      }),
+    )
+
+    const stdin = proc.stdin as { write(data: Uint8Array): number }
+    stdin.write(Buffer.from("exit\n", "utf8"))
+
+    expect(await proc.exited).toBe(0)
+  })
+
   it("terminal.input fails with session-not-found for unknown sessionId", async () => {
     const result = await Effect.runPromise(
       callHandler("terminal.input", {
