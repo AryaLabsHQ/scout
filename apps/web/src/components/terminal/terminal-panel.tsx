@@ -311,7 +311,7 @@ export function TerminalPanel({ className }: { className?: string }) {
                   className="h-full"
                   label={tab.label}
                   nodeId={tab.nodeId}
-                  content={tab.content}
+                  base64Chunks={tab.base64Chunks}
                 />
               )}
             </div>

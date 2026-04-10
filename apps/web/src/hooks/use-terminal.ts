@@ -15,7 +15,7 @@ export interface UseTerminalOptions {
 // Shared WASM loader — cached across all terminal instances
 let ghosttyPromise: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
 
-function loadGhostty() {
+export function loadGhostty() {
   if (ghosttyPromise) return ghosttyPromise
   ghosttyPromise = import("ghostty-web")
     .then(async (mod) => ({ mod, ghostty: await mod.Ghostty.load() }))
