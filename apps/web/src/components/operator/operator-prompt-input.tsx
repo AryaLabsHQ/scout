@@ -7,6 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert01Icon,
   ArrowUp01Icon,
+  Cancel01Icon,
   Edit02Icon,
   Image02Icon,
   Shield01Icon,
@@ -19,7 +20,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Kbd } from "@/components/ui/kbd"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   NodeMentionExtension,
@@ -39,6 +39,7 @@ interface OperatorPromptInputProps {
   setDraft: (v: string) => void
   isSubmitting: boolean
   onSubmit: () => void
+  onCancel?: () => void
   approvalMode: string
   onApprovalModeChange?: (mode: string) => void
   planMode?: string
@@ -60,6 +61,7 @@ export function OperatorPromptInput({
   setDraft,
   isSubmitting,
   onSubmit,
+  onCancel,
   approvalMode,
   onApprovalModeChange,
   planMode,
@@ -289,7 +291,16 @@ export function OperatorPromptInput({
   }, [])
 
   return (
-    <div className={cn("border-t border-border", approvalMode === "auto_approve_all" && "border-t-2 border-red-500/30")}>
+    <div className={cn(
+      "relative border-t border-border",
+      approvalMode === "auto_approve_all" && "border-t-2 border-red-500/30",
+      isSubmitting && "border-t-0",
+    )}>
+      {isSubmitting && (
+        <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-border">
+          <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] bg-primary" />
+        </div>
+      )}
       {/* Image thumbnails */}
       {attachments.length > 0 && (
         <div className="flex gap-2 px-4 pt-3">
@@ -496,26 +507,42 @@ export function OperatorPromptInput({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Kbd className="text-[10px]">⏎</Kbd>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon"
-                  onClick={handleSubmit}
-                  disabled={isSubmitting || !hasContent}
-                  className="size-7"
-                />
-              }
-            >
-              {isSubmitting ? (
-                <Spinner className="size-3.5" />
-              ) : (
-              <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
-            )}
-            </TooltipTrigger>
-            <TooltipContent>{isSubmitting ? "Sending..." : "Send (Enter)"}</TooltipContent>
-          </Tooltip>
+          {isSubmitting && onCancel ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={onCancel}
+                    className="size-7 text-muted-foreground"
+                  />
+                }
+              >
+                <HugeiconsIcon icon={Cancel01Icon} size={14} />
+              </TooltipTrigger>
+              <TooltipContent>Cancel</TooltipContent>
+            </Tooltip>
+          ) : (
+            <>
+              <Kbd className="text-[10px]">⏎</Kbd>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon"
+                      onClick={handleSubmit}
+                      disabled={!hasContent}
+                      className="size-7"
+                    />
+                  }
+                >
+                  <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
+                </TooltipTrigger>
+                <TooltipContent>Send (Enter)</TooltipContent>
+              </Tooltip>
+            </>
+          )}
         </div>
       </div>
     </div>

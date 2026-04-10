@@ -658,6 +658,7 @@ export function OperatorSessionPanel({
               setDraft={setDraft}
               isSubmitting={isSubmitting}
               onSubmit={() => void handlePromptSubmit()}
+              onCancel={() => setIsSubmitting(false)}
               approvalMode={resolvedDetail.session.approvalMode}
               onApprovalModeChange={(mode) => void handleApprovalModeChange(mode)}
               planMode={resolvedDetail.session.planMode ?? "off"}
