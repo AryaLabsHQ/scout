@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
+  extractTerminalText,
   formatMetricsSnapshot,
   formatPluginInventory,
   type PluginInventoryManifest,
@@ -70,6 +71,46 @@ describe("OperatorRuntime helpers", () => {
     expect(text).toContain("streams=container-logs")
     expect(text).toContain("recentMetrics=48")
     expect(text).toContain("recentEvents=5")
+  })
+
+  it("extractTerminalText parses terminal control sequences without regex stripping", async () => {
+    const text = await extractTerminalText({
+      cols: 80,
+      rows: 24,
+      base64Chunks: [
+        Buffer.from("\u001b]0;session title\u0007", "utf8").toString("base64"),
+        Buffer.from("\u001b[?2004h", "utf8").toString("base64"),
+        Buffer.from("\u001b[31mred\u001b[0m\nplain\n", "utf8").toString("base64"),
+        Buffer.from("\u001b[?2004l", "utf8").toString("base64"),
+      ],
+    })
+
+    expect(text).toBe("red\nplain")
+  })
+
+  it("extractTerminalText merges wrapped rows into logical lines", async () => {
+    const text = await extractTerminalText({
+      cols: 5,
+      rows: 24,
+      base64Chunks: [
+        Buffer.from("hello", "utf8").toString("base64"),
+        Buffer.from("world", "utf8").toString("base64"),
+      ],
+    })
+
+    expect(text).toBe("helloworld")
+  })
+
+  it("extractTerminalText keeps the final visible line state after carriage returns", async () => {
+    const text = await extractTerminalText({
+      cols: 80,
+      rows: 24,
+      base64Chunks: [
+        Buffer.from("progress 10%\rprogress 20%\n", "utf8").toString("base64"),
+      ],
+    })
+
+    expect(text).toBe("progress 20%")
   })
 
   it("requiresOperatorApproval blocks mutating bash and plugin actions by default", () => {
