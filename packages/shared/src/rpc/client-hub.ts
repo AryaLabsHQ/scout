@@ -247,9 +247,9 @@ export const ClientHubRpcs = RpcGroup.make(
 
   /**
    * Open a terminal session. First chunk carries the allocated sessionId;
-   * subsequent chunks are output. Input flows via the `terminal.input`
-   * mutation using the sessionId from the first chunk. Stream finalizes
-   * when the PTY closes.
+   * subsequent chunks are output, and a final `exit` chunk may be emitted
+   * before the stream closes. Input flows via the `terminal.input`
+   * mutation using the sessionId from the first chunk.
    */
   Rpc.make("terminal.open", {
     payload: TerminalOpenParamsSchema,

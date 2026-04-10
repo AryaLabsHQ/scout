@@ -7,7 +7,7 @@ import {
   PluginLogsLocalParamsSchema,
   PluginRunActionLocalParamsSchema,
 } from "../schemas/management.js"
-import { TerminalOutputSchema } from "../schemas/terminal.js"
+import { TerminalExecParamsSchema, TerminalOutputSchema } from "../schemas/terminal.js"
 import { LogBatchSchema } from "../schemas/logs.js"
 
 /**
@@ -56,6 +56,12 @@ export const HubAgentRpcs = RpcGroup.make(
   // Terminal — open is a stream, input/resize/close are mutations
   Rpc.make("terminal.open", {
     payload: TerminalOpenLocalParams,
+    success: TerminalOutputSchema,
+    error: ManagementError,
+    stream: true,
+  }),
+  Rpc.make("terminal.exec", {
+    payload: TerminalExecParamsSchema,
     success: TerminalOutputSchema,
     error: ManagementError,
     stream: true,
