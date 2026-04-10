@@ -19,6 +19,7 @@
     "@mariozechner/pi-ai": "^0.65.0",
     "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
+    "@xterm/headless": "^6.0.0",
     "drizzle-orm": "^1.0.0-beta.20",
     "effect": "4.0.0-beta.43"
   },
