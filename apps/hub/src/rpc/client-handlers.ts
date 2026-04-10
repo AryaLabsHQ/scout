@@ -11,7 +11,7 @@
  *     cleanup pass to replace REST server functions for the settings page.
  */
 
-import { Effect, PubSub, Queue, Ref, Stream } from "effect"
+import { Cause, Effect, PubSub, Queue, Ref, Stream } from "effect"
 import type { Scope } from "effect/Scope"
 import { eq } from "drizzle-orm"
 import type { Alert, LogBatch, System, SystemMetricsSample, TerminalOutput } from "@scout/shared"
@@ -163,9 +163,9 @@ function subscribeToBroadcast<T>(
  */
 function streamThroughAgent<T>(
   stream: Stream.Stream<T, ManagementError | RpcClientError>,
-): Effect.Effect<Queue.Queue<T>, ManagementError, Scope> {
+): Effect.Effect<Queue.Dequeue<T, Cause.Done>, ManagementError, Scope> {
   return Effect.gen(function* () {
-    const queue = yield* Queue.unbounded<T>()
+    const queue = yield* Queue.unbounded<T, Cause.Done>()
     yield* Effect.forkScoped(
       Stream.runForEach(stream, (chunk) => Queue.offer(queue, chunk)).pipe(
         Effect.mapError((e) =>
@@ -173,7 +173,7 @@ function streamThroughAgent<T>(
             ? e
             : mapRpcClientError(e as RpcClientError),
         ),
-        Effect.ensuring(Queue.shutdown(queue)),
+        Effect.ensuring(Queue.end(queue).pipe(Effect.ignore)),
         Effect.ignore,
       ),
     )
@@ -530,13 +530,20 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
               rows,
             })
 
-          const queue = yield* Queue.unbounded<TerminalOutput>()
+          const queue = yield* Queue.unbounded<TerminalOutput, Cause.Done>()
+          let terminalSessionId: string | null = null
 
           // When the first "session-start" chunk arrives, register sessionId → agentId
           const forwardStream = outputStream.pipe(
             Stream.tap((chunk) =>
               chunk._tag === "session-start"
-                ? Ref.update(sessionRegistry, (m) => new Map(m).set(chunk.sessionId, agentId))
+                ? Effect.sync(() => {
+                    terminalSessionId = chunk.sessionId
+                  }).pipe(
+                    Effect.flatMap(() =>
+                      Ref.update(sessionRegistry, (m) => new Map(m).set(chunk.sessionId, agentId)),
+                    ),
+                  )
                 : Effect.void,
             ),
             Stream.mapError((e) =>
@@ -548,12 +555,28 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
           yield* Effect.forkScoped(
             Stream.runForEach(forwardStream, (chunk) => Queue.offer(queue, chunk)).pipe(
-              Effect.ensuring(Queue.shutdown(queue)),
+              Effect.ensuring(
+                Effect.sync(() => terminalSessionId).pipe(
+                  Effect.flatMap((sessionId) =>
+                    Queue.end(queue).pipe(
+                      Effect.flatMap(() =>
+                        sessionId === null
+                          ? Effect.void
+                          : Ref.update(sessionRegistry, (m) => {
+                              const next = new Map(m)
+                              next.delete(sessionId)
+                              return next
+                            }),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               Effect.ignore,
             ),
           )
 
-          return queue as Queue.Queue<TerminalOutput>
+          return queue as Queue.Dequeue<TerminalOutput, Cause.Done>
         }),
 
       "terminal.input": ({ sessionId, dataBase64 }) =>
