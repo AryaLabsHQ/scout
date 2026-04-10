@@ -158,14 +158,20 @@ function OperatorSidebarSection() {
   const persistedSessions: ReadonlyArray<OperatorSessionSummary> =
     sessionsResult._tag === "Success" ? sessionsResult.value : []
 
-  // Merge optimistic session so the sidebar updates immediately after creation
+  const [hiddenSessionIds, setHiddenSessionIds] = useState<ReadonlySet<string>>(new Set())
+
+  // Merge optimistic session + filter hidden (deleted/archived) for immediate sidebar updates
   const sessions = useMemo(() => {
-    if (!optimisticSession) return persistedSessions
-    const alreadyPresent = persistedSessions.some(
-      (s) => s.id === optimisticSession.session.id,
-    )
-    return alreadyPresent ? persistedSessions : [optimisticSession.session, ...persistedSessions]
-  }, [optimisticSession, persistedSessions])
+    let list = persistedSessions
+    if (optimisticSession) {
+      const alreadyPresent = list.some((s) => s.id === optimisticSession.session.id)
+      if (!alreadyPresent) list = [optimisticSession.session, ...list]
+    }
+    if (hiddenSessionIds.size > 0) {
+      list = list.filter((s) => !hiddenSessionIds.has(s.id))
+    }
+    return list
+  }, [optimisticSession, persistedSessions, hiddenSessionIds])
 
   const isOperatorActive = currentPath === "/operator" || currentPath.startsWith("/operator/")
   const [isOpen, setIsOpen] = useState(isOperatorActive)
@@ -173,6 +179,13 @@ function OperatorSidebarSection() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
+
+  // Clear hidden set when the query refetches
+  useEffect(() => {
+    if (hiddenSessionIds.size > 0 && sessionsResult._tag === "Success") {
+      setHiddenSessionIds(new Set())
+    }
+  }, [sessionsResult, hiddenSessionIds.size])
 
   const handleQuickCreate = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -195,24 +208,22 @@ function OperatorSidebarSection() {
   }
 
   const handleArchive = async (sid: string) => {
+    setHiddenSessionIds((prev) => new Set(prev).add(sid))
+    if (activeSessionId === sid) setActiveSessionId(null)
     await archiveSession({
       payload: { sessionId: sid },
       reactivityKeys: [SESSION_LIST_REACTIVITY_KEY],
     })
-    if (activeSessionId === sid) {
-      setActiveSessionId(null)
-    }
   }
 
   const handleDelete = async (sid: string) => {
+    setHiddenSessionIds((prev) => new Set(prev).add(sid))
+    if (activeSessionId === sid) setActiveSessionId(null)
+    setDeleteTarget(null)
     await deleteSession({
       payload: { sessionId: sid },
       reactivityKeys: [SESSION_LIST_REACTIVITY_KEY],
     })
-    if (activeSessionId === sid) {
-      setActiveSessionId(null)
-    }
-    setDeleteTarget(null)
   }
 
   const handleStartRename = (sid: string, currentTitle: string) => {
