@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "effect": {
+      "source": "git@github.com:aryasaatvik/skills.git",
+      "sourceType": "git",
+      "skillPath": "skills/domain/effect/SKILL.md",
+      "computedHash": "183b0155f5244479953da94892b6f7157d25a41872e18d53209ed8cf0e46244a"
+    },
+    "react-best-practices": {
+      "source": "git@github.com:aryasaatvik/skills.git",
+      "sourceType": "git",
+      "skillPath": "skills/domain/react-best-practices/SKILL.md",
+      "computedHash": "e21cd777409e28d2bc223767da50a9f27e124b90400a4adc4ff365fc8eebdb5e"
+    },
+    "react-composition-patterns": {
+      "source": "git@github.com:aryasaatvik/skills.git",
+      "sourceType": "git",
+      "skillPath": "skills/domain/react-composition-patterns/SKILL.md",
+      "computedHash": "ee42ac06871f821aa00b972a71d059a537fb4c93244402e42fb864a6d01a94d7"
+    }
+  }
+}
