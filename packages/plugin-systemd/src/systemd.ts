@@ -691,12 +691,19 @@ export const createSystemdAgentPlugin = (
       Effect.map(parseSystemctlListUnits),
     )
 
+  /** Each manager's last successful detail read, reused when a later read fails. */
+  const lastDetails = new Map<SystemdScope, ReadonlyMap<string, Record<string, string>>>()
+
   /**
    * Every property in SHOW_PROPERTIES for `units`, in one systemctl call.
    * `--timestamp=us+utc` (systemd 248+) makes timestamps parseable without the
    * agent's locale or timezone; an older systemctl rejects it, so retry bare
-   * (its local-time timestamps then read as unknown). If both fail, the
-   * scope's collection fails rather than publishing units stripped of detail.
+   * (its local-time timestamps then read as unknown).
+   *
+   * If both attempts fail, the scope keeps its last good details, so one
+   * manager's transient failure neither strips its units nor holds back the
+   * other manager's fresh data. Only a failure before any successful read
+   * fails the collection.
    */
   const showUnits = (scope: SystemdScope, units: ReadonlyArray<string>) => {
     if (units.length === 0) return Effect.succeed(new Map<string, Record<string, string>>())
@@ -704,6 +711,11 @@ export const createSystemdAgentPlugin = (
     return runSystemctl(deps, [...args, "--timestamp=us+utc"]).pipe(
       Effect.catch(() => runSystemctl(deps, args)),
       Effect.map(parseSystemctlShowBatch),
+      Effect.tap((details) => Effect.sync(() => lastDetails.set(scope, details))),
+      Effect.catch((error) => {
+        const previous = lastDetails.get(scope)
+        return previous === undefined ? Effect.fail(error) : Effect.succeed(previous)
+      }),
     )
   }
 
@@ -718,9 +730,8 @@ export const createSystemdAgentPlugin = (
   /**
    * One manager's units, timers, and details. Only a failed service listing of
    * the user manager means "no user manager" (e.g. an agent run as a system
-   * service without a login session) and yields an empty scope. Any later
-   * failure, such as the detail read, fails the collection so the hub keeps
-   * the last good units instead of dropping or stripping them.
+   * service without a login session) and yields an empty scope; a failed
+   * detail read falls back as `showUnits` describes.
    */
   const collectScope = (scope: SystemdScope): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
     listUnits(scope, "service").pipe(

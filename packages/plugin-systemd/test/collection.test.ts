@@ -282,8 +282,25 @@ describe("systemd collection", () => {
     expect(Exit.isFailure(exit)).toBe(true)
   })
 
-  it("fails the collection when only the user manager's detail read fails", async () => {
-    // Publishing the system units alone would hide user units that still run.
+  it("keeps a manager's last good details when a later detail read fails", async () => {
+    let failUserShow = false
+    const healthy = fakeSystemctl([])
+    const failing = fakeSystemctl([], { userShow: "fail" })
+    const plugin = createSystemdAgentPlugin(makeDeps((command, args) => (failUserShow ? failing : healthy)(command, args)))
+
+    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+    failUserShow = true
+    // The user read fails: system data still updates, and user units keep their details.
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const userDbus = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_USER_UNIT_KIND)
+    expect(userDbus).toMatchObject({ ts: 2, state: { pid: 2201 } })
+    expect(result.entities!.find((entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service")).toMatchObject({
+      ts: 2,
+      state: { pid: 812 },
+    })
+  })
+
+  it("fails the collection when a manager's first detail read fails", async () => {
     const exit = await Effect.runPromiseExit(
       createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { userShow: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
     )
