@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import { Effect, Stream } from "effect"
 import {
   type ActionTarget,
+  followProcessLines,
   LogChunkSchema,
   type MetricPoint,
   type PluginCapability,
@@ -201,59 +202,15 @@ const makeDefaultDependencies = (): DockerDependencies => ({
         error instanceof Error ? error : new Error(String(error)),
     }),
   followLogs: (containerId, tail) =>
-    Stream.fromAsyncIterable(
-      (async function* () {
-        const proc = spawn("docker", [
-          "container",
-          "logs",
-          "--follow",
-          "--timestamps",
-          "--tail",
-          String(tail),
-          containerId,
-        ], {
-          stdio: ["ignore", "pipe", "pipe"],
-        })
-        const decoder = new TextDecoder()
-        let buffer = ""
-        let lineBatch: string[] = []
-
-        const flush = () => {
-          if (lineBatch.length === 0) return null
-          const lines = lineBatch
-          lineBatch = []
-          return { lines, ts: Date.now() }
-        }
-
-        try {
-          for await (const value of proc.stdout) {
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split("\n")
-            buffer = lines.pop() ?? ""
-
-            for (const line of lines) {
-              if (line.length === 0) continue
-              lineBatch.push(line)
-              if (lineBatch.length >= 50) {
-                const chunk = flush()
-                if (chunk !== null) yield chunk
-              }
-            }
-          }
-
-          if (buffer.length > 0) lineBatch.push(buffer)
-          const tailChunk = flush()
-          if (tailChunk !== null) yield tailChunk
-        } finally {
-          try {
-            proc.kill("SIGTERM")
-          } catch {
-            /* ignore */
-          }
-        }
-      })(),
-      (error) => (error instanceof Error ? error : new Error(String(error))),
-    ),
+    followProcessLines("docker", [
+      "container",
+      "logs",
+      "--follow",
+      "--timestamps",
+      "--tail",
+      String(tail),
+      containerId,
+    ]),
 })
 
 export const parseDockerJsonObject = <T>(output: string): T | null => {

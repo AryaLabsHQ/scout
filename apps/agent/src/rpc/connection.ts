@@ -162,7 +162,11 @@ const runSession = (
       yield* Ref.set(clientRef, agentHubClient)
 
       // ── RPC server (hub → agent) until the session ends ─────────────────
-      const reason = yield* RpcServer.make(HubAgentRpcs, {
+      // The server runs in the session scope rather than racing `closed`
+      // directly: interrupting it waits for every in-flight handler to
+      // release (plugin streams stop their child processes), and that wait
+      // belongs to the bounded teardown below, not to noticing the drop.
+      const server = yield* RpcServer.make(HubAgentRpcs, {
         disableFatalDefects: true,
       }).pipe(
         Effect.provide(
@@ -171,8 +175,9 @@ const runSession = (
           ),
         ),
         Effect.provide(serverProtocol),
-        Effect.raceFirst(closed),
+        Effect.forkScoped,
       )
+      const reason = yield* closed.pipe(Effect.raceFirst(Fiber.join(server)))
 
       // Unpublish before teardown so callers fail fast instead of writing
       // into a dead session.

@@ -326,10 +326,12 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
           yield* closeTerminalHandle(term, { kill: true })
         }),
 
+      // Returned as a Stream so the RPC request fiber owns it: a hub cancel or
+      // a dropped connection interrupts the stream and closes its scope, which
+      // stops the plugin's child process.
       "plugins.logs": ({ pluginId, streamId, entity, input }) =>
-        Effect.gen(function* () {
-          const queue = yield* Queue.unbounded<LogBatch>()
-          const stream = yield* pluginHost.openLogStream({
+        Stream.unwrap(
+          pluginHost.openLogStream({
             pluginId,
             streamId,
             target: {
@@ -346,16 +348,14 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
             ...(input !== undefined && { input }),
           }).pipe(
             Effect.mapError(mapPluginHostError),
-          )
-
-          yield* Effect.forkScoped(
-            Stream.runForEach(stream, (chunk) =>
-              Queue.offer(queue, { lines: [...chunk.lines], timestamp: chunk.ts }),
-            ).pipe(Effect.ignore),
-          )
-
-          return queue
-        }),
+            Effect.map((stream) =>
+              stream.pipe(
+                Stream.map((chunk): LogBatch => ({ lines: [...chunk.lines], timestamp: chunk.ts })),
+                Stream.mapError(mapPluginHostError),
+              ),
+            ),
+          ),
+        ),
     })
   }),
 )

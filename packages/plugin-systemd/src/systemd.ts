@@ -11,6 +11,7 @@ import { join } from "node:path"
 import { Effect, Stream } from "effect"
 import {
   type ActionTarget,
+  followProcessLines,
   LogChunkSchema,
   PluginExecutionError,
   type LogChunk,
@@ -242,57 +243,17 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
     }).pipe(Effect.orElseSucceed(() => undefined)),
   makeTempPath: (prefix) =>
     join(tmpdir(), `${prefix}-${randomUUID()}.tmp`),
+  // Unprivileged agents read system unit logs through journal group
+  // membership (`adm` or `systemd-journal`).
   followJournal: (unit, tail) =>
-    Stream.fromAsyncIterable(
-      (async function* () {
-        // Unprivileged agents read system unit logs through journal group
-        // membership (`adm` or `systemd-journal`).
-        const proc = spawn(
-          "journalctl",
-          ["-f", "-u", unit, "-n", String(tail), "--output=short-iso"],
-          { stdio: ["ignore", "pipe", "pipe"] },
-        )
-        const decoder = new TextDecoder()
-        let buffer = ""
-        let lineBatch: string[] = []
-
-        try {
-          for await (const value of proc.stdout) {
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split("\n")
-            buffer = lines.pop() ?? ""
-
-            for (const line of lines) {
-              if (line.length === 0) continue
-              lineBatch.push(line)
-              if (lineBatch.length >= 50) {
-                yield { lines: lineBatch.splice(0), ts: Date.now() }
-              }
-            }
-
-            // Flush what this chunk completed: a quiet unit may write nothing
-            // more, so waiting for the next chunk would hold its lines back.
-            if (lineBatch.length > 0) {
-              yield { lines: lineBatch.splice(0), ts: Date.now() }
-            }
-          }
-
-          if (buffer.length > 0) {
-            lineBatch.push(buffer)
-          }
-          if (lineBatch.length > 0) {
-            yield { lines: lineBatch, ts: Date.now() }
-          }
-        } finally {
-          try {
-            proc.kill("SIGTERM")
-          } catch {
-            /* ignore */
-          }
-        }
-      })(),
-      (error) => (error instanceof Error ? error : new Error(String(error))),
-    ),
+    followProcessLines("journalctl", [
+      "-f",
+      "-u",
+      unit,
+      "-n",
+      String(tail),
+      "--output=short-iso",
+    ]),
 })
 
 const runChecked = (

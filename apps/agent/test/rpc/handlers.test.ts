@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest"
-import { Cause, Effect, Layer, Option, Ref, Stream } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, Option, Ref, Stream } from "effect"
 import {
   HubAgentHandlersLive,
   spawnExecTerminalProcess,
@@ -18,7 +18,7 @@ import { HubAgentRpcs, ManagementError } from "@scout/shared"
 import * as RpcMessage from "effect/rpc/RpcMessage"
 import { AgentPluginHost, PluginHostError } from "../../src/services/plugin-host.js"
 import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
-import type { TerminalOutput } from "@scout/shared"
+import type { LogBatch, TerminalOutput } from "@scout/shared"
 
 // ── Test helper ───────────────────────────────────────────────────────────────
 
@@ -181,35 +181,98 @@ describe("generic plugin handler delegation", () => {
     })
   })
 
-  it("plugins.logs delegates through the plugin host", async () => {
+  it("plugins.logs streams the plugin host's log chunks as batches", async () => {
     const streamCalls: Array<Record<string, unknown>> = []
 
-    const result = await Effect.runPromise(
-      callHandler(
-        "plugins.logs",
+    const batches = await Effect.runPromise(
+      provideHandlers(
+        Effect.gen(function* () {
+          const handler = yield* HubAgentRpcs.accessHandler("plugins.logs")
+          return yield* Stream.runCollect(
+            handler(
+              {
+                pluginId: "systemd",
+                streamId: "unit.logs",
+                entity: { pluginId: "systemd", kind: "systemd.unit", id: "nginx.service" },
+                input: { tail: 50 },
+              },
+              testOptions as never,
+            ) as Stream.Stream<LogBatch, ManagementError>,
+          )
+        }),
         {
-          pluginId: "systemd",
-          streamId: "unit.logs",
-          entity: { pluginId: "systemd", kind: "systemd.unit", id: "nginx.service" },
-          input: { tail: 50 },
-        },
-        {
-          openLogStream: (request: {
-            pluginId: string
-            streamId: string
-            target: { nodeId: string; entity?: { pluginId: string; kind: string; nodeId: string; id: string } }
-            input?: unknown
-          }) => {
+          openLogStream: (request) => {
             streamCalls.push(request as unknown as Record<string, unknown>)
-            return Effect.succeed(Stream.make({ lines: ["hello"], ts: Date.now() }))
+            return Effect.succeed(Stream.make({ lines: ["hello"], ts: 42 }))
           },
         },
       ),
     )
 
-    expect("ok" in result).toBe(true)
+    expect(Array.from(batches)).toEqual([{ lines: ["hello"], timestamp: 42 }])
     expect(streamCalls).toHaveLength(1)
     expect(streamCalls[0]?.["streamId"]).toBe("unit.logs")
+  })
+
+  it("plugins.logs keeps the plugin host's error code when the stream cannot open", async () => {
+    const exit = await Effect.runPromiseExit(
+      provideHandlers(
+        Effect.gen(function* () {
+          const handler = yield* HubAgentRpcs.accessHandler("plugins.logs")
+          return yield* Stream.runDrain(
+            handler(
+              { pluginId: "missing", streamId: "logs" },
+              testOptions as never,
+            ) as Stream.Stream<LogBatch, ManagementError>,
+          )
+        }),
+        {
+          openLogStream: () =>
+            Effect.fail(new PluginHostError("plugin-not-loaded", "Requested plugin is not loaded")),
+        },
+      ),
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag !== "Failure") return
+    const failure = Cause.findErrorOption(exit.cause)
+    expect(Option.getOrUndefined(failure)).toMatchObject({ code: "plugin-not-loaded" })
+  })
+
+  it("plugins.logs releases the plugin stream when the request is interrupted", async () => {
+    let released = false
+
+    await Effect.runPromise(
+      provideHandlers(
+        Effect.gen(function* () {
+          const handler = yield* HubAgentRpcs.accessHandler("plugins.logs")
+          const stream = handler(
+            { pluginId: "systemd", streamId: "unit.logs" },
+            testOptions as never,
+          ) as Stream.Stream<LogBatch, ManagementError>
+          const received = yield* Deferred.make<void>()
+          const fiber = yield* Stream.runForEach(stream, () => Deferred.succeed(received, undefined)).pipe(
+            Effect.forkChild,
+          )
+          yield* Deferred.await(received)
+          yield* Fiber.interrupt(fiber)
+        }),
+        {
+          openLogStream: () =>
+            Effect.succeed(
+              Stream.concat(Stream.make({ lines: ["first"], ts: 1 }), Stream.never).pipe(
+                Stream.ensuring(
+                  Effect.sync(() => {
+                    released = true
+                  }),
+                ),
+              ),
+            ),
+        },
+      ),
+    )
+
+    expect(released).toBe(true)
   })
 })
 
