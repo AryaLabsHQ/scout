@@ -26,6 +26,16 @@ import {
   PluginLogsParamsSchema,
   PluginRunActionParamsSchema,
 } from "../schemas/management.js"
+import {
+  EntitySnapshotSchema,
+  EventRecordSchema,
+  MetricPointSchema,
+} from "@scout/plugin-sdk/schemas"
+import {
+  PluginEntitiesParamsSchema,
+  PluginEventsParamsSchema,
+  PluginMetricsParamsSchema,
+} from "../schemas/plugin-data.js"
 import { SystemSchema } from "../schemas/system.js"
 import { SystemMetricsSampleSchema } from "../schemas/system-metrics.js"
 import {
@@ -113,6 +123,21 @@ export const ClientHubRpcs = RpcGroup.make(
   }),
   Rpc.make("alertRules.list", {
     success: Schema.Array(AlertRuleSchema),
+  }),
+  /** Latest entity snapshots a plugin reported for one system (e.g. systemd units, k8s workloads). */
+  Rpc.make("plugins.entities", {
+    payload: PluginEntitiesParamsSchema,
+    success: Schema.Array(EntitySnapshotSchema),
+  }),
+  /** Plugin metric points for one system over a look-back window. */
+  Rpc.make("plugins.metrics", {
+    payload: PluginMetricsParamsSchema,
+    success: Schema.Array(MetricPointSchema),
+  }),
+  /** Plugin events (e.g. k8s warnings) for one system over a look-back window. */
+  Rpc.make("plugins.events", {
+    payload: PluginEventsParamsSchema,
+    success: Schema.Array(EventRecordSchema),
   }),
 
   // ── Mutations (state-changing) ──

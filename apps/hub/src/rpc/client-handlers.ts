@@ -69,6 +69,12 @@ function rowToSystem(row: typeof schema.systems.$inferSelect) {
   }
 }
 
+// ── Plugin data look-back window ─────────────────────────────────────────────
+
+/** Plugin history windows are 1 hour to 30 days, the longest range the metrics RPC offers (`30d`). */
+export const clampHours = (hours: number): number =>
+  Number.isFinite(hours) ? Math.min(720, Math.max(1, hours)) : 1
+
 // ── MetricsRange → hours ──────────────────────────────────────────────────────
 
 function rangeToHours(range: "1h" | "6h" | "24h" | "7d" | "30d"): number {
@@ -233,6 +239,15 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       },
 
       "alerts.list": () => alerts.getActive,
+
+      "plugins.entities": ({ systemId, pluginId, kind }) =>
+        mi.queryPluginEntities(systemId, pluginId, kind),
+
+      "plugins.metrics": ({ systemId, pluginId, hours, metricId }) =>
+        mi.queryPluginMetricPoints(systemId, pluginId, clampHours(hours), metricId),
+
+      "plugins.events": ({ systemId, pluginId, hours, eventId }) =>
+        mi.queryPluginEvents(systemId, pluginId, clampHours(hours), eventId),
 
       "alertRules.list": () =>
         Effect.sync(() =>
