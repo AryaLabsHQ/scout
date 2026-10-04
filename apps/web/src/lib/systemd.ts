@@ -85,9 +85,12 @@ export function unitTone(state: Pick<SystemdUnitState, "activeState">): StatusTo
   }
 }
 
-/** A timer whose last run did not succeed. A run that never happened is not a failure. */
+/**
+ * A timer whose activated unit's last result is not `success`, as the
+ * collector judges it. A unit that never ran reports `success`.
+ */
 export const timerFailed = (state: SystemdTimerState): boolean =>
-  state.lastResult !== null && state.lastResult !== "success" && state.lastExitAt !== null
+  state.lastResult !== null && state.lastResult !== "success"
 
 /** The activated unit is running right now (a backup in progress). */
 export const timerRunning = (state: SystemdTimerState): boolean =>

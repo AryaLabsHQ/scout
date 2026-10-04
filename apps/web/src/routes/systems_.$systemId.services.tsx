@@ -61,16 +61,22 @@ function ServicesPage() {
   const { run, daemonReload } = useUnitAction(systemId, hostname)
   const unavailable = pluginUnavailable(system, SYSTEMD_PLUGIN_ID, "systemd")
 
+  // Each chip counts what its filter shows: units, plus timers for every
+  // filter but "pinned" (a timer counts as failed when its last run failed).
   const counts = useMemo(() => {
-    const states = units.map((unit) => unitState(unit).activeState)
+    const unitStates = units.map((unit) => unitState(unit).activeState)
+    const timerStates = timers.map(timerState)
+    const byState = (state: string) =>
+      unitStates.filter((value) => value === state).length +
+      timerStates.filter((timer) => timer.activeState === state).length
     return {
-      all: states.length,
-      failed: states.filter((state) => state === "failed").length,
-      active: states.filter((state) => state === "active").length,
-      inactive: states.filter((state) => state === "inactive").length,
+      all: units.length + timers.length,
+      failed: unitStates.filter((state) => state === "failed").length + timerStates.filter(timerFailed).length,
+      active: byState("active"),
+      inactive: byState("inactive"),
       pinned: units.filter((unit) => isUnitPinned(pins, unit)).length,
     } satisfies Record<Filter, number>
-  }, [pins, units])
+  }, [pins, timers, units])
 
   const rows = useMemo(() => {
     const needle = q.toLowerCase()
