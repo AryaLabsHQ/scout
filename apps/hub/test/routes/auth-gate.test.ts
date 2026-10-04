@@ -79,8 +79,9 @@ const systemFor = (hostname: string): System => ({
   createdAt: 0,
 })
 
-// `systems.list` echoes the caller's identity; `systems.subscribe` never ends
-// on its own, standing in for a live subscription.
+// `systems.list` echoes the caller's identity; `systems.get` takes 3 s,
+// standing in for a long unary call; `systems.subscribe` never ends on its
+// own, standing in for a live subscription.
 const StubClientHandlers = ClientHubRpcs.toLayer(
   Effect.succeed({
     ...Object.fromEntries(
@@ -88,6 +89,8 @@ const StubClientHandlers = ClientHubRpcs.toLayer(
     ),
     "systems.list": () =>
       CurrentIdentity.use((identity) => Effect.succeed([systemFor(identity.email ?? identity.subject)])),
+    "systems.get": ({ id }: { id: string }) =>
+      Effect.sleep("3 seconds").pipe(Effect.as(systemFor(id))),
     "systems.subscribe": () => Stream.never,
   } as never),
 )
@@ -247,6 +250,18 @@ describe("HttpAuthGate", () => {
       )
       expect(Exit.isFailure(exit)).toBe(true)
       expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
+    }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+    15_000,
+  )
+
+  it.live("lets a unary call that started before expiry finish", () =>
+    Effect.gen(function* () {
+      const token = yield* Effect.promise(() =>
+        signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 29 })),
+      )
+      const client = yield* connectRpc(token)
+      const system = yield* client["systems.get"]({ id: "slow" }).pipe(Effect.timeout("10 seconds"))
+      expect(system?.hostname).toBe("slow")
     }).pipe(Effect.scoped, Effect.provide(ServeHub)),
     15_000,
   )

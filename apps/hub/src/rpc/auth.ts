@@ -5,13 +5,16 @@
  * websocket upgrade already passed `HttpAuthGate`; the RPC server copies the
  * upgrade request's headers onto every RPC, so each call re-verifies the
  * Access JWT, provides `CurrentIdentity` to the handler, and logs who invoked
- * every RPC that can change state. A call still running when its JWT expires
- * (typically a live subscription) fails with `Unauthorized` at that moment.
+ * every RPC that can change state. Unary calls are authorized when they start
+ * and run to completion; a stream RPC (a live subscription) fails with
+ * `Unauthorized` when its JWT expires, since it would otherwise outlive the
+ * session indefinitely.
  */
 
 import { Clock, Duration, Effect, Layer } from "effect"
 import type * as Rpc from "effect/rpc/Rpc"
 import type * as RpcGroup from "effect/rpc/RpcGroup"
+import * as RpcSchema from "effect/rpc/RpcSchema"
 import {
   ClientAuthMiddleware,
   CurrentIdentity,
@@ -103,7 +106,7 @@ export const ClientAuthMiddlewareLive = Layer.effect(
           Effect.provideService(CurrentIdentity, identity),
           Effect.annotateLogs({ actor }),
         )
-        if (expiresAt === null) return yield* handled
+        if (expiresAt === null || !RpcSchema.isStreamSchema(rpc.successSchema)) return yield* handled
 
         const remaining = expiresAt - (yield* Clock.currentTimeMillis)
         return yield* Effect.raceFirst(
