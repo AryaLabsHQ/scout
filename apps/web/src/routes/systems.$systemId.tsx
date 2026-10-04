@@ -11,6 +11,7 @@ import { SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND } from "@scout/plugin-systemd/cont
 import { HubClient } from "@/rpc/client"
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
+import { useHydrated } from "@/hooks/use-hydrated"
 import { usePins } from "@/hooks/use-pins"
 import { usePluginEntities, usePluginEvents } from "@/hooks/use-plugin-data"
 import { useUnitAction } from "@/hooks/use-unit-action"
@@ -379,7 +380,7 @@ function ActivitySection({
             <td className="truncate px-4 py-2.5 text-muted-foreground">waiting for your decision</td>
             <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={session.updatedAt} /></td>
             <td className="w-36 px-4 py-1.5 text-right">
-              <Button size="sm" variant="outline" render={<Link to="/operator/$sessionId" params={{ sessionId: session.id }} />}>
+              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/operator/$sessionId" params={{ sessionId: session.id }} />}>
                 Review
               </Button>
             </td>
@@ -459,7 +460,9 @@ function MachineOverviewPage() {
   const alertsResult = useAtomValue(HubClient.query("alerts.list", undefined))
   const alerts = lastValue(alertsResult, [])
   const sessionsResult = useAtomValue(HubClient.query("operator.sessions.list", undefined))
-  const sessions = lastValue(sessionsResult, [])
+  // The session list is not seeded by the SSR loader; render it only after hydration.
+  const hydrated = useHydrated()
+  const sessions = hydrated ? lastValue(sessionsResult, []) : []
   const k8sEvents = usePluginEvents(systemId, K8S_PLUGIN_ID, 24)
   const { sessions: terminals, openSession } = useTerminalPanel()
 

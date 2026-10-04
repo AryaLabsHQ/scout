@@ -18,6 +18,7 @@ import { EmptyRow, Page, PageHeader, Section } from "@/components/section"
 import { TimeAgo } from "@/components/time-ago"
 import { StatusDot } from "@/components/status-dot"
 import { useConfirm } from "@/providers/confirm-provider"
+import { useHydrated } from "@/hooks/use-hydrated"
 import { cn } from "@/lib/utils"
 import type { OperatorShellVariant } from "./operator-utils"
 import { SESSION_LIST_REACTIVITY_KEY, SESSION_STATUS } from "./operator-utils"
@@ -55,9 +56,11 @@ export function OperatorShell({
 
   const systems = systemsResult._tag === "Success" ? systemsResult.value : []
   const onlineSystems = systems.filter((system) => system.status === "online")
+  // The session list is not seeded by the SSR loader; render it only after hydration.
+  const hydrated = useHydrated()
   const persistedSessions = useMemo(
-    () => (sessionsResult._tag === "Success" ? sessionsResult.value : []),
-    [sessionsResult],
+    () => (hydrated && sessionsResult._tag === "Success" ? sessionsResult.value : []),
+    [hydrated, sessionsResult],
   )
 
   const sessions = useMemo(() => {

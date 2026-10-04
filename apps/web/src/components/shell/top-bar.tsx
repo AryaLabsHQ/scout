@@ -8,6 +8,7 @@ import { lastValue } from "@/lib/async-result"
 import { useOperator } from "@/providers/operator-provider"
 import { useCommandPalette } from "@/providers/command-palette-provider"
 import { bySystemOrder, useCurrentSystem } from "@/hooks/use-current-system"
+import { useHydrated } from "@/hooks/use-hydrated"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -87,8 +88,12 @@ export function TopBar() {
   const { open: openPalette } = useCommandPalette()
   const alertsResult = useAtomValue(HubClient.query("alerts.list", undefined))
   const sessionsResult = useAtomValue(HubClient.query("operator.sessions.list", undefined))
+  const hydrated = useHydrated()
   const activeAlerts = lastValue(alertsResult, []).filter((alert) => alert.state === "active").length
-  const waitingSessions = lastValue(sessionsResult, []).filter((session) => session.status === "waiting_for_user").length
+  // Not seeded by the SSR loader; count only after hydration so the markup matches.
+  const waitingSessions = hydrated
+    ? lastValue(sessionsResult, []).filter((session) => session.status === "waiting_for_user").length
+    : 0
 
   const systemBase = current ? `/systems/${encodeURIComponent(current.id)}` : null
   const isOverview = systemBase !== null && (pathname === systemBase || pathname === `${systemBase}/metrics`)
