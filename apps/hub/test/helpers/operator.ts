@@ -48,7 +48,10 @@ const dockerManifest = {
 } as never
 
 export const PluginLayer = Layer.succeed(PluginRegistry, {
-  list: () => Effect.succeed([{ rootDir: "/tmp/docker", pluginPath: "/tmp/docker/plugin.ts", manifest: dockerManifest }]),
+  list: () =>
+    Effect.succeed([
+      { rootDir: "/tmp/docker", pluginPath: "/tmp/docker/plugin.ts", manifest: dockerManifest },
+    ]),
   get: () => Effect.succeed(null),
   listHubPlugins: () => Effect.succeed([]),
   listWebPlugins: () => Effect.succeed([]),
@@ -63,7 +66,10 @@ const fakeClient = {
   "terminal.exec": ({ command }: { command: string }) => {
     executed.push(`bash:${command}`)
     if (command === "hang") {
-      return Stream.concat(Stream.make({ _tag: "session-start" as const, sessionId: "term-hang" }), Stream.never)
+      return Stream.concat(
+        Stream.make({ _tag: "session-start" as const, sessionId: "term-hang" }),
+        Stream.never,
+      )
     }
     return Stream.make(
       { _tag: "session-start" as const, sessionId: "term-1" },
@@ -95,8 +101,9 @@ export const operatorLayer = (path: string) => {
     OperatorSkills.layer.pipe(Layer.provide(PluginLayer)),
     OperatorResources.layer.pipe(Layer.provide(PluginLayer)),
   )
-  const harness = Layer.effect(OperatorHarness, openOperatorHarness(() => openBunSqliteStorage(path))).pipe(
-    Layer.provide(base),
-  )
+  const harness = Layer.effect(
+    OperatorHarness,
+    openOperatorHarness(() => openBunSqliteStorage(path)),
+  ).pipe(Layer.provide(base))
   return OperatorSessions.layer.pipe(Layer.provideMerge(Layer.merge(harness, base)))
 }

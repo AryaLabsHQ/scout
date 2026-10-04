@@ -1,9 +1,11 @@
 # WEB ROUTES
 
 ## OVERVIEW
+
 Route files here define page boundaries, page-level loaders, and most dashboard composition. `__root.tsx` owns the shell; other files map 1:1 to concrete pages and detail views. Machine pages live under `/systems/$systemId`; Alerts, Operator, Terminal, and Settings are global.
 
 ## STRUCTURE
+
 ```text
 apps/web/src/routes/
 ├── __root.tsx                                   # shell: top bar, session banner, terminal dock, seeded loaders
@@ -20,16 +22,18 @@ apps/web/src/routes/
 ```
 
 ## WHERE TO LOOK
-| Task | Location | Notes |
-|------|----------|-------|
-| App shell, bottom nav, terminal panel | `__root.tsx` | Also seeds initial systems/alerts into atoms |
-| Machine overview | `systems.$systemId.tsx` | Failed units first, then units pinned in this browser |
-| systemd pages | `systems_.$systemId.services*.tsx` | Actions go through `useUnitAction` (confirmed) |
-| Cluster page | `systems_.$systemId.cluster.tsx` | Empty state explains a degraded or missing k8s plugin |
-| Plugin detail page | `systems_.$systemId.plugins.$pluginId.tsx` | For plugins without a dedicated page (e.g. Docker) |
-| Operator pages | `operator.tsx`, `operator_.$sessionId.tsx` | Session list + detail; flat route pattern |
+
+| Task                                  | Location                                   | Notes                                                 |
+| ------------------------------------- | ------------------------------------------ | ----------------------------------------------------- |
+| App shell, bottom nav, terminal panel | `__root.tsx`                               | Also seeds initial systems/alerts into atoms          |
+| Machine overview                      | `systems.$systemId.tsx`                    | Failed units first, then units pinned in this browser |
+| systemd pages                         | `systems_.$systemId.services*.tsx`         | Actions go through `useUnitAction` (confirmed)        |
+| Cluster page                          | `systems_.$systemId.cluster.tsx`           | Empty state explains a degraded or missing k8s plugin |
+| Plugin detail page                    | `systems_.$systemId.plugins.$pluginId.tsx` | For plugins without a dedicated page (e.g. Docker)    |
+| Operator pages                        | `operator.tsx`, `operator_.$sessionId.tsx` | Session list + detail; flat route pattern             |
 
 ## CONVENTIONS
+
 - Keep route-specific loader logic close to the route and delegate HTTP bootstrap calls to `src/server/*`.
 - Reuse shared shell components from `__root.tsx`; child routes render content inside `Page` / `PageHeader` / `Section` (`src/components/section.tsx`), not their own navigation.
 - Route params and wire data should stay aligned with `@scout/shared` schemas and RPC names.
@@ -37,6 +41,7 @@ apps/web/src/routes/
 - Never hard-code a machine; take it from `$systemId` or `useCurrentSystem()`.
 
 ## ANTI-PATTERNS
+
 - Do not move root-shell concerns into leaf routes.
 - Do not bypass `HubClient` for live updates when a route already depends on shared RPC state.
 - Do not split one route across many tiny files unless the extraction follows a real UI boundary.

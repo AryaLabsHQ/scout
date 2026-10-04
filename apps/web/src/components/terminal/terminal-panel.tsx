@@ -65,7 +65,7 @@ function TerminalTab({
 
   useEffect(() => {
     if (renameSignal > 0) startEdit()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renameSignal])
 
   useEffect(() => {
@@ -75,7 +75,7 @@ function TerminalTab({
     }
     window.addEventListener("scout:rename-active-tab", handler)
     return () => window.removeEventListener("scout:rename-active-tab", handler)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.id])
 
   useEffect(() => {
@@ -197,8 +197,7 @@ function TerminalTabBar() {
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
   const [renameSignals, setRenameSignals] = useState<Record<string, number>>({})
-  const requestRename = (id: string) =>
-    setRenameSignals((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
+  const requestRename = (id: string) => setRenameSignals((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }))
 
   const onlineAgents = systemsList.filter((system) => system.status === "online")
 
@@ -223,11 +222,7 @@ function TerminalTabBar() {
       >
         <HugeiconsIcon icon={TerminalIcon} size={13} />
         <span className="text-[11px] font-medium tracking-wide">TERMINAL</span>
-        <HugeiconsIcon
-          icon={isOpen ? ArrowDown01Icon : ArrowUp01Icon}
-          size={11}
-          className="ml-0.5"
-        />
+        <HugeiconsIcon icon={isOpen ? ArrowDown01Icon : ArrowUp01Icon} size={11} className="ml-0.5" />
       </button>
 
       <div className="flex flex-1 items-center overflow-x-auto scrollbar-none">
@@ -300,10 +295,7 @@ export function TerminalPanel({ className }: { className?: string }) {
           <EmptyTerminalState />
         ) : (
           sessions.map((tab) => (
-            <div
-              key={tab.id}
-              className={cn("h-full w-full p-1", activeTab === tab.id ? "block" : "hidden")}
-            >
+            <div key={tab.id} className={cn("h-full w-full p-1", activeTab === tab.id ? "block" : "hidden")}>
               {tab.kind === "interactive" ? (
                 <TerminalView agentId={tab.agentId} mode={tab.mode} className="h-full" />
               ) : (

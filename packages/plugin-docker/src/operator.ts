@@ -1,8 +1,4 @@
-import {
-  defineOperatorResource,
-  defineOperatorSkill,
-  defineOperator,
-} from "@scout/plugin-sdk/operator"
+import { defineOperatorResource, defineOperatorSkill, defineOperator } from "@scout/plugin-sdk/operator"
 
 export const operator = defineOperator({
   resources: [

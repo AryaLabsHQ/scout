@@ -18,85 +18,84 @@ export interface BroadcastEvent {
   readonly data?: unknown
 }
 
-export class MetricsBroadcast extends Context.Service<MetricsBroadcast, {
-  /**
-   * Enqueue a core metrics sample for coalesced broadcast.
-   * Samples are batched over 100ms and published as a single event.
-   */
-  readonly publishMetrics: (sample: SystemMetricsSample) => Effect.Effect<void>
-  /**
-   * Publish an alert immediately — bypasses the coalescing queue.
-   * Uses "alert.triggered" event type.
-   */
-  readonly publishAlert: (alert: Alert) => Effect.Effect<void>
-  /**
-   * Publish an alert resolved event immediately — bypasses the coalescing queue.
-   * Uses "alert.resolved" event type.
-   */
-  readonly publishAlertResolved: (alert: Alert) => Effect.Effect<void>
-  /**
-   * Subscribe to the fan-out PubSub.
-   * The returned subscription is scoped — it auto-unsubscribes when the
-   * caller's Scope closes.
-   */
-  readonly subscribe: () => Effect.Effect<PubSub.Subscription<BroadcastEvent>, never, Scope.Scope>
-  /**
-   * Current number of active subscribers.
-   */
-  readonly subscriberCount: () => Effect.Effect<number>
-}>()(
-  "@scout/MetricsBroadcast",
+export class MetricsBroadcast extends Context.Service<
+  MetricsBroadcast,
   {
-    make: Effect.gen(function* () {
-      // Main fan-out channel
-      const hub = yield* PubSub.bounded<BroadcastEvent>(256)
-      // Coalescing buffer — sliding so the newest reports survive overflow
-      const buffer = yield* Queue.sliding<SystemMetricsSample>(16)
-      // Track subscriber count manually (PubSub has no public API for this)
-      const subCount = yield* Ref.make(0)
+    /**
+     * Enqueue a core metrics sample for coalesced broadcast.
+     * Samples are batched over 100ms and published as a single event.
+     */
+    readonly publishMetrics: (sample: SystemMetricsSample) => Effect.Effect<void>
+    /**
+     * Publish an alert immediately — bypasses the coalescing queue.
+     * Uses "alert.triggered" event type.
+     */
+    readonly publishAlert: (alert: Alert) => Effect.Effect<void>
+    /**
+     * Publish an alert resolved event immediately — bypasses the coalescing queue.
+     * Uses "alert.resolved" event type.
+     */
+    readonly publishAlertResolved: (alert: Alert) => Effect.Effect<void>
+    /**
+     * Subscribe to the fan-out PubSub.
+     * The returned subscription is scoped — it auto-unsubscribes when the
+     * caller's Scope closes.
+     */
+    readonly subscribe: () => Effect.Effect<PubSub.Subscription<BroadcastEvent>, never, Scope.Scope>
+    /**
+     * Current number of active subscribers.
+     */
+    readonly subscriberCount: () => Effect.Effect<number>
+  }
+>()("@scout/MetricsBroadcast", {
+  make: Effect.gen(function* () {
+    // Main fan-out channel
+    const hub = yield* PubSub.bounded<BroadcastEvent>(256)
+    // Coalescing buffer — sliding so the newest reports survive overflow
+    const buffer = yield* Queue.sliding<SystemMetricsSample>(16)
+    // Track subscriber count manually (PubSub has no public API for this)
+    const subCount = yield* Ref.make(0)
 
-      // Background fiber: every 100ms drain the buffer and publish a batch
-      const flushLoop = Effect.repeat(
+    // Background fiber: every 100ms drain the buffer and publish a batch
+    const flushLoop = Effect.repeat(
+      Effect.gen(function* () {
+        const samples = yield* Queue.clear(buffer)
+        if (samples.length > 0) {
+          const event: BroadcastEvent = { event: "metrics.data", data: samples }
+          yield* PubSub.publish(hub, event)
+        }
+      }),
+      Schedule.spaced("100 millis"),
+    )
+
+    // Start the flush fiber tied to this layer's scope
+    yield* Effect.forkScoped(flushLoop)
+
+    return {
+      publishMetrics: (sample: SystemMetricsSample) => Queue.offer(buffer, sample).pipe(Effect.asVoid),
+
+      publishAlert: (alert: Alert) => {
+        const event: BroadcastEvent = { event: "alert.triggered", data: alert }
+        return PubSub.publish(hub, event).pipe(Effect.asVoid)
+      },
+
+      publishAlertResolved: (alert: Alert) => {
+        const event: BroadcastEvent = { event: "alert.resolved", data: alert }
+        return PubSub.publish(hub, event).pipe(Effect.asVoid)
+      },
+
+      subscribe: () =>
         Effect.gen(function* () {
-          const samples = yield* Queue.clear(buffer)
-          if (samples.length > 0) {
-            const event: BroadcastEvent = { event: "metrics.data", data: samples }
-            yield* PubSub.publish(hub, event)
-          }
+          yield* Ref.update(subCount, (n) => n + 1)
+          const sub = yield* PubSub.subscribe(hub)
+          // Decrement count when the scope closes
+          yield* Effect.addFinalizer((_exit) => Ref.update(subCount, (n) => n - 1))
+          return sub
         }),
-        Schedule.spaced("100 millis"),
-      )
 
-      // Start the flush fiber tied to this layer's scope
-      yield* Effect.forkScoped(flushLoop)
-
-      return {
-        publishMetrics: (sample: SystemMetricsSample) =>
-          Queue.offer(buffer, sample).pipe(Effect.asVoid),
-
-        publishAlert: (alert: Alert) => {
-          const event: BroadcastEvent = { event: "alert.triggered", data: alert }
-          return PubSub.publish(hub, event).pipe(Effect.asVoid)
-        },
-
-        publishAlertResolved: (alert: Alert) => {
-          const event: BroadcastEvent = { event: "alert.resolved", data: alert }
-          return PubSub.publish(hub, event).pipe(Effect.asVoid)
-        },
-
-        subscribe: () =>
-          Effect.gen(function* () {
-            yield* Ref.update(subCount, (n) => n + 1)
-            const sub = yield* PubSub.subscribe(hub)
-            // Decrement count when the scope closes
-            yield* Effect.addFinalizer((_exit) => Ref.update(subCount, (n) => n - 1))
-            return sub
-          }),
-
-        subscriberCount: () => Ref.get(subCount),
-      }
-    }),
-  },
-) {
+      subscriberCount: () => Ref.get(subCount),
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

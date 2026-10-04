@@ -25,10 +25,6 @@ export const RpcEventSchema = Schema.Struct({
   dataBase64: Schema.optionalKey(Schema.String),
 })
 
-export const ScoutMessageSchema = Schema.Union([
-  RpcRequestSchema,
-  RpcResponseSchema,
-  RpcEventSchema,
-])
+export const ScoutMessageSchema = Schema.Union([RpcRequestSchema, RpcResponseSchema, RpcEventSchema])
 
 export const decodeScoutMessage = Schema.decodeUnknownEffect(ScoutMessageSchema)

@@ -1,9 +1,5 @@
 import { Effect, Schema, Stream } from "effect"
-import type {
-  CollectContext,
-  ScoutAgentPlugin,
-  StreamContext,
-} from "../../../../src/index.js"
+import type { CollectContext, ScoutAgentPlugin, StreamContext } from "../../../../src/index.js"
 import { defineAgent } from "../../../../src/index.js"
 
 export const agent = defineAgent({

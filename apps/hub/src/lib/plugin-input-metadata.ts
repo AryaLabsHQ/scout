@@ -46,16 +46,11 @@ const prettifyFieldName = (name: string): string =>
     .trim()
     .replace(/^\w/, (match) => match.toUpperCase())
 
-const shouldUseTextarea = (name: string): boolean =>
-  /content|script|body|text|yaml|json|config/i.test(name)
+const shouldUseTextarea = (name: string): boolean => /content|script|body|text|yaml|json|config/i.test(name)
 
-const toLiteralOption = (
-  ast: SchemaAST.AST,
-): PluginFormOptionMetadata | null =>
-  SchemaAST.isLiteral(ast)
-    && (typeof ast.literal === "string"
-      || typeof ast.literal === "number"
-      || typeof ast.literal === "boolean")
+const toLiteralOption = (ast: SchemaAST.AST): PluginFormOptionMetadata | null =>
+  SchemaAST.isLiteral(ast) &&
+  (typeof ast.literal === "string" || typeof ast.literal === "number" || typeof ast.literal === "boolean")
     ? {
         label: String(ast.literal),
         value: ast.literal,
@@ -71,10 +66,7 @@ const unwrapOptionalUnion = (ast: SchemaAST.AST): SchemaAST.AST => {
   return withoutUndefined.length === 1 ? withoutUndefined[0]! : ast
 }
 
-const astToFieldMetadata = (
-  name: string,
-  ast: SchemaAST.AST,
-): PluginFormFieldMetadata | null => {
+const astToFieldMetadata = (name: string, ast: SchemaAST.AST): PluginFormFieldMetadata | null => {
   const normalized = unwrapOptionalUnion(ast)
   const required = !(ast.context?.isOptional ?? false)
 
@@ -139,16 +131,20 @@ const astToFieldMetadata = (
   return null
 }
 
-export const serializeInputSchema = (
-  schema: { readonly ast: SchemaAST.AST },
-): PluginInputMetadata => {
+export const serializeInputSchema = (schema: { readonly ast: SchemaAST.AST }): PluginInputMetadata => {
   const ast = unwrapOptionalUnion(schema.ast)
   if (!SchemaAST.isObjects(ast)) {
-    return { kind: "unsupported", reason: "Only object-shaped inputs are supported in the web form renderer." }
+    return {
+      kind: "unsupported",
+      reason: "Only object-shaped inputs are supported in the web form renderer.",
+    }
   }
 
   if (ast.indexSignatures.length > 0) {
-    return { kind: "unsupported", reason: "Index-signature inputs are not supported in the web form renderer." }
+    return {
+      kind: "unsupported",
+      reason: "Index-signature inputs are not supported in the web form renderer.",
+    }
   }
 
   if (ast.propertySignatures.length === 0) {

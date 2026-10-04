@@ -34,7 +34,7 @@ function insertMetric(
   db: ScoutDatabase,
   systemId: string,
   ts: number,
-  type: typeof schema.systemMetrics.$inferSelect["type"],
+  type: (typeof schema.systemMetrics.$inferSelect)["type"],
   cpuUsage: number,
 ): void {
   const sample = makeSystemMetricsSample({

@@ -12,7 +12,10 @@ const LAST_SYSTEM_KEY = "scout:last-system"
  * route's `$systemId` when there is one, else the last machine visited in this
  * browser, else the first online machine.
  */
-export function useCurrentSystem(): { readonly systems: ReadonlyArray<System>; readonly current: System | null } {
+export function useCurrentSystem(): {
+  readonly systems: ReadonlyArray<System>
+  readonly current: System | null
+} {
   const params = useParams({ strict: false }) as { readonly systemId?: string }
   const result = useAtomValue(HubClient.query("systems.list", undefined))
   const systems = lastValue(result, [])

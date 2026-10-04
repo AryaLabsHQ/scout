@@ -29,7 +29,7 @@ const defaultPolicy: RetentionPolicy = {
   rollup480mDays: 30,
 }
 
-type MetricType = typeof schema.systemMetrics.$inferSelect["type"]
+type MetricType = (typeof schema.systemMetrics.$inferSelect)["type"]
 
 interface RollupTier {
   readonly source: MetricType
@@ -97,9 +97,7 @@ function averageRecordMaps(
     keys.map((key) => [
       key,
       avgNumbers(
-        reports
-          .map((report) => select(report)[key])
-          .filter((value): value is number => value !== undefined),
+        reports.map((report) => select(report)[key]).filter((value): value is number => value !== undefined),
       ),
     ]),
   )
@@ -147,13 +145,8 @@ function averageSamples(samples: SystemMetricsSample[]): SystemMetricsSample {
     ),
     gpuPercent: averageNullNumbers(samples.map((sample) => sample.gpuPercent)),
     gpuMemoryPercent: averageNullNumbers(samples.map((sample) => sample.gpuMemoryPercent)),
-    gpuTemperatureCelsius: averageNullNumbers(
-      samples.map((sample) => sample.gpuTemperatureCelsius),
-    ),
-    temperaturesCelsius: averageRecordMaps(
-      samples,
-      (sample) => sample.temperaturesCelsius,
-    ),
+    gpuTemperatureCelsius: averageNullNumbers(samples.map((sample) => sample.gpuTemperatureCelsius)),
+    temperaturesCelsius: averageRecordMaps(samples, (sample) => sample.temperaturesCelsius),
     smartHealthFailing: samples.some((sample) => sample.smartHealthFailing),
     loadAvg1m: avgNumbers(samples.map((sample) => sample.loadAvg1m)),
     loadAvg5m: avgNumbers(samples.map((sample) => sample.loadAvg5m)),
@@ -162,29 +155,30 @@ function averageSamples(samples: SystemMetricsSample[]): SystemMetricsSample {
   }
 }
 
-export class Retention extends Context.Service<Retention, {
-  /**
-   * Trigger a single retention + downsampling pass immediately.
-   * Normally called by the background ticker, but exposed for testing.
-   */
-  readonly runOnce: () => Effect.Effect<void>
-  /**
-   * Start the background fiber that runs retention on a schedule.
-   * Returns an Effect that runs until the scope is closed.
-   */
-  readonly runForever: () => Effect.Effect<void>
-}>()(
-  "@scout/Retention",
+export class Retention extends Context.Service<
+  Retention,
   {
-    make: Effect.gen(function* () {
-      const db = yield* Database
+    /**
+     * Trigger a single retention + downsampling pass immediately.
+     * Normally called by the background ticker, but exposed for testing.
+     */
+    readonly runOnce: () => Effect.Effect<void>
+    /**
+     * Start the background fiber that runs retention on a schedule.
+     * Returns an Effect that runs until the scope is closed.
+     */
+    readonly runForever: () => Effect.Effect<void>
+  }
+>()("@scout/Retention", {
+  make: Effect.gen(function* () {
+    const db = yield* Database
 
-      const runOnce = (): Effect.Effect<void> =>
-        Effect.gen(function* () {
-          const now = Date.now()
-          const policy = defaultPolicy
+    const runOnce = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const now = Date.now()
+        const policy = defaultPolicy
 
-          yield* Effect.sync(() => {
+        yield* Effect.sync(() => {
           // Aggregate each tier
           for (const tier of TIERS) {
             // Get distinct systemIds that have source records
@@ -231,10 +225,7 @@ export class Retention extends Context.Service<Retention, {
             const cutoff = new Date(now - tier.retentionMs(policy))
             db.delete(schema.systemMetrics)
               .where(
-                and(
-                  eq(schema.systemMetrics.type, tier.source),
-                  lt(schema.systemMetrics.timestamp, cutoff),
-                ),
+                and(eq(schema.systemMetrics.type, tier.source), lt(schema.systemMetrics.timestamp, cutoff)),
               )
               .run()
           }
@@ -255,20 +246,16 @@ export class Retention extends Context.Service<Retention, {
           db.delete(schema.pluginMetricPoints)
             .where(lt(schema.pluginMetricPoints.timestamp, pluginMetricCutoff))
             .run()
-          })
-
-          yield* Effect.logInfo("Retention cleanup completed")
         })
 
-      const runForever = (): Effect.Effect<void> =>
-        Effect.repeat(
-          runOnce(),
-          Schedule.spaced("10 minutes"),
-        ).pipe(Effect.asVoid)
+        yield* Effect.logInfo("Retention cleanup completed")
+      })
 
-      return { runOnce, runForever }
-    }),
-  },
-) {
+    const runForever = (): Effect.Effect<void> =>
+      Effect.repeat(runOnce(), Schedule.spaced("10 minutes")).pipe(Effect.asVoid)
+
+    return { runOnce, runForever }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

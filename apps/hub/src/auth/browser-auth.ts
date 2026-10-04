@@ -76,7 +76,9 @@ export class BrowserAuth extends Context.Service<BrowserAuth, BrowserAuthShape>(
       const config = yield* HubConfig
       const auth = config.browserAuth
       if (auth._tag === "Disabled") {
-        yield* Effect.logWarning("Browser auth DISABLED (SCOUT_AUTH=disabled); loopback-only development mode")
+        yield* Effect.logWarning(
+          "Browser auth DISABLED (SCOUT_AUTH=disabled); loopback-only development mode",
+        )
         return BrowserAuth.disabled
       }
 

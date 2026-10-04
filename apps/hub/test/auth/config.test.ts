@@ -73,9 +73,9 @@ describe("HubConfig", () => {
       const ipv6 = yield* loadWith({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "::1" })
       expect(ipv6.browserAuth._tag).toBe("Disabled")
 
-      expect(
-        yield* refusal({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "0.0.0.0" }),
-      ).toContain("only allowed when SCOUT_HOST is a loopback address")
+      expect(yield* refusal({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "0.0.0.0" })).toContain(
+        "only allowed when SCOUT_HOST is a loopback address",
+      )
       expect(
         yield* refusal({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "100.64.0.1" }),
       ).toContain("loopback")
@@ -84,12 +84,16 @@ describe("HubConfig", () => {
 
   it.effect("rejects an unknown SCOUT_AUTH mode", () =>
     Effect.gen(function* () {
-      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AUTH: "off" })).toContain('SCOUT_AUTH must be "access" or "disabled"')
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AUTH: "off" })).toContain(
+        'SCOUT_AUTH must be "access" or "disabled"',
+      )
     }),
   )
 
   it("recognizes loopback hosts", () => {
     expect(["127.0.0.1", "127.1.2.3", "localhost", "::1", "[::1]"].every(isLoopbackHost)).toBe(true)
-    expect(["0.0.0.0", "::", "100.100.1.1", "scout.arya.sh", "127.0.0.1.nip.io"].some(isLoopbackHost)).toBe(false)
+    expect(["0.0.0.0", "::", "100.100.1.1", "scout.arya.sh", "127.0.0.1.nip.io"].some(isLoopbackHost)).toBe(
+      false,
+    )
   })
 })

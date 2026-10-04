@@ -15,16 +15,12 @@ const isRunning = (pid: number): boolean => {
 
 const collectLines = (stream: Stream.Stream<{ readonly lines: ReadonlyArray<string> }, Error>) =>
   Effect.runPromise(
-    Stream.runCollect(stream).pipe(
-      Effect.map((batches) => Array.from(batches, (batch) => [...batch.lines])),
-    ),
+    Stream.runCollect(stream).pipe(Effect.map((batches) => Array.from(batches, (batch) => [...batch.lines]))),
   )
 
 describe("followProcessLines", () => {
   it("streams non-empty lines and ends with the child, keeping a trailing partial line", async () => {
-    const batches = await collectLines(
-      followProcessLines("sh", ["-c", "printf 'one\\n\\ntwo\\nthree'"]),
-    )
+    const batches = await collectLines(followProcessLines("sh", ["-c", "printf 'one\\n\\ntwo\\nthree'"]))
 
     expect(batches.flat()).toEqual(["one", "two", "three"])
   })
@@ -52,9 +48,7 @@ describe("followProcessLines", () => {
   })
 
   it("fails when the command cannot be started", async () => {
-    const exit = await Effect.runPromiseExit(
-      Stream.runDrain(followProcessLines("scout-no-such-command", [])),
-    )
+    const exit = await Effect.runPromiseExit(Stream.runDrain(followProcessLines("scout-no-such-command", [])))
 
     expect(Exit.isFailure(exit)).toBe(true)
   })
@@ -100,11 +94,12 @@ describe("followProcessLines", () => {
       // (`yes` is no good here: uutils `yes` splices, which wchar does not count.)
       const written = await Effect.runPromise(
         Stream.runHead(
-          followProcessLines("sh", ["-c", "echo $$; exec awk 'BEGIN { while (1) print \"scout-backpressure\" }'"]).pipe(
+          followProcessLines("sh", [
+            "-c",
+            "echo $$; exec awk 'BEGIN { while (1) print \"scout-backpressure\" }'",
+          ]).pipe(
             Stream.mapEffect((batch) =>
-              Effect.sleep("500 millis").pipe(
-                Effect.map(() => bytesWritten(Number(batch.lines[0]))),
-              ),
+              Effect.sleep("500 millis").pipe(Effect.map(() => bytesWritten(Number(batch.lines[0])))),
             ),
           ),
         ).pipe(Effect.timeout("5 seconds")),

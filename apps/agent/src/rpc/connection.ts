@@ -27,12 +27,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import * as RpcServer from "effect/rpc/RpcServer"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
-import {
-  AgentHubRpcs,
-  type DuplexCloseReason,
-  HubAgentRpcs,
-  makeDuplexRpcProtocols,
-} from "@scout/shared"
+import { AgentHubRpcs, type DuplexCloseReason, HubAgentRpcs, makeDuplexRpcProtocols } from "@scout/shared"
 import { AgentConfig } from "../config.js"
 import { CollectorRegistry } from "../services/collector-registry.js"
 import { AgentPluginHost } from "../services/plugin-host.js"
@@ -40,19 +35,14 @@ import { HubAgentHandlersLive } from "./handlers.js"
 
 // ── HubClient service ─────────────────────────────────────────────────────────
 
-export type HubAgentRpcClient = RpcClient.RpcClient<
-  RpcGroup.Rpcs<typeof AgentHubRpcs>,
-  RpcClientError
->
+export type HubAgentRpcClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof AgentHubRpcs>, RpcClientError>
 
 /**
  * The typed RPC client for calls the agent makes to the hub
  * (agent.connect, agent.report). Available after the connection is
  * established and agent.connect succeeds.
  */
-export class HubClient extends Context.Service<HubClient, HubAgentRpcClient>()(
-  "@scout/HubClient",
-) {}
+export class HubClient extends Context.Service<HubClient, HubAgentRpcClient>()("@scout/HubClient") {}
 
 class HubHandshakeAborted extends Data.TaggedError("HubHandshakeAborted")<{
   readonly reason: DuplexCloseReason
@@ -128,15 +118,12 @@ const runSession = (
     // finalizer that never finishes cannot hold up the reconnect.
     const scope = yield* Scope.make()
     const session = Effect.gen(function* () {
-      const { serverProtocol, clientProtocol, closed } =
-        yield* makeDuplexRpcProtocols(socket, {
-          heartbeatInterval: timing.heartbeatInterval,
-        })
+      const { serverProtocol, clientProtocol, closed } = yield* makeDuplexRpcProtocols(socket, {
+        heartbeatInterval: timing.heartbeatInterval,
+      })
 
       // ── RPC client (agent → hub) ────────────────────────────────────────
-      const agentHubClient = yield* RpcClient.make(AgentHubRpcs).pipe(
-        Effect.provide(clientProtocol),
-      )
+      const agentHubClient = yield* RpcClient.make(AgentHubRpcs).pipe(Effect.provide(clientProtocol))
 
       // ── Handshake ───────────────────────────────────────────────────────
       const { systemId } = yield* agentHubClient["agent.connect"]({
@@ -148,9 +135,7 @@ const runSession = (
         pluginCapabilities,
       }).pipe(
         Effect.raceFirst(
-          closed.pipe(
-            Effect.flatMap((reason) => Effect.fail(new HubHandshakeAborted({ reason }))),
-          ),
+          closed.pipe(Effect.flatMap((reason) => Effect.fail(new HubHandshakeAborted({ reason })))),
         ),
         Effect.timeout(timing.handshakeTimeout),
       )
@@ -169,11 +154,7 @@ const runSession = (
       const server = yield* RpcServer.make(HubAgentRpcs, {
         disableFatalDefects: true,
       }).pipe(
-        Effect.provide(
-          HubAgentHandlersLive.pipe(
-            Layer.provide(Layer.succeed(AgentPluginHost, pluginHost)),
-          ),
-        ),
+        Effect.provide(HubAgentHandlersLive.pipe(Layer.provide(Layer.succeed(AgentPluginHost, pluginHost)))),
         Effect.provide(serverProtocol),
         Effect.forkScoped,
       )
@@ -193,9 +174,7 @@ const runSession = (
       Effect.timeoutOrElse({
         duration: timing.teardownTimeout,
         orElse: () =>
-          Effect.logWarning(
-            "HubConnection: session teardown is still running; reconnecting anyway",
-          ),
+          Effect.logWarning("HubConnection: session teardown is still running; reconnecting anyway"),
       }),
     )
 
@@ -216,9 +195,7 @@ export const makeHubConnectionLayer = (timing: HubConnectionTiming) =>
       const config = yield* AgentConfig.load
       const clientRef = yield* Ref.make<HubAgentRpcClient | null>(null)
 
-      const wsUrl =
-        config.hubUrl.replace(/^http/, "ws").replace(/\/$/, "") +
-        "/ws/rpc/agent"
+      const wsUrl = config.hubUrl.replace(/^http/, "ws").replace(/\/$/, "") + "/ws/rpc/agent"
 
       const retrySchedule = Schedule.min([
         Schedule.exponential(timing.retryBase),
@@ -229,10 +206,7 @@ export const makeHubConnectionLayer = (timing: HubConnectionTiming) =>
       // every established session.
       yield* runSession(wsUrl, clientRef, timing).pipe(
         Effect.tapCause((cause) =>
-          Effect.logWarning(
-            "HubConnection: attempt failed, will retry",
-            { error: Cause.pretty(cause) },
-          ),
+          Effect.logWarning("HubConnection: attempt failed, will retry", { error: Cause.pretty(cause) }),
         ),
         Effect.retry(retrySchedule),
         Effect.forever,
@@ -246,17 +220,17 @@ export const makeHubConnectionLayer = (timing: HubConnectionTiming) =>
             Effect.gen(function* () {
               const live = yield* Ref.get(clientRef)
               if (live === null) {
-                return yield* Effect.die(
-                  new Error("HubClient: not connected"),
-                )
+                return yield* Effect.die(new Error("HubClient: not connected"))
               }
               const method = (live as Record<string, unknown>)[prop]
               if (typeof method !== "function") {
-                return yield* Effect.die(
-                  new Error(`HubClient: unknown method ${prop}`),
-                )
+                return yield* Effect.die(new Error(`HubClient: unknown method ${prop}`))
               }
-              return yield* (method as (...args: unknown[]) => Effect.Effect<unknown>).call(live, payload, options)
+              return yield* (method as (...args: unknown[]) => Effect.Effect<unknown>).call(
+                live,
+                payload,
+                options,
+              )
             })
         },
       })

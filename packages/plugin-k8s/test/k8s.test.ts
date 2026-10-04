@@ -1,12 +1,7 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { decodePluginManifest, executePluginAction, openPluginStream } from "@scout/plugin-sdk"
-import {
-  K8S_ACTION_IDS,
-  K8S_ENTITY_KINDS,
-  K8S_PLUGIN_ID,
-  K8S_STREAM_IDS,
-} from "../src/contracts.js"
+import { K8S_ACTION_IDS, K8S_ENTITY_KINDS, K8S_PLUGIN_ID, K8S_STREAM_IDS } from "../src/contracts.js"
 import { createK8sAgentPlugin, materializeK8sCollection } from "../src/k8s.js"
 import { manifest } from "../src/manifest.js"
 import { web } from "../src/web.js"
@@ -18,7 +13,12 @@ const findEntity = (
   id: string,
 ) => entities.find((entity) => entity.ref.kind === kind && entity.ref.id === id)
 
-const relationshipKeys = (entity: { readonly relationships?: ReadonlyArray<{ readonly type: string; readonly target: { readonly kind: string; readonly id: string } }> }): ReadonlyArray<string> =>
+const relationshipKeys = (entity: {
+  readonly relationships?: ReadonlyArray<{
+    readonly type: string
+    readonly target: { readonly kind: string; readonly id: string }
+  }>
+}): ReadonlyArray<string> =>
   (entity.relationships ?? []).map(
     (relationship) => `${relationship.type}:${relationship.target.kind}:${relationship.target.id}`,
   )
@@ -29,11 +29,7 @@ describe("kubernetes plugin", () => {
 
     expect(decoded.id).toBe(K8S_PLUGIN_ID)
     expect(decoded.entityKinds.map((entity) => entity.id)).toEqual(
-      expect.arrayContaining([
-        K8S_ENTITY_KINDS.cluster,
-        K8S_ENTITY_KINDS.namespace,
-        K8S_ENTITY_KINDS.pod,
-      ]),
+      expect.arrayContaining([K8S_ENTITY_KINDS.cluster, K8S_ENTITY_KINDS.namespace, K8S_ENTITY_KINDS.pod]),
     )
     expect(decoded.actions.map((action) => action.id)).toEqual(
       expect.arrayContaining([K8S_ACTION_IDS.scaleWorkload, K8S_ACTION_IDS.restartPod]),
@@ -99,10 +95,7 @@ describe("kubernetes plugin", () => {
     )
 
     expect(relationshipKeys(ingress!)).toEqual(
-      expect.arrayContaining([
-        "contained-by:k8s.namespace:team-a",
-        "exposes:k8s.service:team-a/api",
-      ]),
+      expect.arrayContaining(["contained-by:k8s.namespace:team-a", "exposes:k8s.service:team-a/api"]),
     )
 
     expect(relationshipKeys(job!)).toEqual(
@@ -189,9 +182,7 @@ describe("kubernetes plugin", () => {
       exec: createKubectlExecFixture(),
     })
 
-    const collected = await Effect.runPromise(
-      agent.collect!({ nodeId: "node-1", now: 1_712_000_000_000 }),
-    )
+    const collected = await Effect.runPromise(agent.collect!({ nodeId: "node-1", now: 1_712_000_000_000 }))
 
     expect(collected.entities).toHaveLength(12)
     expect(collected.metrics).toEqual(
@@ -201,13 +192,9 @@ describe("kubernetes plugin", () => {
       ]),
     )
     expect(collected.events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ eventId: "backoff", severity: "warning" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ eventId: "backoff", severity: "warning" })]),
     )
-    expect(
-      collected.entities?.map((entity) => entity.ref.kind),
-    ).toEqual(
+    expect(collected.entities?.map((entity) => entity.ref.kind)).toEqual(
       expect.arrayContaining([
         K8S_ENTITY_KINDS.cluster,
         K8S_ENTITY_KINDS.node,
@@ -363,7 +350,6 @@ describe("kubernetes plugin", () => {
         ts: expect.any(Number),
       },
     ])
-
   })
 
   it("exports json-render plugin screens for the web", () => {
@@ -379,9 +365,7 @@ describe("kubernetes plugin", () => {
     })
 
     expect(
-      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements[
-        "scale-submit-button"
-      ],
+      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements["scale-submit-button"],
     ).toMatchObject({
       type: "ActionButton",
       on: {
@@ -395,9 +379,7 @@ describe("kubernetes plugin", () => {
     })
 
     expect(
-      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements[
-        "workload-logs"
-      ],
+      web.screens.find((screen) => screen.id === "k8s.workload-detail")?.spec.elements["workload-logs"],
     ).toMatchObject({
       type: "LogPanel",
       props: {

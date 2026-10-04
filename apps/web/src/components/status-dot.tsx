@@ -27,7 +27,12 @@ export function StatusDot({
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      className={cn("inline-block size-2 shrink-0 rounded-full", TONE_CLASS[tone], pulse && "live-pulse", className)}
+      className={cn(
+        "inline-block size-2 shrink-0 rounded-full",
+        TONE_CLASS[tone],
+        pulse && "live-pulse",
+        className,
+      )}
     />
   )
 }

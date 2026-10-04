@@ -69,7 +69,7 @@ const readDir = (path: string): Effect.Effect<string[]> =>
 const collectThermalZones = (): Effect.Effect<TemperatureMetrics[]> =>
   Effect.gen(function* () {
     const entries = yield* readDir("/sys/class/thermal")
-    const zones = entries.filter(e => e.startsWith("thermal_zone"))
+    const zones = entries.filter((e) => e.startsWith("thermal_zone"))
 
     const results: TemperatureMetrics[] = []
 
@@ -93,7 +93,7 @@ const collectHwmonSensors = (): Effect.Effect<TemperatureMetrics[]> =>
       const base = `/sys/class/hwmon/${hwmon}`
       // List files to find temp*_input
       const files = yield* readDir(base)
-      const inputFiles = files.filter(f => /^temp\d+_input$/.test(f))
+      const inputFiles = files.filter((f) => /^temp\d+_input$/.test(f))
 
       for (const inputFile of inputFiles) {
         const indexMatch = inputFile.match(/^temp(\d+)_input$/)
@@ -121,14 +121,9 @@ const collectHwmonSensors = (): Effect.Effect<TemperatureMetrics[]> =>
 export const temperatureCollector: CollectorPlugin = {
   name: "temperature",
   capability: "temperature",
-  detect: Effect.sync(() =>
-    fs.existsSync("/sys/class/thermal") || fs.existsSync("/sys/class/hwmon"),
-  ),
+  detect: Effect.sync(() => fs.existsSync("/sys/class/thermal") || fs.existsSync("/sys/class/hwmon")),
   collect: Effect.gen(function* () {
-    const [thermal, hwmon] = yield* Effect.all([
-      collectThermalZones(),
-      collectHwmonSensors(),
-    ])
+    const [thermal, hwmon] = yield* Effect.all([collectThermalZones(), collectHwmonSensors()])
 
     const temperatures: TemperatureMetrics[] = [...thermal, ...hwmon]
 

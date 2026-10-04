@@ -131,8 +131,16 @@ export const edgeScreens: ReadonlyArray<PluginUiScreen> = [
             columns: [
               { id: "name", label: "Connector", source: { kind: "field", path: "state.name" } },
               { id: "status", label: "Status", source: { kind: "status" } },
-              { id: "ready", label: "Ready connections", source: { kind: "field", path: "state.readyConnections" } },
-              { id: "errors", label: "Request errors", source: { kind: "field", path: "state.requestErrors" } },
+              {
+                id: "ready",
+                label: "Ready connections",
+                source: { kind: "field", path: "state.readyConnections" },
+              },
+              {
+                id: "errors",
+                label: "Request errors",
+                source: { kind: "field", path: "state.requestErrors" },
+              },
               { id: "endpoint", label: "Metrics", source: { kind: "field", path: "state.endpoint" } },
             ],
             empty: {

@@ -290,7 +290,7 @@ export function useTerminal({ containerRef, agentId, mode }: UseTerminalOptions)
       pendingOutputRef.current = []
       fitAddon = null
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, mode])
 
   return { termRef, sessionIdRef }

@@ -1,9 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useState,
-} from "react"
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { MentionItem } from "./types"
 
@@ -78,9 +73,7 @@ export const NodeMentionList = forwardRef<NodeMentionListRef, NodeMentionListPro
               )}
             />
             <span className="text-foreground">{item.label}</span>
-            <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-24">
-              {item.id}
-            </span>
+            <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-24">{item.id}</span>
           </button>
         ))}
       </div>

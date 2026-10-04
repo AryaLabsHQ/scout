@@ -13,11 +13,13 @@
 ## Configuration
 
 Required environment variables (the hub refuses to start without them):
+
 - `SCOUT_TOKEN`: agent token, non-blank
 - `SCOUT_ACCESS_TEAM_DOMAIN`, `SCOUT_ACCESS_AUD`: Cloudflare Access verification for browsers,
   unless `SCOUT_AUTH=disabled` on a loopback `SCOUT_HOST` (local development only)
 
 Common optional variables:
+
 - `SCOUT_HOST` (default `127.0.0.1`), `SCOUT_PORT` (default `3001`)
 - `SCOUT_DB_PATH`
 - `SCOUT_PLUGIN_DIR`

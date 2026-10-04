@@ -73,7 +73,14 @@ const systemFor = (hostname: string): System => ({
   hostname,
   tailscaleIp: null,
   status: "online",
-  capabilities: { system: true, network: false, process: false, temperature: false, gpu: false, smart: false },
+  capabilities: {
+    system: true,
+    network: false,
+    process: false,
+    temperature: false,
+    gpu: false,
+    smart: false,
+  },
   pluginCapabilities: [],
   lastSeen: 0,
   createdAt: 0,
@@ -89,8 +96,7 @@ const StubClientHandlers = ClientHubRpcs.toLayer(
     ),
     "systems.list": () =>
       CurrentIdentity.use((identity) => Effect.succeed([systemFor(identity.email ?? identity.subject)])),
-    "systems.get": ({ id }: { id: string }) =>
-      Effect.sleep("3 seconds").pipe(Effect.as(systemFor(id))),
+    "systems.get": ({ id }: { id: string }) => Effect.sleep("3 seconds").pipe(Effect.as(systemFor(id))),
     "systems.subscribe": () => Stream.never,
   } as never),
 )
@@ -128,9 +134,7 @@ const status = (path: string, headers: Record<string, string> = {}) =>
     Effect.map((response) => response.status),
   )
 
-const wsUrl = HttpServer.addressFormattedWith((url) =>
-  Effect.succeed(`${url.replace(/^http/, "ws")}/ws/rpc`),
-)
+const wsUrl = HttpServer.addressFormattedWith((url) => Effect.succeed(`${url.replace(/^http/, "ws")}/ws/rpc`))
 
 /** Resolves "open" or "rejected" for a raw websocket upgrade attempt. */
 const upgradeOutcome = (url: string, headers: Record<string, string>) =>
@@ -236,33 +240,37 @@ describe("HttpAuthGate", () => {
     ),
   )
 
-  it.live("ends a live subscription when its JWT expires", () =>
-    Effect.gen(function* () {
-      // Accepted thanks to the 30 s clock-skew leeway, which runs out ~2 s from now.
-      const token = yield* Effect.promise(() =>
-        signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 28 })),
-      )
-      const client = yield* connectRpc(token)
-      const exit = yield* client["systems.subscribe"]().pipe(
-        Stream.runDrain,
-        Effect.timeout("10 seconds"),
-        Effect.exit,
-      )
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
-    }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+  it.live(
+    "ends a live subscription when its JWT expires",
+    () =>
+      Effect.gen(function* () {
+        // Accepted thanks to the 30 s clock-skew leeway, which runs out ~2 s from now.
+        const token = yield* Effect.promise(() =>
+          signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 28 })),
+        )
+        const client = yield* connectRpc(token)
+        const exit = yield* client["systems.subscribe"]().pipe(
+          Stream.runDrain,
+          Effect.timeout("10 seconds"),
+          Effect.exit,
+        )
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
+      }).pipe(Effect.scoped, Effect.provide(ServeHub)),
     15_000,
   )
 
-  it.live("lets a unary call that started before expiry finish", () =>
-    Effect.gen(function* () {
-      const token = yield* Effect.promise(() =>
-        signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 29 })),
-      )
-      const client = yield* connectRpc(token)
-      const system = yield* client["systems.get"]({ id: "slow" }).pipe(Effect.timeout("10 seconds"))
-      expect(system?.hostname).toBe("slow")
-    }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+  it.live(
+    "lets a unary call that started before expiry finish",
+    () =>
+      Effect.gen(function* () {
+        const token = yield* Effect.promise(() =>
+          signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 29 })),
+        )
+        const client = yield* connectRpc(token)
+        const system = yield* client["systems.get"]({ id: "slow" }).pipe(Effect.timeout("10 seconds"))
+        expect(system?.hostname).toBe("slow")
+      }).pipe(Effect.scoped, Effect.provide(ServeHub)),
     15_000,
   )
 })

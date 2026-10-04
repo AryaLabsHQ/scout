@@ -78,7 +78,7 @@ export function parseSmartctlJson(json: string, device: string): SmartMetrics {
     | { table?: Array<{ id: number; raw?: { value: number } }> }
     | undefined
   if (ataAttrs?.table) {
-    const attr5 = ataAttrs.table.find(a => a.id === 5)
+    const attr5 = ataAttrs.table.find((a) => a.id === 5)
     if (attr5?.raw?.value !== undefined) {
       reallocatedSectors = attr5.raw.value
     }
@@ -101,9 +101,7 @@ export const smartCollector: CollectorPlugin = {
       return proc.exitCode === 0
     },
     catch: () => new Error("which smartctl failed"),
-  }).pipe(
-    Effect.orElseSucceed(() => false),
-  ),
+  }).pipe(Effect.orElseSucceed(() => false)),
   collect: Effect.gen(function* () {
     const lsblkOutput = yield* runCommand("lsblk", ["-dnpo", "NAME,TYPE"])
     const devices = parseLsblkOutput(lsblkOutput)

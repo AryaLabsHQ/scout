@@ -57,11 +57,7 @@ export function ConfirmAction({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant={variant}
-            disabled={loading}
-            onClick={handleConfirm}
-          >
+          <AlertDialogAction variant={variant} disabled={loading} onClick={handleConfirm}>
             {loading ? "Working..." : action}
           </AlertDialogAction>
         </AlertDialogFooter>

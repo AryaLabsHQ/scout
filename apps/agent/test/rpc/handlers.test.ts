@@ -73,15 +73,10 @@ const provideHandlers = <A, E = never, R = never>(
       input?: unknown
     }) => Effect.Effect<Stream.Stream<{ lines: readonly string[]; ts: number }, Error>, Error>
   }>,
-)=>
+) =>
   effect.pipe(
     Effect.provide(HubAgentHandlersLive),
-    Effect.provide(
-      Layer.succeed(
-        AgentPluginHost,
-        makeStubPluginHost(pluginHostOverrides),
-      ),
-    ),
+    Effect.provide(Layer.succeed(AgentPluginHost, makeStubPluginHost(pluginHostOverrides))),
   )
 
 /**
@@ -144,7 +139,10 @@ describe("generic plugin handler delegation", () => {
           runAction: (request: {
             pluginId: string
             actionId: string
-            target: { nodeId: string; entity?: { pluginId: string; kind: string; nodeId: string; id: string } }
+            target: {
+              nodeId: string
+              entity?: { pluginId: string; kind: string; nodeId: string; id: string }
+            }
             input?: unknown
           }) => {
             actionCalls.push(request as unknown as Record<string, unknown>)
@@ -171,7 +169,9 @@ describe("generic plugin handler delegation", () => {
         },
         {
           runAction: () =>
-            Effect.fail(new PluginHostError("permission-denied", "systemctl stop nginx.service requires root")),
+            Effect.fail(
+              new PluginHostError("permission-denied", "systemctl stop nginx.service requires root"),
+            ),
         },
       ),
     )
@@ -220,10 +220,10 @@ describe("generic plugin handler delegation", () => {
         Effect.gen(function* () {
           const handler = yield* HubAgentRpcs.accessHandler("plugins.logs")
           return yield* Stream.runDrain(
-            handler(
-              { pluginId: "missing", streamId: "logs" },
-              testOptions as never,
-            ) as Stream.Stream<LogBatch, ManagementError>,
+            handler({ pluginId: "missing", streamId: "logs" }, testOptions as never) as Stream.Stream<
+              LogBatch,
+              ManagementError
+            >,
           )
         }),
         {

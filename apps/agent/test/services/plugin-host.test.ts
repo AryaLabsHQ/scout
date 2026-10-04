@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { AgentPluginHost } from "../../src/services/plugin-host.js"
-import {
-  AgentPluginRegistry,
-  type LoadedAgentPlugin,
-} from "../../src/services/plugin-registry.js"
+import { AgentPluginRegistry, type LoadedAgentPlugin } from "../../src/services/plugin-registry.js"
 
 const configLayer = ConfigProvider.layer(
   ConfigProvider.fromUnknown({
@@ -77,10 +74,7 @@ const makeRegistryLayer = (plugins: ReadonlyArray<LoadedAgentPlugin>) =>
   })
 
 const makeHostLayer = (plugins: ReadonlyArray<LoadedAgentPlugin>) =>
-  AgentPluginHost.layer.pipe(
-    Layer.provide(makeRegistryLayer(plugins)),
-    Layer.provide(configLayer),
-  )
+  AgentPluginHost.layer.pipe(Layer.provide(makeRegistryLayer(plugins)), Layer.provide(configLayer))
 
 describe("AgentPluginHost.collectCollections", () => {
   it("returns plugin-native collections for detected plugins", async () => {

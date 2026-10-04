@@ -61,15 +61,9 @@ export interface ScoutOperatorSkillDefinition {
 }
 
 export interface ScoutOperatorHookSet {
-  readonly beforePrompt?: (
-    input: OperatorPromptHookInput,
-  ) => Effect.Effect<string | null>
-  readonly beforeToolCall?: (
-    input: OperatorToolHookInput,
-  ) => Effect.Effect<void>
-  readonly afterToolCall?: (
-    input: OperatorAfterToolHookInput,
-  ) => Effect.Effect<void>
+  readonly beforePrompt?: (input: OperatorPromptHookInput) => Effect.Effect<string | null>
+  readonly beforeToolCall?: (input: OperatorToolHookInput) => Effect.Effect<void>
+  readonly afterToolCall?: (input: OperatorAfterToolHookInput) => Effect.Effect<void>
 }
 
 /**
@@ -100,14 +94,9 @@ export const defineOperatorTool = <const TParameters extends TSchema>(
   tool: ScoutOperatorTool<TParameters>,
 ): ScoutOperatorTool<TParameters> => tool
 
-export const defineOperatorResource = <const T extends ScoutOperatorResourceDefinition>(
-  resource: T,
-): T => resource
+export const defineOperatorResource = <const T extends ScoutOperatorResourceDefinition>(resource: T): T =>
+  resource
 
-export const defineOperatorSkill = <const T extends ScoutOperatorSkillDefinition>(
-  skill: T,
-): T => skill
+export const defineOperatorSkill = <const T extends ScoutOperatorSkillDefinition>(skill: T): T => skill
 
-export const defineOperator = <const T extends ScoutOperatorSurface>(
-  operator: T,
-): T => operator
+export const defineOperator = <const T extends ScoutOperatorSurface>(operator: T): T => operator

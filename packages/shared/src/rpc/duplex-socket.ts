@@ -43,11 +43,7 @@ import { Deferred, Duration, Effect, Layer, Option, Queue } from "effect"
 import { constVoid } from "effect/Function"
 import type * as Scope from "effect/Scope"
 import * as Socket from "effect/socket/Socket"
-import {
-  constPing,
-  type FromClientEncoded,
-  type FromServerEncoded,
-} from "effect/rpc/RpcMessage"
+import { constPing, type FromClientEncoded, type FromServerEncoded } from "effect/rpc/RpcMessage"
 import * as RpcClient from "effect/rpc/RpcClient"
 import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
@@ -62,9 +58,7 @@ import * as RpcServer from "effect/rpc/RpcServer"
  * shared socket to either the server-role protocol or the client-role
  * protocol.
  */
-const isFromClientEncoded = (
-  msg: FromClientEncoded | FromServerEncoded,
-): msg is FromClientEncoded => {
+const isFromClientEncoded = (msg: FromClientEncoded | FromServerEncoded): msg is FromClientEncoded => {
   switch (msg._tag) {
     case "Request":
     case "Ack":
@@ -133,12 +127,8 @@ export const makeDuplexRpcProtocols = (
     // Routing callbacks installed by each Protocol's `make(f)` callback.
     // RpcServer/RpcClient buffer inbound messages until their `run` loop
     // starts, so messages arriving before that are replayed, not dropped.
-    let routeToServer: (
-      clientId: number,
-      data: FromClientEncoded,
-    ) => Effect.Effect<void> = () => Effect.void
-    let routeToClient: (data: FromServerEncoded) => Effect.Effect<void> = () =>
-      Effect.void
+    let routeToServer: (clientId: number, data: FromClientEncoded) => Effect.Effect<void> = () => Effect.void
+    let routeToClient: (data: FromServerEncoded) => Effect.Effect<void> = () => Effect.void
 
     // Server-side clientId is fixed at 0 — the duplex adapter has exactly
     // one peer (the other end of the WS).
@@ -149,15 +139,11 @@ export const makeDuplexRpcProtocols = (
     const disconnects = yield* Queue.make<number>()
 
     // Fire a disconnect event when the scope closes (socket torn down).
-    yield* Effect.addFinalizer(() =>
-      Queue.offer(disconnects, PEER_CLIENT_ID).pipe(Effect.orDie),
-    )
+    yield* Effect.addFinalizer(() => Queue.offer(disconnects, PEER_CLIENT_ID).pipe(Effect.orDie))
 
     const processFrame = (data: Uint8Array | string): Effect.Effect<void> => {
       try {
-        const decoded = parser.decode(data) as ReadonlyArray<
-          FromClientEncoded | FromServerEncoded
-        >
+        const decoded = parser.decode(data) as ReadonlyArray<FromClientEncoded | FromServerEncoded>
         if (decoded.length === 0) return Effect.void
         let i = 0
         return Effect.whileLoop({
@@ -203,9 +189,7 @@ export const makeDuplexRpcProtocols = (
         ? Effect.fail(sessionClosedError)
         : writer.write(chunk).pipe(
             Effect.tapError(() => Deferred.succeed(closed, "WriteFailed")),
-            Effect.raceFirst(
-              Deferred.await(closed).pipe(Effect.andThen(Effect.fail(sessionClosedError))),
-            ),
+            Effect.raceFirst(Deferred.await(closed).pipe(Effect.andThen(Effect.fail(sessionClosedError)))),
           )
 
     // Set whenever a frame arrives; the heartbeat clears it on each ping.
@@ -235,9 +219,7 @@ export const makeDuplexRpcProtocols = (
       Effect.gen(function* () {
         const { pull } = yield* socket.reader
         if (options?.heartbeatInterval !== undefined) {
-          yield* Effect.forkScoped(
-            heartbeat(Duration.fromInputUnsafe(options.heartbeatInterval)),
-          )
+          yield* Effect.forkScoped(heartbeat(Duration.fromInputUnsafe(options.heartbeatInterval)))
         }
         while (true) {
           const frames = yield* pull
@@ -246,19 +228,12 @@ export const makeDuplexRpcProtocols = (
             yield* processFrame(frame)
           }
         }
-      }).pipe(
-        Effect.scoped,
-        Effect.ignore,
-        Effect.ensuring(Deferred.succeed(closed, "SocketClosed")),
-      ),
+      }).pipe(Effect.scoped, Effect.ignore, Effect.ensuring(Deferred.succeed(closed, "SocketClosed"))),
     )
 
     // ── Send functions ──────────────────────────────────────────────────
 
-    const sendFromServer = (
-      _clientId: number,
-      response: FromServerEncoded,
-    ): Effect.Effect<void> => {
+    const sendFromServer = (_clientId: number, response: FromServerEncoded): Effect.Effect<void> => {
       try {
         const encoded = parser.encode(response)
         if (encoded === undefined) return Effect.void
@@ -275,16 +250,12 @@ export const makeDuplexRpcProtocols = (
         reason: new RpcClientDefect({ message, cause }),
       })
 
-    const sendFromClient = (
-      request: FromClientEncoded,
-    ): Effect.Effect<void, RpcClientError> => {
+    const sendFromClient = (request: FromClientEncoded): Effect.Effect<void, RpcClientError> => {
       try {
         const encoded = parser.encode(request)
         if (encoded === undefined) return Effect.void
         return write(encoded).pipe(
-          Effect.mapError((cause) =>
-            toClientError("duplex socket write failed", cause),
-          ),
+          Effect.mapError((cause) => toClientError("duplex socket write failed", cause)),
         )
       } catch (cause) {
         return Effect.fail(toClientError("duplex socket encode failed", cause))
@@ -312,34 +283,28 @@ export const makeDuplexRpcProtocols = (
     // The client side mirrors `RpcClient.makeProtocolSocket`: responses that
     // carry a requestId go to the client that issued the request; anything
     // else is broadcast to every active client on this socket.
-    const clientProtocolService = yield* RpcClient.Protocol.make(
-      (writeResponse, clientIds) => {
-        const requestClients = new Map<string | number, number>()
-        routeToClient = (response) => {
-          if ("requestId" in response) {
-            const clientId = requestClients.get(response.requestId)
-            if (clientId !== undefined) {
-              if (response._tag === "Exit") requestClients.delete(response.requestId)
-              return writeResponse(clientId, response)
-            }
+    const clientProtocolService = yield* RpcClient.Protocol.make((writeResponse, clientIds) => {
+      const requestClients = new Map<string | number, number>()
+      routeToClient = (response) => {
+        if ("requestId" in response) {
+          const clientId = requestClients.get(response.requestId)
+          if (clientId !== undefined) {
+            if (response._tag === "Exit") requestClients.delete(response.requestId)
+            return writeResponse(clientId, response)
           }
-          return Effect.forEach(
-            clientIds,
-            (clientId) => writeResponse(clientId, response),
-            { discard: true },
-          )
         }
-        return Effect.succeed({
-          send: (clientId, request) => {
-            if (request._tag === "Request") requestClients.set(request.id, clientId)
-            return sendFromClient(request)
-          },
-          supportsAck: true,
-          supportsTransferables: false,
-          codecFor: serialization.codecFor,
-        })
-      },
-    )
+        return Effect.forEach(clientIds, (clientId) => writeResponse(clientId, response), { discard: true })
+      }
+      return Effect.succeed({
+        send: (clientId, request) => {
+          if (request._tag === "Request") requestClients.set(request.id, clientId)
+          return sendFromClient(request)
+        },
+        supportsAck: true,
+        supportsTransferables: false,
+        codecFor: serialization.codecFor,
+      })
+    })
 
     return {
       serverProtocol: Layer.succeed(RpcServer.Protocol, serverProtocolService),

@@ -2,11 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Ref } from "effect"
 import * as Headers from "effect/http/Headers"
 import * as TestClock from "effect/testing/TestClock"
-import {
-  AccessJwtError,
-  makeAccessJwtVerifier,
-  makeAccessKeyStore,
-} from "../../src/auth/access-jwt.js"
+import { AccessJwtError, makeAccessJwtVerifier, makeAccessKeyStore } from "../../src/auth/access-jwt.js"
 import { BrowserAuth, LOCAL_DEV_IDENTITY } from "../../src/auth/browser-auth.js"
 import {
   TEST_AUD,
@@ -67,7 +63,11 @@ describe("Access JWT verification", () => {
       const identity = yield* verify(
         yield* sign(signerA, { sub: "", email: undefined, common_name: "client-id.access" }),
       )
-      expect(identity.identity).toEqual({ source: "cloudflare-access", subject: "client-id.access", email: null })
+      expect(identity.identity).toEqual({
+        source: "cloudflare-access",
+        subject: "client-id.access",
+        email: null,
+      })
     }),
   )
 
@@ -166,9 +166,9 @@ describe("BrowserAuth token extraction", () => {
       const { verify } = yield* makeHarness([signerA])
       const auth = BrowserAuth.fromVerifier(verify)
       expect(yield* failureReason(auth.authenticate(Headers.fromInput({})))).toBe("missing-token")
-      expect(
-        yield* failureReason(auth.authenticate(Headers.fromInput({ cookie: "unrelated=1" }))),
-      ).toBe("missing-token")
+      expect(yield* failureReason(auth.authenticate(Headers.fromInput({ cookie: "unrelated=1" })))).toBe(
+        "missing-token",
+      )
     }),
   )
 
@@ -176,7 +176,9 @@ describe("BrowserAuth token extraction", () => {
     Effect.gen(function* () {
       const { verify } = yield* makeHarness([signerA])
       const auth = BrowserAuth.fromVerifier(verify)
-      const identity = yield* auth.authenticate(Headers.fromInput({ "cf-access-jwt-assertion": yield* sign(signerA) }))
+      const identity = yield* auth.authenticate(
+        Headers.fromInput({ "cf-access-jwt-assertion": yield* sign(signerA) }),
+      )
       expect(identity.identity.email).toBe(TEST_EMAIL)
     }),
   )
@@ -186,7 +188,9 @@ describe("BrowserAuth token extraction", () => {
       const { verify } = yield* makeHarness([signerA])
       const auth = BrowserAuth.fromVerifier(verify)
       const token = yield* sign(signerA)
-      const identity = yield* auth.authenticate(Headers.fromInput({ cookie: `theme=dark; CF_Authorization=${token}` }))
+      const identity = yield* auth.authenticate(
+        Headers.fromInput({ cookie: `theme=dark; CF_Authorization=${token}` }),
+      )
       expect(identity.identity.email).toBe(TEST_EMAIL)
     }),
   )
@@ -196,10 +200,12 @@ describe("BrowserAuth token extraction", () => {
       const { verify } = yield* makeHarness([signerA])
       const auth = BrowserAuth.fromVerifier(verify)
       const error = yield* Effect.flip(
-        auth.authenticate(Headers.fromInput({
-          "cf-access-jwt-assertion": "garbage",
-          cookie: `CF_Authorization=${yield* sign(signerA)}`,
-        })),
+        auth.authenticate(
+          Headers.fromInput({
+            "cf-access-jwt-assertion": "garbage",
+            cookie: `CF_Authorization=${yield* sign(signerA)}`,
+          }),
+        ),
       )
       expect(error.reason).toBe("malformed")
     }),

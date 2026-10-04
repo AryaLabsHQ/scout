@@ -68,10 +68,7 @@ const TerminalContext = createContext<TerminalState>({
   openPanel: () => {},
 })
 
-function nextActiveTabId(
-  sessions: ReadonlyArray<TerminalTab>,
-  closedTabId: string,
-): string | null {
+function nextActiveTabId(sessions: ReadonlyArray<TerminalTab>, closedTabId: string): string | null {
   const idx = sessions.findIndex((session) => session.id === closedTabId)
   const remaining = sessions.filter((session) => session.id !== closedTabId)
   if (remaining.length === 0) return null
@@ -172,9 +169,7 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     if (trimmed.length === 0) return
     setSessions((prev) =>
       prev.map((session) =>
-        session.id === tabId && session.kind === "interactive"
-          ? { ...session, label: trimmed }
-          : session,
+        session.id === tabId && session.kind === "interactive" ? { ...session, label: trimmed } : session,
       ),
     )
   }, [])
@@ -191,9 +186,13 @@ export function TerminalProvider({ children }: { children: React.ReactNode }) {
     setIsOpen(true)
   }, [])
 
-  useHotkeys("ctrl+`", () => {
-    setIsOpen((prev) => !prev)
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true })
+  useHotkeys(
+    "ctrl+`",
+    () => {
+      setIsOpen((prev) => !prev)
+    },
+    { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true },
+  )
 
   return (
     <TerminalContext.Provider

@@ -21,7 +21,11 @@ const toData = <A, E>(result: AsyncResult.AsyncResult<ReadonlyArray<A>, E>): Plu
 })
 
 /** Latest entity snapshots one plugin reported for one system, refreshed every 15 s. */
-export function usePluginEntities(systemId: string, pluginId: string, kind?: string): PluginData<EntitySnapshot> {
+export function usePluginEntities(
+  systemId: string,
+  pluginId: string,
+  kind?: string,
+): PluginData<EntitySnapshot> {
   const atom = HubClient.query(
     "plugins.entities",
     kind === undefined ? { systemId, pluginId } : { systemId, pluginId, kind },

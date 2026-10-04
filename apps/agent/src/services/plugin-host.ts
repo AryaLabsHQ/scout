@@ -11,10 +11,7 @@ import type {
 } from "@scout/plugin-sdk"
 import { executePluginAction, openPluginStream } from "@scout/plugin-sdk"
 import { AgentConfig } from "../config.js"
-import {
-  AgentPluginRegistry,
-  type LoadedAgentPlugin,
-} from "./plugin-registry.js"
+import { AgentPluginRegistry, type LoadedAgentPlugin } from "./plugin-registry.js"
 
 const isPluginDetected = (capability: PluginCapability): boolean =>
   capability.status === "available" || capability.status === "degraded"
@@ -40,27 +37,22 @@ export class AgentPluginHost extends Context.Service<
   {
     readonly listCapabilities: () => Effect.Effect<ReadonlyArray<PluginCapability>>
     readonly collectCollections: () => Effect.Effect<ReadonlyArray<PluginCollectionResult>>
-    readonly runAction: (
-      request: ActionRequest,
-    ) => Effect.Effect<unknown, Error>
-    readonly openLogStream: (
-      request: StreamRequest,
-    ) => Effect.Effect<Stream.Stream<LogChunk, Error>, Error>
+    readonly runAction: (request: ActionRequest) => Effect.Effect<unknown, Error>
+    readonly openLogStream: (request: StreamRequest) => Effect.Effect<Stream.Stream<LogChunk, Error>, Error>
   }
->()(
-  "@scout/AgentPluginHost",
-  {
-    make: Effect.gen(function* () {
-      const config = yield* AgentConfig.load
-      const registry = yield* AgentPluginRegistry
+>()("@scout/AgentPluginHost", {
+  make: Effect.gen(function* () {
+    const config = yield* AgentConfig.load
+    const registry = yield* AgentPluginRegistry
 
-      const getLoadedAgentPlugins = () => registry.listAgentPlugins()
+    const getLoadedAgentPlugins = () => registry.listAgentPlugins()
 
-      const listCapabilities = (): Effect.Effect<ReadonlyArray<PluginCapability>> =>
-        getLoadedAgentPlugins().pipe(
-          Effect.flatMap((plugins) =>
-            Effect.all(
-              plugins.map((plugin): Effect.Effect<PluginCapability> =>
+    const listCapabilities = (): Effect.Effect<ReadonlyArray<PluginCapability>> =>
+      getLoadedAgentPlugins().pipe(
+        Effect.flatMap((plugins) =>
+          Effect.all(
+            plugins.map(
+              (plugin): Effect.Effect<PluginCapability> =>
                 plugin.agent.detect({ nodeId: config.hostname, now: Date.now() }).pipe(
                   Effect.catchCause((cause) =>
                     Effect.succeed({
@@ -72,52 +64,54 @@ export class AgentPluginHost extends Context.Service<
                     } satisfies PluginCapability),
                   ),
                 ),
-              ),
-              { concurrency: "unbounded" },
-                ),
-              ),
-        )
-
-      const collectCollections = (): Effect.Effect<ReadonlyArray<PluginCollectionResult>> =>
-        Effect.gen(function* () {
-          const plugins = yield* getLoadedAgentPlugins()
-          const detectedPlugins = yield* Effect.all(
-            plugins.map((plugin) =>
-              plugin.agent.detect({ nodeId: config.hostname, now: Date.now() }).pipe(
-                Effect.map((capability) => ({ plugin, detected: isPluginDetected(capability) })),
-                Effect.orElseSucceed(() => ({ plugin, detected: false })),
-              ),
             ),
             { concurrency: "unbounded" },
-          )
-          const enabledPlugins = detectedPlugins
-            .filter((entry) => entry.detected)
-            .map((entry) => entry.plugin)
+          ),
+        ),
+      )
 
-          const collections = yield* Effect.all(
-            enabledPlugins.flatMap((plugin) => {
-              if (plugin.agent.collect === undefined) {
-                return []
-              }
-              return [plugin.agent.collect({ nodeId: config.hostname, now: Date.now() }).pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning(
-                    `AgentPluginHost: plugin "${plugin.manifest.id}" failed, excluding from plugin collection`,
-                    { error: String(cause) },
-                  ).pipe(Effect.as(null as PluginCollectionResult | null)),
+    const collectCollections = (): Effect.Effect<ReadonlyArray<PluginCollectionResult>> =>
+      Effect.gen(function* () {
+        const plugins = yield* getLoadedAgentPlugins()
+        const detectedPlugins = yield* Effect.all(
+          plugins.map((plugin) =>
+            plugin.agent.detect({ nodeId: config.hostname, now: Date.now() }).pipe(
+              Effect.map((capability) => ({ plugin, detected: isPluginDetected(capability) })),
+              Effect.orElseSucceed(() => ({ plugin, detected: false })),
+            ),
+          ),
+          { concurrency: "unbounded" },
+        )
+        const enabledPlugins = detectedPlugins.filter((entry) => entry.detected).map((entry) => entry.plugin)
+
+        const collections = yield* Effect.all(
+          enabledPlugins.flatMap((plugin) => {
+            if (plugin.agent.collect === undefined) {
+              return []
+            }
+            return [
+              plugin.agent
+                .collect({ nodeId: config.hostname, now: Date.now() })
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning(
+                      `AgentPluginHost: plugin "${plugin.manifest.id}" failed, excluding from plugin collection`,
+                      { error: String(cause) },
+                    ).pipe(Effect.as(null as PluginCollectionResult | null)),
+                  ),
                 ),
-              )]
-            }),
-            { concurrency: "unbounded" },
-          )
+            ]
+          }),
+          { concurrency: "unbounded" },
+        )
 
-          return collections.filter(
-            (collection): collection is PluginCollectionResult => collection !== null,
-          )
-        })
+        return collections.filter((collection): collection is PluginCollectionResult => collection !== null)
+      })
 
-      const getPlugin = (pluginId: string): Effect.Effect<LoadedAgentPlugin, Error> =>
-        registry.getAgentPlugin(pluginId).pipe(
+    const getPlugin = (pluginId: string): Effect.Effect<LoadedAgentPlugin, Error> =>
+      registry
+        .getAgentPlugin(pluginId)
+        .pipe(
           Effect.flatMap((plugin) =>
             plugin === null
               ? Effect.fail(new PluginHostError("plugin-not-loaded", "Requested plugin is not loaded"))
@@ -125,52 +119,49 @@ export class AgentPluginHost extends Context.Service<
           ),
         )
 
-      const runAction = (request: ActionRequest): Effect.Effect<unknown, Error> =>
-        Effect.gen(function* () {
-          const plugin = yield* getPlugin(request.pluginId)
-          const result = yield* executePluginAction(
-            plugin,
-            {
-              nodeId: config.hostname,
-              permissions: new Set(plugin.manifest.permissions),
-            },
-            request,
-          ).pipe(Effect.mapError((error) => mapExecutionError(error)))
+    const runAction = (request: ActionRequest): Effect.Effect<unknown, Error> =>
+      Effect.gen(function* () {
+        const plugin = yield* getPlugin(request.pluginId)
+        const result = yield* executePluginAction(
+          plugin,
+          {
+            nodeId: config.hostname,
+            permissions: new Set(plugin.manifest.permissions),
+          },
+          request,
+        ).pipe(Effect.mapError((error) => mapExecutionError(error)))
 
-          return result.output ?? {}
-        })
+        return result.output ?? {}
+      })
 
-      const openLogStream = (
-        request: StreamRequest,
-      ): Effect.Effect<Stream.Stream<LogChunk, Error>, Error> =>
-        Effect.gen(function* () {
-          const plugin = yield* getPlugin(request.pluginId)
-          const stream = yield* openPluginStream(
-            plugin,
-            {
-              nodeId: config.hostname,
-              permissions: new Set(plugin.manifest.permissions),
-            },
-            request,
-          ).pipe(Effect.mapError((error) => mapExecutionError(error)))
+    const openLogStream = (request: StreamRequest): Effect.Effect<Stream.Stream<LogChunk, Error>, Error> =>
+      Effect.gen(function* () {
+        const plugin = yield* getPlugin(request.pluginId)
+        const stream = yield* openPluginStream(
+          plugin,
+          {
+            nodeId: config.hostname,
+            permissions: new Set(plugin.manifest.permissions),
+          },
+          request,
+        ).pipe(Effect.mapError((error) => mapExecutionError(error)))
 
-          return stream.pipe(
-            Stream.mapEffect((chunk: StreamChunk) =>
-              "lines" in chunk && Array.isArray(chunk.lines)
-                ? Effect.succeed(chunk)
-                : Effect.fail(new Error("invalid-log-stream")),
-            ),
-          ) as Stream.Stream<LogChunk, Error>
-        })
+        return stream.pipe(
+          Stream.mapEffect((chunk: StreamChunk) =>
+            "lines" in chunk && Array.isArray(chunk.lines)
+              ? Effect.succeed(chunk)
+              : Effect.fail(new Error("invalid-log-stream")),
+          ),
+        ) as Stream.Stream<LogChunk, Error>
+      })
 
-      return {
-        listCapabilities,
-        collectCollections,
-        runAction,
-        openLogStream,
-      }
-    }),
-  },
-) {
+    return {
+      listCapabilities,
+      collectCollections,
+      runAction,
+      openLogStream,
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

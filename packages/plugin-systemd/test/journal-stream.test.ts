@@ -79,9 +79,7 @@ const runWithDeadline = <A, E>(effect: Effect.Effect<A, E>, ms = 5_000): Promise
 
 describe("systemd unit log stream", () => {
   it("kills and reaps journalctl when the consumer stops after the first batch", async () => {
-    const first = await runWithDeadline(
-      openUnitLogs.pipe(Effect.flatMap((stream) => Stream.runHead(stream))),
-    )
+    const first = await runWithDeadline(openUnitLogs.pipe(Effect.flatMap((stream) => Stream.runHead(stream))))
 
     expect(first._tag).toBe("Some")
     if (first._tag !== "Some") return
@@ -96,9 +94,9 @@ describe("systemd unit log stream", () => {
       Effect.gen(function* () {
         const stream = yield* openUnitLogs
         const first = yield* Deferred.make<StreamChunk>()
-        const fiber = yield* Stream.runForEach(stream, (chunk) =>
-          Deferred.succeed(first, chunk),
-        ).pipe(Effect.forkChild)
+        const fiber = yield* Stream.runForEach(stream, (chunk) => Deferred.succeed(first, chunk)).pipe(
+          Effect.forkChild,
+        )
 
         const chunk = yield* Deferred.await(first)
         // The child is now blocked on a quiet journal, like an idle unit.

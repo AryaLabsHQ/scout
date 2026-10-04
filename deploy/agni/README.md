@@ -11,15 +11,15 @@ browser -> Cloudflare Access (app "Scout") -> tunnel agni-host -> Caddy 127.0.0.
 scout-agent -> ws://127.0.0.1:3901/ws/rpc/agent (Bearer SCOUT_TOKEN)
 ```
 
-| Asset | Installed to |
-|-------|--------------|
-| `systemd/scout-{hub,web,agent}.service` | `~/.config/systemd/user/` |
-| `env/{hub,web,agent}.env.example` | `~/.config/scout/{hub,web,agent}.env` |
-| `caddy/scout.caddy` | dotfiles Caddyfile (`machines/agni`) |
-| `k8s/rbac.yaml` | k3s (`sudo kubectl apply`) |
-| agent kubeconfig | `~/.config/scout/kubeconfig` |
-| SQLite database | `~/.local/state/scout/scout.db` (unit `StateDirectory=scout`) |
-| Operator sessions (pi-durable SQLite) | `~/.local/state/scout/scout-operator.db`, next to `scout.db`; pi-durable owns its schema |
+| Asset                                   | Installed to                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `systemd/scout-{hub,web,agent}.service` | `~/.config/systemd/user/`                                                                |
+| `env/{hub,web,agent}.env.example`       | `~/.config/scout/{hub,web,agent}.env`                                                    |
+| `caddy/scout.caddy`                     | dotfiles Caddyfile (`machines/agni`)                                                     |
+| `k8s/rbac.yaml`                         | k3s (`sudo kubectl apply`)                                                               |
+| agent kubeconfig                        | `~/.config/scout/kubeconfig`                                                             |
+| SQLite database                         | `~/.local/state/scout/scout.db` (unit `StateDirectory=scout`)                            |
+| Operator sessions (pi-durable SQLite)   | `~/.local/state/scout/scout-operator.db`, next to `scout.db`; pi-durable owns its schema |
 
 The units run the checkout at `/home/ubuntu/Developer/AryaLabsHQ/scout` with `~/.bun/bin/bun`:
 the hub and agent from source, the web from its nitro build (`apps/web/.output`). The user
@@ -169,13 +169,13 @@ Deleting the Secret revokes its token; after step 1 nothing uses it.
 `k8s/rbac.yaml` creates namespace `scout`, ServiceAccount `scout-agent`,
 and a cluster-wide `scout-agent` ClusterRole matching what `packages/plugin-k8s` runs:
 
-| kubectl call (plugin) | Grant |
-|-----------------------|-------|
-| `get namespaces/nodes/pods/services/events`, `deployments.apps`, `jobs.batch`, `ingresses` (collection) | get, list, watch |
+| kubectl call (plugin)                                                                                        | Grant                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `get namespaces/nodes/pods/services/events`, `deployments.apps`, `jobs.batch`, `ingresses` (collection)      | get, list, watch                                                                                                           |
 | `describe <namespace/node/pod/deployment/statefulset/daemonset/service/ingress/job/cronjob>`, `cluster-info` | get, list, watch on those plus replicasets, endpoints, endpointslices, resourcequotas, limitranges, `events.k8s.io` events |
-| `logs <pod>` (pod-logs stream) | `pods/log`: get |
-| `scale <deployment/statefulset>` (scale-workload) | `deployments/scale`, `statefulsets/scale`: get, patch, update |
-| `delete pod` (restart-pod, delete-pod) | `pods`: delete |
+| `logs <pod>` (pod-logs stream)                                                                               | `pods/log`: get                                                                                                            |
+| `scale <deployment/statefulset>` (scale-workload)                                                            | `deployments/scale`, `statefulsets/scale`: get, patch, update                                                              |
+| `delete pod` (restart-pod, delete-pod)                                                                       | `pods`: delete                                                                                                             |
 
 There is no access to Secrets or ConfigMaps. The plugin also offers scale-workload on
 DaemonSets, Jobs, and CronJobs; Kubernetes cannot scale those, so they fail regardless of RBAC.
@@ -195,13 +195,13 @@ lets `ubuntu` start, stop, restart and reload an allowlist of host units: `caddy
 `cloudflared-agni-host`, `fail2ban`, `glances`, `vnstat`, `restic-backup.service` and
 `restic-backup.timer`. Add a unit there to make it actionable from Scout.
 
-| Works as `ubuntu` | Fails with `permission-denied` |
-|-------------------|--------------------------------|
+| Works as `ubuntu`                                                                     | Fails with `permission-denied`                                                                |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Collecting system services and timers (`systemctl list-units`, `list-timers`, `show`) | Actions on units outside the polkit allowlist (`k3s`, `tailscaled`, `ssh`, `postgresql`, ...) |
-| start, stop, restart, reload of allowlisted units | enable and disable of any system unit |
-| Collecting and managing `ubuntu`'s user units (`systemctl --user`) | `daemon-reload` |
-| Unit logs (`journalctl -u`; `ubuntu` is in `adm`) | Writing unit files to system paths |
-| Reading unit files under `/etc` and `/usr/lib` | |
+| start, stop, restart, reload of allowlisted units                                     | enable and disable of any system unit                                                         |
+| Collecting and managing `ubuntu`'s user units (`systemctl --user`)                    | `daemon-reload`                                                                               |
+| Unit logs (`journalctl -u`; `ubuntu` is in `adm`)                                     | Writing unit files to system paths                                                            |
+| Reading unit files under `/etc` and `/usr/lib`                                        |                                                                                               |
 
 Use a host shell with sudo for everything outside the allowlist. User units (`scout-*`, T3 Code,
 the Codex app-server, OpenCode) belong to `ubuntu`'s own manager, so their actions run

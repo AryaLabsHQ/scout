@@ -26,7 +26,10 @@ function parseNetDevLine(line: string): NetDevEntry | null {
   if (colonIdx === -1) return null
 
   const name = line.slice(0, colonIdx).trim()
-  const fields = line.slice(colonIdx + 1).trim().split(/\s+/)
+  const fields = line
+    .slice(colonIdx + 1)
+    .trim()
+    .split(/\s+/)
 
   if (fields.length < 10) return null
 
@@ -64,7 +67,7 @@ export function parseProcNetDev(
   const currMap = parseNetDevContent(current)
 
   if (!previous || intervalSec <= 0) {
-    return Array.from(currMap.values()).map(e => ({
+    return Array.from(currMap.values()).map((e) => ({
       name: e.name,
       rxBytesPerSec: 0,
       txBytesPerSec: 0,
@@ -117,9 +120,7 @@ export const networkCollector: CollectorPlugin = {
     const now = Date.now()
     const content = yield* readFile("/proc/net/dev")
 
-    const intervalSec = _prevNetDevTimestamp > 0
-      ? (now - _prevNetDevTimestamp) / 1000
-      : 0
+    const intervalSec = _prevNetDevTimestamp > 0 ? (now - _prevNetDevTimestamp) / 1000 : 0
 
     const interfaces = parseProcNetDev(content, _prevNetDevContent, intervalSec)
 

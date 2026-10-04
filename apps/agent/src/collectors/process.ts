@@ -12,7 +12,7 @@ import type { CollectorPlugin, CollectorReport, ProcessMetrics } from "@scout/sh
 export function parsePsOutput(output: string): ProcessMetrics[] {
   const lines = output.split("\n")
   // Skip header (first line)
-  const dataLines = lines.slice(1).filter(l => l.trim().length > 0)
+  const dataLines = lines.slice(1).filter((l) => l.trim().length > 0)
 
   const results: ProcessMetrics[] = []
 
@@ -63,12 +63,8 @@ export const processCollector: CollectorPlugin = {
   collect: Effect.gen(function* () {
     // Run both sorts concurrently and merge (top 20 by CPU + top 20 by memory)
     const [byCpu, byMem] = yield* Effect.all([
-      spawnText(["ps", "aux", "--sort=-pcpu"]).pipe(
-        Effect.map(out => parsePsOutput(out).slice(0, 20)),
-      ),
-      spawnText(["ps", "aux", "--sort=-rss"]).pipe(
-        Effect.map(out => parsePsOutput(out).slice(0, 20)),
-      ),
+      spawnText(["ps", "aux", "--sort=-pcpu"]).pipe(Effect.map((out) => parsePsOutput(out).slice(0, 20))),
+      spawnText(["ps", "aux", "--sort=-rss"]).pipe(Effect.map((out) => parsePsOutput(out).slice(0, 20))),
     ])
 
     // Merge by PID, deduplicate

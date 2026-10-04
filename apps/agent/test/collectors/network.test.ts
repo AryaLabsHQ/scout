@@ -33,7 +33,7 @@ describe("parseProcNetDev", () => {
 
   it("reports all interfaces from first reading", () => {
     const result = parseProcNetDev(NET_DEV_1, null, 0)
-    const names = result.map(i => i.name)
+    const names = result.map((i) => i.name)
     expect(names).toContain("lo")
     expect(names).toContain("eth0")
     expect(names).toContain("eth1")
@@ -43,7 +43,7 @@ describe("parseProcNetDev", () => {
     // 10 second interval
     const result = parseProcNetDev(NET_DEV_2, NET_DEV_1, 10)
 
-    const eth0 = result.find(i => i.name === "eth0")
+    const eth0 = result.find((i) => i.name === "eth0")
     expect(eth0).toBeDefined()
     // rx: (55000000 - 50000000) / 10 = 500000 B/s
     expect(eth0!.rxBytesPerSec).toBeCloseTo(500000, 0)
@@ -58,7 +58,7 @@ describe("parseProcNetDev", () => {
   it("calculates rates for multiple interfaces independently", () => {
     const result = parseProcNetDev(NET_DEV_2, NET_DEV_1, 10)
 
-    const eth1 = result.find(i => i.name === "eth1")
+    const eth1 = result.find((i) => i.name === "eth1")
     expect(eth1).toBeDefined()
     // rx: (10500000 - 10000000) / 10 = 50000 B/s
     expect(eth1!.rxBytesPerSec).toBeCloseTo(50000, 0)
@@ -68,7 +68,7 @@ describe("parseProcNetDev", () => {
 
   it("calculates loopback rates", () => {
     const result = parseProcNetDev(NET_DEV_2, NET_DEV_1, 10)
-    const lo = result.find(i => i.name === "lo")
+    const lo = result.find((i) => i.name === "lo")
     expect(lo).toBeDefined()
     // rx: (1010000 - 1000000) / 10 = 1000 B/s
     expect(lo!.rxBytesPerSec).toBeCloseTo(1000, 0)
@@ -83,10 +83,12 @@ describe("parseProcNetDev", () => {
   })
 
   it("handles new interface not in previous reading", () => {
-    const net2WithExtra = NET_DEV_2 + `tailscale0: 2000000   10000    0    0    0     0          0         0  1000000    5000    0    0    0     0       0          0\n`
+    const net2WithExtra =
+      NET_DEV_2 +
+      `tailscale0: 2000000   10000    0    0    0     0          0         0  1000000    5000    0    0    0     0       0          0\n`
     const result = parseProcNetDev(net2WithExtra, NET_DEV_1, 10)
 
-    const tailscale = result.find(i => i.name === "tailscale0")
+    const tailscale = result.find((i) => i.name === "tailscale0")
     expect(tailscale).toBeDefined()
     // No previous data → rates are 0
     expect(tailscale!.rxBytesPerSec).toBe(0)

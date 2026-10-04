@@ -23,7 +23,9 @@ const VIRTUAL_INTERFACE = /^(lo|veth|cni|flannel|docker|br-|virbr|kube-|cali|vxl
 const SERIES = ["#ededed", "#a1a1a1", "#707070", "#4a4a4a"] as const
 
 export const Route = createFileRoute("/systems_/$systemId/metrics")({
-  loader: async ({ params }) => ({ detail: await fetchSystemDetail({ data: { systemId: params.systemId } }) }),
+  loader: async ({ params }) => ({
+    detail: await fetchSystemDetail({ data: { systemId: params.systemId } }),
+  }),
   component: SystemMetricsPage,
 })
 
@@ -34,9 +36,10 @@ function buildChartData(
 ) {
   const long = range === "7d" || range === "30d"
   return samples.map((sample) => ({
-    time: new Date(sample.timestamp).toLocaleString([], long
-      ? { month: "short", day: "numeric", hour: "2-digit" }
-      : { hour: "2-digit", minute: "2-digit" }),
+    time: new Date(sample.timestamp).toLocaleString(
+      [],
+      long ? { month: "short", day: "numeric", hour: "2-digit" } : { hour: "2-digit", minute: "2-digit" },
+    ),
     ...extractor(sample),
   }))
 }
@@ -61,8 +64,12 @@ function SystemMetricsPage() {
   const metricsResult = useAtomValue(metricsAtom)
   const samples = lastValue(metricsResult, [])
 
-  const interfaces = [...new Set(samples.flatMap((sample) => Object.keys(sample.networkRxBytesPerSecByInterface)))]
-  const shownInterfaces = allInterfaces ? interfaces : interfaces.filter((name) => !VIRTUAL_INTERFACE.test(name))
+  const interfaces = [
+    ...new Set(samples.flatMap((sample) => Object.keys(sample.networkRxBytesPerSecByInterface))),
+  ]
+  const shownInterfaces = allInterfaces
+    ? interfaces
+    : interfaces.filter((name) => !VIRTUAL_INTERFACE.test(name))
   const hiddenCount = interfaces.length - shownInterfaces.length
   const hasGpu = samples.some((sample) => sample.gpuPercent !== null)
   const tempLabels = [...new Set(samples.flatMap((sample) => Object.keys(sample.temperaturesCelsius)))]
@@ -89,7 +96,9 @@ function SystemMetricsPage() {
                 onClick={() => setRange(value)}
                 className={cn(
                   "h-7 rounded px-2.5 font-mono text-xs",
-                  value === range ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
+                  value === range
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {value}
@@ -140,7 +149,9 @@ function SystemMetricsPage() {
                 onClick={() => setAllInterfaces((value) => !value)}
                 className="hover:text-foreground"
               >
-                {allInterfaces ? "Host interfaces only" : `All interfaces${hiddenCount > 0 ? ` (+${hiddenCount})` : ""}`}
+                {allInterfaces
+                  ? "Host interfaces only"
+                  : `All interfaces${hiddenCount > 0 ? ` (+${hiddenCount})` : ""}`}
               </button>
             ) : undefined
           }
@@ -149,7 +160,10 @@ function SystemMetricsPage() {
             <MetricsChart
               data={buildChartData(samples, range, (sample) =>
                 Object.fromEntries(
-                  shownInterfaces.map((name) => [`rx_${name}`, sample.networkRxBytesPerSecByInterface[name] ?? 0]),
+                  shownInterfaces.map((name) => [
+                    `rx_${name}`,
+                    sample.networkRxBytesPerSecByInterface[name] ?? 0,
+                  ]),
                 ),
               )}
               dataKeys={shownInterfaces.map((name, index) => ({
@@ -183,7 +197,9 @@ function SystemMetricsPage() {
           <ChartSection title="Temperature">
             <MetricsChart
               data={buildChartData(samples, range, (sample) =>
-                Object.fromEntries(tempLabels.map((label) => [`temp_${label}`, sample.temperaturesCelsius[label] ?? 0])),
+                Object.fromEntries(
+                  tempLabels.map((label) => [`temp_${label}`, sample.temperaturesCelsius[label] ?? 0]),
+                ),
               )}
               dataKeys={tempLabels.map((label, index) => ({
                 key: `temp_${label}`,

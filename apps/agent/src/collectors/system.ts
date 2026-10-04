@@ -46,11 +46,9 @@ function calcCpuPercent(
   curr: CpuFields,
 ): { usage: number; breakdown: CpuMetrics["breakdown"] } {
   const prevTotal =
-    prev.user + prev.nice + prev.system + prev.idle +
-    prev.iowait + prev.irq + prev.softirq + prev.steal
+    prev.user + prev.nice + prev.system + prev.idle + prev.iowait + prev.irq + prev.softirq + prev.steal
   const currTotal =
-    curr.user + curr.nice + curr.system + curr.idle +
-    curr.iowait + curr.irq + curr.softirq + curr.steal
+    curr.user + curr.nice + curr.system + curr.idle + curr.iowait + curr.irq + curr.softirq + curr.steal
 
   const totalDelta = currTotal - prevTotal
   if (totalDelta <= 0) {
@@ -84,7 +82,7 @@ function calcCpuPercent(
  */
 export function parseProcStat(current: string, previous: string | null): CpuMetrics {
   const currentLines = current.split("\n")
-  const coreCount = currentLines.filter(l => /^cpu\d+\s/.test(l)).length
+  const coreCount = currentLines.filter((l) => /^cpu\d+\s/.test(l)).length
 
   if (!previous) {
     return {
@@ -98,8 +96,8 @@ export function parseProcStat(current: string, previous: string | null): CpuMetr
   const prevLines = previous.split("\n")
 
   // Aggregate (cpu  ...)
-  const currAgg = parseCpuLine(currentLines.find(l => /^cpu\s/.test(l)) ?? "")
-  const prevAgg = parseCpuLine(prevLines.find(l => /^cpu\s/.test(l)) ?? "")
+  const currAgg = parseCpuLine(currentLines.find((l) => /^cpu\s/.test(l)) ?? "")
+  const prevAgg = parseCpuLine(prevLines.find((l) => /^cpu\s/.test(l)) ?? "")
 
   let usage = 0
   let breakdown: CpuMetrics["breakdown"] = { user: 0, system: 0, iowait: 0, steal: 0, idle: 100 }
@@ -110,8 +108,8 @@ export function parseProcStat(current: string, previous: string | null): CpuMetr
   }
 
   // Per-core
-  const currCoreLines = currentLines.filter(l => /^cpu\d+\s/.test(l))
-  const prevCoreLines = prevLines.filter(l => /^cpu\d+\s/.test(l))
+  const currCoreLines = currentLines.filter((l) => /^cpu\d+\s/.test(l))
+  const prevCoreLines = prevLines.filter((l) => /^cpu\d+\s/.test(l))
 
   const perCore = currCoreLines.map((line, i) => {
     const prev = parseCpuLine(prevCoreLines[i] ?? "")
@@ -181,10 +179,28 @@ export function parseProcUptime(content: string): number {
 // ---------------------------------------------------------------------------
 
 const VIRTUAL_FS_TYPES = new Set([
-  "tmpfs", "devtmpfs", "sysfs", "proc", "devpts", "cgroup", "cgroup2",
-  "pstore", "bpf", "tracefs", "debugfs", "securityfs", "fusectl",
-  "hugetlbfs", "mqueue", "configfs", "efivarfs", "overlay", "squashfs",
-  "ramfs", "nsfs", "autofs",
+  "tmpfs",
+  "devtmpfs",
+  "sysfs",
+  "proc",
+  "devpts",
+  "cgroup",
+  "cgroup2",
+  "pstore",
+  "bpf",
+  "tracefs",
+  "debugfs",
+  "securityfs",
+  "fusectl",
+  "hugetlbfs",
+  "mqueue",
+  "configfs",
+  "efivarfs",
+  "overlay",
+  "squashfs",
+  "ramfs",
+  "nsfs",
+  "autofs",
 ])
 
 /**
@@ -192,7 +208,10 @@ const VIRTUAL_FS_TYPES = new Set([
  * Returns DiskMetrics[] with readBytesPerSec/writeBytesPerSec as 0.
  */
 export function parseDiskUsage(dfOutput: string): DiskMetrics[] {
-  const lines = dfOutput.split("\n").slice(1).filter(l => l.trim().length > 0)
+  const lines = dfOutput
+    .split("\n")
+    .slice(1)
+    .filter((l) => l.trim().length > 0)
   const results: DiskMetrics[] = []
   const seenMounts = new Set<string>()
 
@@ -240,7 +259,10 @@ export function parseProcDiskstats(
   const result = new Map<string, { read: number; write: number }>()
   if (!previous || intervalMs <= 0) return result
 
-  interface DsEntry { readSectors: number; writeSectors: number }
+  interface DsEntry {
+    readSectors: number
+    writeSectors: number
+  }
 
   const parse = (content: string): Map<string, DsEntry> => {
     const m = new Map<string, DsEntry>()

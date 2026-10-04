@@ -24,44 +24,31 @@ export class OperatorExtensions extends Context.Service<
     readonly beforeToolCall: (input: OperatorToolHookInput) => Effect.Effect<void>
     readonly afterToolCall: (input: OperatorAfterToolHookInput) => Effect.Effect<void>
   }
->()(
-  "@scout/OperatorExtensions",
-  {
-    make: Effect.gen(function* () {
-      const pluginRegistry = yield* PluginRegistry
-      const plugins = yield* pluginRegistry.listOperatorPlugins()
-      const pluginIds = plugins.map((plugin) => plugin.manifest.id)
-      const hookSets = plugins.flatMap((plugin) =>
-        plugin.operator?.hooks ? [plugin.operator.hooks] : [],
-      )
+>()("@scout/OperatorExtensions", {
+  make: Effect.gen(function* () {
+    const pluginRegistry = yield* PluginRegistry
+    const plugins = yield* pluginRegistry.listOperatorPlugins()
+    const pluginIds = plugins.map((plugin) => plugin.manifest.id)
+    const hookSets = plugins.flatMap((plugin) => (plugin.operator?.hooks ? [plugin.operator.hooks] : []))
 
-      const beforePrompt = (input: OperatorPromptHookInput) =>
-        Effect.all([
-          Effect.succeed(summarizePluginSurface(pluginIds)),
-          ...hookSets.map((hooks: ScoutOperatorHookSet) =>
-            hooks.beforePrompt?.(input) ?? Effect.succeed(null),
-          ),
-        ]).pipe(
-          Effect.map((sections) => sections.filter((section): section is string => section !== null)),
-        )
+    const beforePrompt = (input: OperatorPromptHookInput) =>
+      Effect.all([
+        Effect.succeed(summarizePluginSurface(pluginIds)),
+        ...hookSets.map((hooks: ScoutOperatorHookSet) => hooks.beforePrompt?.(input) ?? Effect.succeed(null)),
+      ]).pipe(Effect.map((sections) => sections.filter((section): section is string => section !== null)))
 
-      const beforeToolCall = (input: OperatorToolHookInput) =>
-        Effect.forEach(hookSets, (hooks) =>
-          hooks.beforeToolCall?.(input) ?? Effect.void,
-        ).pipe(Effect.asVoid)
+    const beforeToolCall = (input: OperatorToolHookInput) =>
+      Effect.forEach(hookSets, (hooks) => hooks.beforeToolCall?.(input) ?? Effect.void).pipe(Effect.asVoid)
 
-      const afterToolCall = (input: OperatorAfterToolHookInput) =>
-        Effect.forEach(hookSets, (hooks) =>
-          hooks.afterToolCall?.(input) ?? Effect.void,
-        ).pipe(Effect.asVoid)
+    const afterToolCall = (input: OperatorAfterToolHookInput) =>
+      Effect.forEach(hookSets, (hooks) => hooks.afterToolCall?.(input) ?? Effect.void).pipe(Effect.asVoid)
 
-      return {
-        beforePrompt,
-        beforeToolCall,
-        afterToolCall,
-      }
-    }),
-  },
-) {
+    return {
+      beforePrompt,
+      beforeToolCall,
+      afterToolCall,
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

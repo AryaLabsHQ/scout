@@ -14,7 +14,11 @@ export const OperatorSessionStatusSchema = Schema.Literals([
   "archived",
 ])
 
-export const OperatorApprovalModeSchema = Schema.Literals(["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"])
+export const OperatorApprovalModeSchema = Schema.Literals([
+  "confirm_each_mutation",
+  "auto_approve_reads",
+  "auto_approve_all",
+])
 
 export const OperatorPlanModeSchema = Schema.Literals(["off", "plan_first"])
 
@@ -31,10 +35,12 @@ export const OperatorApprovalStatusSchema = Schema.Literals([
 export const OperatorQuestionSchema = Schema.Struct({
   question: Schema.String,
   header: Schema.String,
-  options: Schema.Array(Schema.Struct({
-    label: Schema.String,
-    description: Schema.String,
-  })),
+  options: Schema.Array(
+    Schema.Struct({
+      label: Schema.String,
+      description: Schema.String,
+    }),
+  ),
   multiple: Schema.optionalKey(Schema.Boolean),
 })
 
@@ -56,12 +62,7 @@ export const OperatorApprovalRequestSchema = Schema.Struct({
   question: Schema.optionalKey(OperatorQuestionSchema),
 })
 
-export const OperatorToolCallStatusSchema = Schema.Literals([
-  "pending",
-  "running",
-  "completed",
-  "failed",
-])
+export const OperatorToolCallStatusSchema = Schema.Literals(["pending", "running", "completed", "failed"])
 
 /** Raw PTY output of a bash.run call, for mirroring into a terminal tab. */
 export const OperatorTerminalOutputSchema = Schema.Struct({
@@ -104,11 +105,7 @@ export const OperatorTimelineItemSchema = Schema.Union([
   }),
 ])
 
-export const OperatorSkillSourceSchema = Schema.Literals([
-  "builtin",
-  "directory",
-  "plugin",
-])
+export const OperatorSkillSourceSchema = Schema.Literals(["builtin", "directory", "plugin"])
 
 export const OperatorSkillSchema = Schema.Struct({
   id: Schema.String,
@@ -118,10 +115,7 @@ export const OperatorSkillSchema = Schema.Struct({
   content: Schema.String,
 })
 
-export const OperatorResourceSourceSchema = Schema.Literals([
-  "builtin",
-  "plugin",
-])
+export const OperatorResourceSourceSchema = Schema.Literals(["builtin", "plugin"])
 
 export const OperatorResourceSchema = Schema.Struct({
   id: Schema.String,

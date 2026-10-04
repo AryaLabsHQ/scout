@@ -81,10 +81,17 @@ const USER_SHOW = [
 ].join("\n")
 
 /** A fake systemctl for both managers; `--user` selects the user manager's answers. */
-const fakeSystemctl = (
-  calls: string[],
-  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail"; userShow?: "fail"; lastUs?: number } = {},
-): Exec =>
+const fakeSystemctl =
+  (
+    calls: string[],
+    opts: {
+      userManager?: boolean
+      timestampFlag?: boolean
+      show?: "ok" | "fail"
+      userShow?: "fail"
+      lastUs?: number
+    } = {},
+  ): Exec =>
   (command, args) => {
     calls.push(`${command} ${args.join(" ")}`)
     const user = args[0] === "--user"
@@ -96,10 +103,30 @@ const fakeSystemctl = (
       return ok(
         JSON.stringify(
           user
-            ? [{ unit: "dbus.service", load: "loaded", active: "active", sub: "running", description: "D-Bus User Message Bus" }]
+            ? [
+                {
+                  unit: "dbus.service",
+                  load: "loaded",
+                  active: "active",
+                  sub: "running",
+                  description: "D-Bus User Message Bus",
+                },
+              ]
             : [
-                { unit: "dbus.service", load: "loaded", active: "active", sub: "running", description: "D-Bus System Message Bus" },
-                { unit: "restic-backup.service", load: "loaded", active: "inactive", sub: "dead", description: "Restic backup" },
+                {
+                  unit: "dbus.service",
+                  load: "loaded",
+                  active: "active",
+                  sub: "running",
+                  description: "D-Bus System Message Bus",
+                },
+                {
+                  unit: "restic-backup.service",
+                  load: "loaded",
+                  active: "inactive",
+                  sub: "dead",
+                  description: "Restic backup",
+                },
               ],
         ),
       )
@@ -107,7 +134,17 @@ const fakeSystemctl = (
     if (rest[0] === "list-units" && rest.includes("--type=timer")) {
       return ok(
         JSON.stringify(
-          user ? [] : [{ unit: "restic-backup.timer", load: "loaded", active: "active", sub: "waiting", description: "Daily Restic Backup" }],
+          user
+            ? []
+            : [
+                {
+                  unit: "restic-backup.timer",
+                  load: "loaded",
+                  active: "active",
+                  sub: "waiting",
+                  description: "Daily Restic Backup",
+                },
+              ],
         ),
       )
     }
@@ -116,7 +153,16 @@ const fakeSystemctl = (
         JSON.stringify(
           user
             ? []
-            : [{ next: 1791170638736488, left: 1, last: opts.lastUs ?? 1791084864354113, passed: 1, unit: "restic-backup.timer", activates: "restic-backup.service" }],
+            : [
+                {
+                  next: 1791170638736488,
+                  left: 1,
+                  last: opts.lastUs ?? 1791084864354113,
+                  passed: 1,
+                  unit: "restic-backup.timer",
+                  activates: "restic-backup.service",
+                },
+              ],
         ),
       )
     }
@@ -141,7 +187,9 @@ const collect = (exec: Exec) =>
 
 describe("systemd parsers", () => {
   it("reads systemd timestamps as epoch milliseconds", () => {
-    expect(parseSystemdTimestamp("Sun 2026-10-04 03:34:24.354113 UTC")).toBe(Date.UTC(2026, 9, 4, 3, 34, 24, 354))
+    expect(parseSystemdTimestamp("Sun 2026-10-04 03:34:24.354113 UTC")).toBe(
+      Date.UTC(2026, 9, 4, 3, 34, 24, 354),
+    )
     expect(parseSystemdTimestamp("Sun 2026-10-04 03:34:24 UTC")).toBe(Date.UTC(2026, 9, 4, 3, 34, 24))
     expect(parseSystemdTimestamp("@1791084864")).toBe(1791084864000)
     expect(parseSystemdTimestamp("")).toBeNull()
@@ -249,7 +297,9 @@ describe("systemd collection", () => {
     const result = await collect(fakeSystemctl([]))
     const metric = (metricId: string) => result.metrics!.filter((point) => point.metricId === metricId)
     expect(metric("units.total")[0]?.value).toBe(2)
-    expect(metric("unit.memory.bytes").map((point) => [point.entity?.kind, point.entity?.id, point.value])).toEqual([
+    expect(
+      metric("unit.memory.bytes").map((point) => [point.entity?.kind, point.entity?.id, point.value]),
+    ).toEqual([
       [SYSTEMD_UNIT_KIND, "dbus.service", 4194304],
       [SYSTEMD_USER_UNIT_KIND, "dbus.service", 1048576],
     ])
@@ -266,7 +316,9 @@ describe("systemd collection", () => {
     const calls: string[] = []
     const result = await collect(fakeSystemctl(calls, { timestampFlag: false }))
     expect(calls.filter((call) => call.startsWith("systemctl show "))).toHaveLength(2)
-    const dbus = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service")
+    const dbus = result.entities!.find(
+      (entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service",
+    )
     expect(dbus?.state).toMatchObject({ restarts: 2, pid: 812, activeEnterAt: null })
     // Local-time timestamps read as unknown, but the exit status survives.
     const restic = result.entities!.find((entity) => entity.ref.id === "restic-backup.service")
@@ -277,7 +329,10 @@ describe("systemd collection", () => {
 
   it("fails the collection instead of publishing units without details", async () => {
     const exit = await Effect.runPromiseExit(
-      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { show: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
+      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { show: "fail" }))).collect!({
+        nodeId: "agni",
+        now: 42,
+      }),
     )
     expect(Exit.isFailure(exit)).toBe(true)
   })
@@ -286,7 +341,9 @@ describe("systemd collection", () => {
     let failUserShow = false
     const healthy = fakeSystemctl([])
     const failing = fakeSystemctl([], { userShow: "fail" })
-    const plugin = createSystemdAgentPlugin(makeDeps((command, args) => (failUserShow ? failing : healthy)(command, args)))
+    const plugin = createSystemdAgentPlugin(
+      makeDeps((command, args) => (failUserShow ? failing : healthy)(command, args)),
+    )
 
     await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
     failUserShow = true
@@ -294,7 +351,11 @@ describe("systemd collection", () => {
     const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
     const userDbus = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_USER_UNIT_KIND)
     expect(userDbus).toMatchObject({ ts: 2, state: { pid: 2201 } })
-    expect(result.entities!.find((entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service")).toMatchObject({
+    expect(
+      result.entities!.find(
+        (entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service",
+      ),
+    ).toMatchObject({
       ts: 2,
       state: { pid: 812 },
     })
@@ -309,7 +370,12 @@ describe("systemd collection", () => {
     next = fakeSystemctl([], { show: "fail", lastUs: 1791171264354113 })
     const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
     const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)!
-    expect(timer.state).toMatchObject({ lastTriggerAt: 1791171264354, lastResult: null, lastExitStatus: null, lastExitAt: null })
+    expect(timer.state).toMatchObject({
+      lastTriggerAt: 1791171264354,
+      lastResult: null,
+      lastExitStatus: null,
+      lastExitAt: null,
+    })
     expect(timer.status).toBe("active")
   })
 
@@ -325,7 +391,10 @@ describe("systemd collection", () => {
 
   it("fails the collection when a manager's first detail read fails", async () => {
     const exit = await Effect.runPromiseExit(
-      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { userShow: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
+      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { userShow: "fail" }))).collect!({
+        nodeId: "agni",
+        now: 42,
+      }),
     )
     expect(Exit.isFailure(exit)).toBe(true)
   })
@@ -333,7 +402,9 @@ describe("systemd collection", () => {
   it("fails the collection when the system manager cannot list units", async () => {
     const exit = await Effect.runPromiseExit(
       createSystemdAgentPlugin(
-        makeDeps(() => Effect.succeed({ stdout: "", stderr: "System has not been booted with systemd", exitCode: 1 })),
+        makeDeps(() =>
+          Effect.succeed({ stdout: "", stderr: "System has not been booted with systemd", exitCode: 1 }),
+        ),
       ).collect!({ nodeId: "agni", now: 42 }),
     )
     expect(Exit.isFailure(exit)).toBe(true)

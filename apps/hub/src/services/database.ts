@@ -6,36 +6,33 @@ import * as schema from "../../drizzle/schema.js"
 
 export type ScoutDatabase = ReturnType<typeof drizzle<typeof schema>>
 
-export class Database extends Context.Service<Database, ScoutDatabase>()(
-  "@scout/Database",
-  {
-    make: Effect.gen(function* () {
-      const dbPath = yield* Config.withDefault(Config.String("SCOUT_DB_PATH"), "./scout.db")
+export class Database extends Context.Service<Database, ScoutDatabase>()("@scout/Database", {
+  make: Effect.gen(function* () {
+    const dbPath = yield* Config.withDefault(Config.String("SCOUT_DB_PATH"), "./scout.db")
 
-      const db = yield* Effect.acquireRelease(
+    const db = yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const sqlite = new BunDatabase(dbPath)
+        return drizzle({ client: sqlite, schema })
+      }),
+      (db) =>
         Effect.sync(() => {
-          const sqlite = new BunDatabase(dbPath)
-          return drizzle({ client: sqlite, schema })
+          db.$client.close()
         }),
-        (db) =>
-          Effect.sync(() => {
-            db.$client.close()
-          }),
-      )
+    )
 
-      // Enable WAL mode and foreign keys
-      yield* Effect.sync(() => {
-        try {
-          db.$client.exec("PRAGMA journal_mode=WAL")
-        } catch {
-          // In-memory DBs may not support WAL — ignore
-        }
-        db.$client.exec("PRAGMA foreign_keys=ON")
-      })
+    // Enable WAL mode and foreign keys
+    yield* Effect.sync(() => {
+      try {
+        db.$client.exec("PRAGMA journal_mode=WAL")
+      } catch {
+        // In-memory DBs may not support WAL — ignore
+      }
+      db.$client.exec("PRAGMA foreign_keys=ON")
+    })
 
-      return db
-    }),
-  },
-) {
+    return db
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

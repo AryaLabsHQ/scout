@@ -38,7 +38,10 @@ const parseFrontmatter = (raw: string): ParsedFrontmatter => {
 
   return {
     metadata,
-    body: lines.slice(index + 1).join("\n").trim(),
+    body: lines
+      .slice(index + 1)
+      .join("\n")
+      .trim(),
   }
 }
 
@@ -49,10 +52,7 @@ const toManagementError = (code: string, message: string): ManagementError =>
 
 const basename = (path: string): string => path.split(/[/\\]/).at(-1) ?? path
 
-const loadSkillFile = (
-  filePath: string,
-  source: OperatorSkill["source"],
-): OperatorSkill | null => {
+const loadSkillFile = (filePath: string, source: OperatorSkill["source"]): OperatorSkill | null => {
   const raw = readFileSync(filePath, "utf8")
   const { metadata, body } = parseFrontmatter(raw)
   const name = metadata["name"]?.trim() || basename(dirname(filePath))
@@ -107,10 +107,7 @@ const discoverSkillFiles = (dir: string): Array<string> => {
 
 const toPluginSkillId = (pluginId: string, skillId: string): string => `${pluginId}/${skillId}`
 
-const toPluginSkill = (
-  pluginId: string,
-  skill: ScoutOperatorSkillDefinition,
-): OperatorSkill => ({
+const toPluginSkill = (pluginId: string, skill: ScoutOperatorSkillDefinition): OperatorSkill => ({
   id: toPluginSkillId(pluginId, skill.id),
   name: skill.name,
   description: skill.description,
@@ -126,71 +123,60 @@ export class OperatorSkills extends Context.Service<
       skillIds: ReadonlyArray<string>,
     ) => Effect.Effect<ReadonlyArray<OperatorSkill>, ManagementError>
   }
->()(
-  "@scout/OperatorSkills",
-  {
-    make: Effect.gen(function* () {
-      const configuredDirs = yield* Config.withDefault(
-        Config.String("SCOUT_OPERATOR_SKILLS_DIRS"),
-        "",
-      )
-      const pluginRegistry = yield* PluginRegistry
+>()("@scout/OperatorSkills", {
+  make: Effect.gen(function* () {
+    const configuredDirs = yield* Config.withDefault(Config.String("SCOUT_OPERATOR_SKILLS_DIRS"), "")
+    const pluginRegistry = yield* PluginRegistry
 
-      const scanRoots = [
-        BUILTIN_SKILLS_DIR,
-        ...configuredDirs
-          .split(":")
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0)
-          .map((value) => resolve(value)),
-      ]
+    const scanRoots = [
+      BUILTIN_SKILLS_DIR,
+      ...configuredDirs
+        .split(":")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .map((value) => resolve(value)),
+    ]
 
-      const skillMap = new Map<string, OperatorSkill>()
-      for (const root of scanRoots) {
-        const source: OperatorSkill["source"] = root === BUILTIN_SKILLS_DIR ? "builtin" : "directory"
-        for (const filePath of discoverSkillFiles(root)) {
-          const skill = loadSkillFile(filePath, source)
-          if (!skill || skillMap.has(skill.id)) {
-            continue
-          }
-          skillMap.set(skill.id, skill)
+    const skillMap = new Map<string, OperatorSkill>()
+    for (const root of scanRoots) {
+      const source: OperatorSkill["source"] = root === BUILTIN_SKILLS_DIR ? "builtin" : "directory"
+      for (const filePath of discoverSkillFiles(root)) {
+        const skill = loadSkillFile(filePath, source)
+        if (!skill || skillMap.has(skill.id)) {
+          continue
+        }
+        skillMap.set(skill.id, skill)
+      }
+    }
+
+    const operatorPlugins = yield* pluginRegistry.listOperatorPlugins()
+    for (const plugin of operatorPlugins) {
+      for (const skill of plugin.operator.skills ?? []) {
+        const normalized = toPluginSkill(plugin.manifest.id, skill)
+        if (!skillMap.has(normalized.id)) {
+          skillMap.set(normalized.id, normalized)
         }
       }
+    }
 
-      const operatorPlugins = yield* pluginRegistry.listOperatorPlugins()
-      for (const plugin of operatorPlugins) {
-        for (const skill of plugin.operator.skills ?? []) {
-          const normalized = toPluginSkill(plugin.manifest.id, skill)
-          if (!skillMap.has(normalized.id)) {
-            skillMap.set(normalized.id, normalized)
-          }
-        }
-      }
+    const sortedSkills = [...skillMap.values()].sort((left, right) => left.name.localeCompare(right.name))
 
-      const sortedSkills = [...skillMap.values()].sort((left, right) =>
-        left.name.localeCompare(right.name),
-      )
+    const list = () => Effect.succeed(sortedSkills)
+    const resolveSkills = (skillIds: ReadonlyArray<string>) =>
+      Effect.forEach(skillIds, (skillId) => {
+        const skill = skillMap.get(skillId)
+        return skill === undefined
+          ? Effect.fail(
+              toManagementError("operator-skill-missing", `Operator skill ${skillId} is not available`),
+            )
+          : Effect.succeed(skill)
+      })
 
-      const list = () => Effect.succeed(sortedSkills)
-      const resolveSkills = (skillIds: ReadonlyArray<string>) =>
-        Effect.forEach(skillIds, (skillId) => {
-          const skill = skillMap.get(skillId)
-          return skill === undefined
-            ? Effect.fail(
-                toManagementError(
-                  "operator-skill-missing",
-                  `Operator skill ${skillId} is not available`,
-                ),
-              )
-            : Effect.succeed(skill)
-        })
-
-      return {
-        list,
-        resolve: resolveSkills,
-      }
-    }),
-  },
-) {
+    return {
+      list,
+      resolve: resolveSkills,
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

@@ -83,58 +83,69 @@ const unit = (id: string, status: string, ts = Date.now()) => ({
 })
 
 describe("plugin data RPCs", () => {
-  it.live("returns the entities, metric points, and events an agent reported", () =>
-    Effect.gen(function* () {
-      const ingestion = yield* MetricsIngestion
-      const now = Date.now()
-      yield* ingestion.ingestPluginCollection("node-a", {
-        entities: [unit("caddy.service", "active"), unit("restic-backup.service", "inactive")],
-        metrics: [
-          {
-            pluginId: "systemd",
-            metricId: "unit.memory.bytes",
-            ts: now,
-            entity: unit("caddy.service", "active").ref,
-            value: 54_988_800,
-            unit: "bytes",
-          },
-        ],
-        events: [
-          {
-            pluginId: "systemd",
-            eventId: "unit.failed",
-            ts: now,
-            entity: unit("restic-backup.service", "inactive").ref,
-            severity: "warning",
-            message: "restic-backup.service failed",
-          },
-        ],
-      })
-      yield* ingestion.ingestPluginCollection("node-b", { entities: [unit("other.service", "active")] })
+  it.live(
+    "returns the entities, metric points, and events an agent reported",
+    () =>
+      Effect.gen(function* () {
+        const ingestion = yield* MetricsIngestion
+        const now = Date.now()
+        yield* ingestion.ingestPluginCollection("node-a", {
+          entities: [unit("caddy.service", "active"), unit("restic-backup.service", "inactive")],
+          metrics: [
+            {
+              pluginId: "systemd",
+              metricId: "unit.memory.bytes",
+              ts: now,
+              entity: unit("caddy.service", "active").ref,
+              value: 54_988_800,
+              unit: "bytes",
+            },
+          ],
+          events: [
+            {
+              pluginId: "systemd",
+              eventId: "unit.failed",
+              ts: now,
+              entity: unit("restic-backup.service", "inactive").ref,
+              severity: "warning",
+              message: "restic-backup.service failed",
+            },
+          ],
+        })
+        yield* ingestion.ingestPluginCollection("node-b", { entities: [unit("other.service", "active")] })
 
-      const client = yield* connectRpc
-      const entities = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd" })
-      expect(entities.map((entity) => entity.ref.id).sort()).toEqual(["caddy.service", "restic-backup.service"])
+        const client = yield* connectRpc
+        const entities = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd" })
+        expect(entities.map((entity) => entity.ref.id).sort()).toEqual([
+          "caddy.service",
+          "restic-backup.service",
+        ])
 
-      const byKind = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd", kind: "k8s.pod" })
-      expect(byKind).toEqual([])
+        const byKind = yield* client["plugins.entities"]({
+          systemId: "node-a",
+          pluginId: "systemd",
+          kind: "k8s.pod",
+        })
+        expect(byKind).toEqual([])
 
-      const metrics = yield* client["plugins.metrics"]({
-        systemId: "node-a",
-        pluginId: "systemd",
-        hours: 1,
-        metricId: "unit.memory.bytes",
-      })
-      expect(metrics.map((point) => point.value)).toEqual([54_988_800])
+        const metrics = yield* client["plugins.metrics"]({
+          systemId: "node-a",
+          pluginId: "systemd",
+          hours: 1,
+          metricId: "unit.memory.bytes",
+        })
+        expect(metrics.map((point) => point.value)).toEqual([54_988_800])
 
-      const events = yield* client["plugins.events"]({ systemId: "node-a", pluginId: "systemd", hours: 24 })
-      expect(events.map((event) => event.eventId)).toEqual(["unit.failed"])
+        const events = yield* client["plugins.events"]({ systemId: "node-a", pluginId: "systemd", hours: 24 })
+        expect(events.map((event) => event.eventId)).toEqual(["unit.failed"])
 
-      // A later collection without restic-backup means the unit is gone from the node.
-      yield* ingestion.ingestPluginCollection("node-a", { entities: [unit("caddy.service", "active", now + 15_000)] })
-      const current = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd" })
-      expect(current.map((entity) => entity.ref.id)).toEqual(["caddy.service"])
-    }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "operator.sqlite")))),
+        // A later collection without restic-backup means the unit is gone from the node.
+        yield* ingestion.ingestPluginCollection("node-a", {
+          entities: [unit("caddy.service", "active", now + 15_000)],
+        })
+        const current = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd" })
+        expect(current.map((entity) => entity.ref.id)).toEqual(["caddy.service"])
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "operator.sqlite")))),
     20_000,
   )
 

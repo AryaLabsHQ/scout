@@ -3,13 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useAtomSet } from "@effect/atom-react"
 import { Page, PageHeader } from "@/components/section"
 import { Button } from "@/components/ui/button"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { HubClient } from "@/rpc/client"
 import { fetchPluginDetail, fetchPluginEntities, fetchPluginMetrics } from "@/server/plugins"
 import { fetchSystemDetail } from "@/server/systems"
@@ -55,30 +49,32 @@ function PluginSystemPage() {
       return null
     }
     return createPluginRouteStore(
-      buildPluginRouteInitialState(
-        system as Record<string, unknown>,
-        plugin,
-        entities,
-        metrics,
-      ),
+      buildPluginRouteInitialState(system as Record<string, unknown>, plugin, entities, metrics),
     )
   }, [entities, metrics, plugin, system])
 
   const pluginState = usePluginRouteStoreValue(store, (state) => state)
 
-  const activePrimaryScreen = pluginState === null
-    ? null
-    : getActivePrimaryScreen(pluginState.plugin, pluginState.ui.activePrimaryScreenId)
+  const activePrimaryScreen =
+    pluginState === null
+      ? null
+      : getActivePrimaryScreen(pluginState.plugin, pluginState.ui.activePrimaryScreenId)
   const selectedEntity = pluginState === null ? null : getSelectedEntity(pluginState)
-  const detailScreen = pluginState === null
-    ? null
-    : getDetailScreen(pluginState.plugin, selectedEntity, pluginState.ui.activeDetailScreenId)
-  const actionFormSpec = pluginState === null
-    ? null
-    : createActionFormSpec(pluginState.plugin, pluginState.ui.actionForm)
+  const detailScreen =
+    pluginState === null
+      ? null
+      : getDetailScreen(pluginState.plugin, selectedEntity, pluginState.ui.activeDetailScreenId)
+  const actionFormSpec =
+    pluginState === null ? null : createActionFormSpec(pluginState.plugin, pluginState.ui.actionForm)
   const primaryScreens = pluginState === null ? [] : getPrimaryScreens(pluginState.plugin)
 
-  if (system === null || plugin === null || store === null || pluginState === null || activePrimaryScreen === null) {
+  if (
+    system === null ||
+    plugin === null ||
+    store === null ||
+    pluginState === null ||
+    activePrimaryScreen === null
+  ) {
     return (
       <div className="p-6">
         <p className="text-sm text-muted-foreground">Plugin view not available.</p>
@@ -90,8 +86,7 @@ function PluginSystemPage() {
     store.set("/ui/activePrimaryScreenId", screenId)
     const screen = pluginState.plugin.web?.screens.find((candidate) => candidate.id === screenId)
     if (screen?.entityKind !== undefined) {
-      const nextEntity =
-        pluginState.entities.find((entity) => entity.ref.kind === screen.entityKind) ?? null
+      const nextEntity = pluginState.entities.find((entity) => entity.ref.kind === screen.entityKind) ?? null
       store.set("/selectedEntity", nextEntity ?? undefined)
       store.set("/ui/selectedEntityRef", nextEntity?.ref)
       return
@@ -145,19 +140,11 @@ function PluginSystemPage() {
         </div>
       ) : null}
 
-      <PluginUiRenderer
-        store={store}
-        spec={activePrimaryScreen.spec}
-        runAction={runAction}
-      />
+      <PluginUiRenderer store={store} spec={activePrimaryScreen.spec} runAction={runAction} />
 
       {detailScreen !== null && selectedEntity !== null ? (
         <div className="mt-6">
-          <PluginUiRenderer
-            store={store}
-            spec={detailScreen.spec}
-            runAction={runAction}
-          />
+          <PluginUiRenderer store={store} spec={detailScreen.spec} runAction={runAction} />
         </div>
       ) : null}
 
@@ -175,9 +162,8 @@ function PluginSystemPage() {
             <>
               <SheetHeader className="border-b border-border">
                 <SheetTitle>
-                  {plugin.agent?.actions.find(
-                    (action) => action.id === pluginState.ui.actionForm?.actionId,
-                  )?.displayName ?? "Plugin Action"}
+                  {plugin.agent?.actions.find((action) => action.id === pluginState.ui.actionForm?.actionId)
+                    ?.displayName ?? "Plugin Action"}
                 </SheetTitle>
                 <SheetDescription>
                   {pluginState.ui.actionForm.targetRef !== undefined
@@ -186,11 +172,7 @@ function PluginSystemPage() {
                 </SheetDescription>
               </SheetHeader>
               <div className="overflow-y-auto p-4">
-                <PluginUiRenderer
-                  store={store}
-                  spec={actionFormSpec}
-                  runAction={runAction}
-                />
+                <PluginUiRenderer store={store} spec={actionFormSpec} runAction={runAction} />
               </div>
             </>
           ) : null}

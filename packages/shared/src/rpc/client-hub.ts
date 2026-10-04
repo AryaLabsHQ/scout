@@ -26,11 +26,7 @@ import {
   PluginLogsParamsSchema,
   PluginRunActionParamsSchema,
 } from "../schemas/management.js"
-import {
-  EntitySnapshotSchema,
-  EventRecordSchema,
-  MetricPointSchema,
-} from "@scout/plugin-sdk/schemas"
+import { EntitySnapshotSchema, EventRecordSchema, MetricPointSchema } from "@scout/plugin-sdk/schemas"
 import {
   PluginEntitiesParamsSchema,
   PluginEventsParamsSchema,

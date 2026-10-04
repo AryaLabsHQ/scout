@@ -69,16 +69,10 @@ function SeedInitialValues({ state }: { state: AtomInitialState }) {
   const pairs = React.useMemo(() => {
     const entries: Array<readonly [ReturnType<typeof HubClient.query>, unknown]> = []
     if (state.systems) {
-      entries.push([
-        HubClient.query("systems.list", undefined),
-        AsyncResult.success(state.systems),
-      ])
+      entries.push([HubClient.query("systems.list", undefined), AsyncResult.success(state.systems)])
     }
     if (state.alerts) {
-      entries.push([
-        HubClient.query("alerts.list", undefined),
-        AsyncResult.success(state.alerts),
-      ])
+      entries.push([HubClient.query("alerts.list", undefined), AsyncResult.success(state.alerts)])
     }
     return entries
   }, [state.systems, state.alerts])

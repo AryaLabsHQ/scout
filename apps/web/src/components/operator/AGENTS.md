@@ -1,21 +1,24 @@
 # Operator Web Components
 
 ## OVERVIEW
+
 The operator chat UI is decomposed into 7 component files + 10 tiptap extension files. State flows from route params through `OperatorShell` to `OperatorSessionPanel`.
 
 ## STRUCTURE
-| File | Purpose |
-|------|---------|
-| `operator-shell.tsx` | Session list (rename, archive, delete behind confirms), routing, quick create |
-| `operator-session-panel.tsx` | Watch stream, state, layout, keyboard shortcuts, terminal mirroring |
-| `operator-prompt-input.tsx` | Tiptap editor, footer controls (model, scope, approval, plan, stop, queued count) |
-| `operator-timeline-item.tsx` | User/assistant/tool timeline items, inline approvals and clarification answers |
-| `operator-session-meta.tsx` | Right panel: other sessions, scope, model, skills |
-| `operator-dialogs.tsx` | Create session + manage skills dialogs |
-| `operator-utils.ts` | Shared constants and small helpers |
-| `tiptap/` | Keyboard, @mention, /slash, attachment extensions |
+
+| File                         | Purpose                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `operator-shell.tsx`         | Session list (rename, archive, delete behind confirms), routing, quick create     |
+| `operator-session-panel.tsx` | Watch stream, state, layout, keyboard shortcuts, terminal mirroring               |
+| `operator-prompt-input.tsx`  | Tiptap editor, footer controls (model, scope, approval, plan, stop, queued count) |
+| `operator-timeline-item.tsx` | User/assistant/tool timeline items, inline approvals and clarification answers    |
+| `operator-session-meta.tsx`  | Right panel: other sessions, scope, model, skills                                 |
+| `operator-dialogs.tsx`       | Create session + manage skills dialogs                                            |
+| `operator-utils.ts`          | Shared constants and small helpers                                                |
+| `tiptap/`                    | Keyboard, @mention, /slash, attachment extensions                                 |
 
 ## STATE FLOW
+
 - `/operator` route -> `OperatorShell` (no `initialSessionId`) -> session list view
 - `/operator/$sessionId` route -> `OperatorShell` (with `initialSessionId`) -> `OperatorSessionPanel`
 - The hub owns session state (pi-durable). The panel renders an `OperatorSessionDetail` snapshot; it never reduces events.
@@ -28,6 +31,7 @@ The operator chat UI is decomposed into 7 component files + 10 tiptap extension 
 - Tool items with `terminal` mirror into the terminal dock as projection `${sessionId}:${toolCallId}`.
 
 ## CONVENTIONS
+
 - Show statuses through `SESSION_STATUS` / `APPROVAL_MODE_LABEL` (`operator-utils.ts`), never the raw enum; a tool waiting on a pending approval reads "Awaiting approval".
 - A pending mutation approval shows the exact command from the tool's `command` argument when it has one.
 - Keyboard shortcuts use `react-hotkeys-hook` (`useHotkeys`)

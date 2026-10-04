@@ -13,10 +13,12 @@
 ## Configuration
 
 Required environment variables:
+
 - `SCOUT_HUB_URL`
 - `SCOUT_TOKEN`
 
 Common optional variables:
+
 - `SCOUT_HOSTNAME`
 - `SCOUT_INTERVAL`
 - `SCOUT_COLLECTORS_DISABLE`

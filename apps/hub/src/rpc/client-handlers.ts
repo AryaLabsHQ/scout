@@ -48,7 +48,7 @@ function rowToSystem(row: typeof schema.systems.$inferSelect) {
     hostname: row.hostname,
     tailscaleIp: row.tailscaleIp ?? null,
     status: row.status,
-      capabilities: (row.capabilities as {
+    capabilities: (row.capabilities as {
       system: boolean
       network: boolean
       process: boolean
@@ -79,11 +79,16 @@ export const clampHours = (hours: number): number =>
 
 function rangeToHours(range: "1h" | "6h" | "24h" | "7d" | "30d"): number {
   switch (range) {
-    case "1h":  return 1
-    case "6h":  return 6
-    case "24h": return 24
-    case "7d":  return 168
-    case "30d": return 720
+    case "1h":
+      return 1
+    case "6h":
+      return 6
+    case "24h":
+      return 24
+    case "7d":
+      return 168
+    case "30d":
+      return 720
   }
 }
 
@@ -126,9 +131,7 @@ const withAgent = <A>(
   getAgentClient(registry, agentId).pipe(
     Effect.flatMap((client) =>
       call(client).pipe(
-        Effect.mapError((e) =>
-          e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
-        ),
+        Effect.mapError((e) => (e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError))),
       ),
     ),
   )
@@ -174,11 +177,7 @@ function streamThroughAgent<T>(
     const queue = yield* Queue.unbounded<T, Cause.Done>()
     yield* Effect.forkScoped(
       Stream.runForEach(stream, (chunk) => Queue.offer(queue, chunk)).pipe(
-        Effect.mapError((e) =>
-          e instanceof ManagementError
-            ? e
-            : mapRpcClientError(e as RpcClientError),
-        ),
+        Effect.mapError((e) => (e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError))),
         Effect.ensuring(Queue.end(queue).pipe(Effect.ignore)),
         Effect.ignore,
       ),
@@ -212,9 +211,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
         ),
 
       "systems.get": ({ id }) =>
-        Effect.sync(() =>
-          db.select().from(schema.systems).where(eq(schema.systems.id, id)).all(),
-        ).pipe(
+        Effect.sync(() => db.select().from(schema.systems).where(eq(schema.systems.id, id)).all()).pipe(
           Effect.map((rows) => (rows.length > 0 ? rowToSystem(rows[0]!) : null)),
         ),
 
@@ -231,17 +228,14 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
       "systems.metrics": ({ id, range }) => {
         const hours = rangeToHours(range)
-        return mi.querySystemMetrics(id, hours).pipe(
-          Effect.map((rows) =>
-            rows.map((r) => r.data as unknown as SystemMetricsSample),
-          ),
-        )
+        return mi
+          .querySystemMetrics(id, hours)
+          .pipe(Effect.map((rows) => rows.map((r) => r.data as unknown as SystemMetricsSample)))
       },
 
       "alerts.list": () => alerts.getActive,
 
-      "plugins.entities": ({ systemId, pluginId, kind }) =>
-        mi.queryPluginEntities(systemId, pluginId, kind),
+      "plugins.entities": ({ systemId, pluginId, kind }) => mi.queryPluginEntities(systemId, pluginId, kind),
 
       "plugins.metrics": ({ systemId, pluginId, hours, metricId }) =>
         mi.queryPluginMetricPoints(systemId, pluginId, clampHours(hours), metricId),
@@ -250,9 +244,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
         mi.queryPluginEvents(systemId, pluginId, clampHours(hours), eventId),
 
       "alertRules.list": () =>
-        Effect.sync(() =>
-          db.select().from(schema.alertRules).all(),
-        ).pipe(
+        Effect.sync(() => db.select().from(schema.alertRules).all()).pipe(
           Effect.map((rows) =>
             rows.map((r) => ({
               id: r.id,
@@ -417,13 +409,15 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
       "operator.sessions.setTitle": ({ sessionId, title }) => operatorSessions.setTitle(sessionId, title),
 
-      "operator.sessions.setSkills": ({ sessionId, skillIds }) => operatorSessions.setSkills(sessionId, skillIds),
+      "operator.sessions.setSkills": ({ sessionId, skillIds }) =>
+        operatorSessions.setSkills(sessionId, skillIds),
 
       "operator.sessions.archive": ({ sessionId }) => operatorSessions.archive(sessionId),
 
       "operator.sessions.delete": ({ sessionId }) => operatorSessions.delete(sessionId),
 
-      "operator.prompt": ({ sessionId, text, requestId }) => operatorSessions.prompt(sessionId, text, requestId),
+      "operator.prompt": ({ sessionId, text, requestId }) =>
+        operatorSessions.prompt(sessionId, text, requestId),
 
       "operator.sessions.abort": ({ sessionId }) => operatorSessions.abort(sessionId),
 
@@ -451,12 +445,13 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       "terminal.open": ({ agentId, mode, cols, rows }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
-          const outputStream: Stream.Stream<TerminalOutput, ManagementError | RpcClientError> =
-            client["terminal.open"]({
-              mode,
-              cols,
-              rows,
-            })
+          const outputStream: Stream.Stream<TerminalOutput, ManagementError | RpcClientError> = client[
+            "terminal.open"
+          ]({
+            mode,
+            cols,
+            rows,
+          })
 
           const queue = yield* Queue.unbounded<TerminalOutput, Cause.Done>()
           let terminalSessionId: string | null = null
@@ -475,9 +470,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
                 : Effect.void,
             ),
             Stream.mapError((e) =>
-              e instanceof ManagementError
-                ? e
-                : mapRpcClientError(e as RpcClientError),
+              e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
             ),
           )
 
@@ -519,9 +512,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           const client = yield* getAgentClient(registry, agentId)
           yield* client["terminal.input"]({ sessionId, dataBase64 }).pipe(
             Effect.mapError((e) =>
-              e instanceof ManagementError
-                ? e
-                : mapRpcClientError(e as RpcClientError),
+              e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
             ),
           )
         }),
@@ -538,9 +529,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           const client = yield* getAgentClient(registry, agentId)
           yield* client["terminal.resize"]({ sessionId, cols, rows }).pipe(
             Effect.mapError((e) =>
-              e instanceof ManagementError
-                ? e
-                : mapRpcClientError(e as RpcClientError),
+              e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
             ),
           )
         }),
@@ -557,9 +546,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           const client = yield* getAgentClient(registry, agentId)
           yield* client["terminal.close"]({ sessionId }).pipe(
             Effect.mapError((e) =>
-              e instanceof ManagementError
-                ? e
-                : mapRpcClientError(e as RpcClientError),
+              e instanceof ManagementError ? e : mapRpcClientError(e as RpcClientError),
             ),
           )
           yield* Ref.update(sessionRegistry, (m) => {
@@ -624,13 +611,14 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
       "plugins.logs": ({ agentId, pluginId, streamId, entity, input }) =>
         Effect.gen(function* () {
           const client = yield* getAgentClient(registry, agentId)
-          const logStream: Stream.Stream<LogBatch, ManagementError | RpcClientError> =
-            client["plugins.logs"]({
+          const logStream: Stream.Stream<LogBatch, ManagementError | RpcClientError> = client["plugins.logs"](
+            {
               pluginId,
               streamId,
               ...(entity !== undefined && { entity }),
               ...(input !== undefined && { input }),
-            })
+            },
+          )
           return yield* streamThroughAgent(logStream)
         }),
     })

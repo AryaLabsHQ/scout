@@ -8,8 +8,7 @@
 # Tear down:    ./scripts/down.sh
 
 # Shared configuration for all nodes
-x-node-common: &node-common
-  # systemd needs these
+x-node-common: &node-common # systemd needs these
   privileged: true
   tty: true
   volumes:

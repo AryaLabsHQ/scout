@@ -51,18 +51,14 @@ describe("@scout/plugin-sdk loader", () => {
   })
 
   it("loads and validates a unified plugin manifest from the canonical plugin entrypoint", async () => {
-    const loaded = await run(
-      loadPluginManifest(path.join(fixturesDir, "valid-plugin")),
-    )
+    const loaded = await run(loadPluginManifest(path.join(fixturesDir, "valid-plugin")))
 
     expect(loaded.manifest.id).toBe("fixture-valid")
     expect(loaded.pluginPath).toContain("plugin.ts")
   })
 
   it("loads a full unified plugin package", async () => {
-    const plugin = await run(
-      loadPluginPackage(path.join(fixturesDir, "valid-plugin")),
-    )
+    const plugin = await run(loadPluginPackage(path.join(fixturesDir, "valid-plugin")))
 
     expect(plugin.manifest.id).toBe("fixture-valid")
     expect(plugin.agent).toBeDefined()
@@ -73,14 +69,14 @@ describe("@scout/plugin-sdk loader", () => {
   })
 
   it("rejects duplicate plugin ids in a plugin directory", async () => {
-    await expect(
-      run(loadPluginsFromDirectory(path.join(fixturesDir, "duplicates"))),
-    ).rejects.toBeInstanceOf(PluginLoadError)
+    await expect(run(loadPluginsFromDirectory(path.join(fixturesDir, "duplicates")))).rejects.toBeInstanceOf(
+      PluginLoadError,
+    )
   })
 
   it("rejects invalid plugin manifests", async () => {
-    await expect(
-      run(loadPluginManifest(path.join(fixturesDir, "invalid-plugin"))),
-    ).rejects.toBeInstanceOf(PluginLoadError)
+    await expect(run(loadPluginManifest(path.join(fixturesDir, "invalid-plugin")))).rejects.toBeInstanceOf(
+      PluginLoadError,
+    )
   })
 })

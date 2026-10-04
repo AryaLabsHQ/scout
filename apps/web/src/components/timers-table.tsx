@@ -10,7 +10,11 @@ function LastRun({ timer }: { timer: EntitySnapshot }) {
   const state = timerState(timer)
   if (timerRunning(state)) return <span>running now</span>
   if (state.lastExitAt === null) {
-    return state.lastTriggerAt === null ? <span>never run</span> : <TimeAgo at={state.lastTriggerAt} prefix="last run " />
+    return state.lastTriggerAt === null ? (
+      <span>never run</span>
+    ) : (
+      <TimeAgo at={state.lastTriggerAt} prefix="last run " />
+    )
   }
   return (
     <span className={cn(timerFailed(state) && "text-err")}>
@@ -25,7 +29,13 @@ function LastRun({ timer }: { timer: EntitySnapshot }) {
  * systemd timers as compact rows: status dot, timer name, the last run of the
  * unit it activates, and the next run. Rows open the activated service.
  */
-export function TimersTable({ systemId, timers }: { systemId: string; timers: ReadonlyArray<EntitySnapshot> }) {
+export function TimersTable({
+  systemId,
+  timers,
+}: {
+  systemId: string
+  timers: ReadonlyArray<EntitySnapshot>
+}) {
   const navigate = useNavigate()
 
   return (
@@ -47,11 +57,17 @@ export function TimersTable({ systemId, timers }: { systemId: string; timers: Re
                       })
                   : undefined
               }
-              className={cn("border-t border-border first:border-t-0", opensService && "cursor-pointer hover:bg-raised")}
+              className={cn(
+                "border-t border-border first:border-t-0",
+                opensService && "cursor-pointer hover:bg-raised",
+              )}
             >
               <td className="w-[34%] truncate px-4 py-2.5">
                 <span className="flex items-center gap-2.5" title={`${timer.ref.id} → ${state.activates}`}>
-                  <StatusDot tone={timerTone(state)} label={timerFailed(state) ? "last run failed" : state.activeState} />
+                  <StatusDot
+                    tone={timerTone(state)}
+                    label={timerFailed(state) ? "last run failed" : state.activeState}
+                  />
                   <span className="truncate font-mono">{shortUnitName(timer.ref.id)}</span>
                   {state.scope === "user" ? <span className="shrink-0 text-xs text-subtle">user</span> : null}
                 </span>
@@ -60,7 +76,11 @@ export function TimersTable({ systemId, timers }: { systemId: string; timers: Re
                 <LastRun timer={timer} />
               </td>
               <td className="w-32 whitespace-nowrap px-4 py-2.5 text-right text-subtle">
-                {state.nextRunAt !== null ? <TimeUntil at={state.nextRunAt} prefix="next " /> : "not scheduled"}
+                {state.nextRunAt !== null ? (
+                  <TimeUntil at={state.nextRunAt} prefix="next " />
+                ) : (
+                  "not scheduled"
+                )}
               </td>
             </tr>
           )

@@ -12,10 +12,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { StatusDot } from "@/components/status-dot"
-import { pinKey, shortUnitName, unitState, unitTone, type SystemdScope, type UnitActionKind } from "@/lib/systemd"
+import {
+  pinKey,
+  shortUnitName,
+  unitState,
+  unitTone,
+  type SystemdScope,
+  type UnitActionKind,
+} from "@/lib/systemd"
 import { cn } from "@/lib/utils"
 
-export function PinButton({ pinned, onToggle, className }: { pinned: boolean; onToggle: () => void; className?: string }) {
+export function PinButton({
+  pinned,
+  onToggle,
+  className,
+}: {
+  pinned: boolean
+  onToggle: () => void
+  className?: string
+}) {
   return (
     <button
       type="button"
@@ -32,7 +47,9 @@ export function PinButton({ pinned, onToggle, className }: { pinned: boolean; on
         className,
       )}
     >
-      <span aria-hidden className="text-sm leading-none">{pinned ? "★" : "☆"}</span>
+      <span aria-hidden className="text-sm leading-none">
+        {pinned ? "★" : "☆"}
+      </span>
     </button>
   )
 }
@@ -75,7 +92,9 @@ export function UnitActionsMenu({
         <DropdownMenuItem onClick={() => onAction("enable")}>Enable…</DropdownMenuItem>
         <DropdownMenuItem onClick={() => onAction("disable")}>Disable…</DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onTogglePin}>{pinned ? "Unpin from overview" : "Pin to overview"}</DropdownMenuItem>
+        <DropdownMenuItem onClick={onTogglePin}>
+          {pinned ? "Unpin from overview" : "Pin to overview"}
+        </DropdownMenuItem>
         {onOpen ? <DropdownMenuItem onClick={onOpen}>Open details</DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>

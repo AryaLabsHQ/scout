@@ -10,16 +10,14 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import { useCommandPalette } from "@/providers/command-palette-provider"
-import { useCommands, type Command as ScoutCommand, type CommandGroup as ScoutCommandGroup } from "@/hooks/use-commands"
+import {
+  useCommands,
+  type Command as ScoutCommand,
+  type CommandGroup as ScoutCommandGroup,
+} from "@/hooks/use-commands"
 
 // Fixed group order for consistent palette layout
-const GROUP_ORDER: ScoutCommandGroup[] = [
-  "Navigation",
-  "Operator",
-  "Terminal",
-  "System",
-  "Alerts",
-]
+const GROUP_ORDER: ScoutCommandGroup[] = ["Navigation", "Operator", "Terminal", "System", "Alerts"]
 
 export function CommandPalette() {
   const { isOpen, setOpen, close } = useCommandPalette()

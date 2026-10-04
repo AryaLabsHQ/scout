@@ -21,15 +21,15 @@ OperatorSessions                 session lifecycle, projection to the wire contr
   +-- OperatorResources
 ```
 
-| File | Role |
-|------|------|
-| `operator-storage.ts` | `bun:sqlite` adapter for pi-durable's async `SqliteDatabase` facade; proven by pi-durable's storage conformance suite (`test/services/operator-storage.test.ts`) |
-| `operator-harness.ts` | `OperatorHarness` service: opens the Harness over `SCOUT_OPERATOR_DB_PATH` (default `scout-operator.db` next to `SCOUT_DB_PATH`), installs the extensions, calls `resume()`, closes on scope release. `durable()` bridges Effect fiber interruption to a Chord context abort signal |
-| `operator-docs.ts` | Scout's durable documents: `scout.operator.sessions` (session metadata) and `scout.operator.approvals` (approval requests and decisions) |
-| `operator-tools.ts` | Tools, approval gate, execution guard, prompt sections, plugin hooks, plan-mode extension |
-| `operator-sessions.ts` | `OperatorSessions` service and the pure projection from durable state to `OperatorSessionDetail` |
-| `operator-model-registry.ts` | pi-ai `builtinModels()`; lists models whose provider has credentials |
-| `operator-faux-provider.ts` | Scripted local model for smoke tests (`SCOUT_OPERATOR_MODEL_PROVIDER=faux`) |
+| File                         | Role                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operator-storage.ts`        | `bun:sqlite` adapter for pi-durable's async `SqliteDatabase` facade; proven by pi-durable's storage conformance suite (`test/services/operator-storage.test.ts`)                                                                                                                    |
+| `operator-harness.ts`        | `OperatorHarness` service: opens the Harness over `SCOUT_OPERATOR_DB_PATH` (default `scout-operator.db` next to `SCOUT_DB_PATH`), installs the extensions, calls `resume()`, closes on scope release. `durable()` bridges Effect fiber interruption to a Chord context abort signal |
+| `operator-docs.ts`           | Scout's durable documents: `scout.operator.sessions` (session metadata) and `scout.operator.approvals` (approval requests and decisions)                                                                                                                                            |
+| `operator-tools.ts`          | Tools, approval gate, execution guard, prompt sections, plugin hooks, plan-mode extension                                                                                                                                                                                           |
+| `operator-sessions.ts`       | `OperatorSessions` service and the pure projection from durable state to `OperatorSessionDetail`                                                                                                                                                                                    |
+| `operator-model-registry.ts` | pi-ai `builtinModels()`; lists models whose provider has credentials                                                                                                                                                                                                                |
+| `operator-faux-provider.ts`  | Scripted local model for smoke tests (`SCOUT_OPERATOR_MODEL_PROVIDER=faux`)                                                                                                                                                                                                         |
 
 ## Storage
 
@@ -46,27 +46,27 @@ A Scout session is one ownerless pi-durable conversation. Its id is the conversa
 node scope, skills, approval mode, plan mode, model, archived flag, fork lineage) lives in the session-scoped
 `scout.operator.sessions` document, keyed by conversation id.
 
-| Operation | pi-durable mechanism |
-|-----------|----------------------|
-| create | `createConversation` with the agent's model and thinking level; metadata written in the same commit |
-| prompt | `conversation.submit({ type: "input", requestId, whenBusy: "followUp" })`; a busy session queues the input |
-| abort | `conversation.abort()`, then pending approvals become `canceled` |
-| fork | `conversation.fork(entryId)`: the fork sees the parent's transcript through that entry; metadata copied in the same commit |
-| plan mode | `configure()` adds or clears the `scout-plan` extension, in the same commit as the metadata change |
-| delete | abort, then remove the metadata entry. The transcript stays in storage, unlisted (pi-durable has no conversation deletion) |
+| Operation | pi-durable mechanism                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| create    | `createConversation` with the agent's model and thinking level; metadata written in the same commit                        |
+| prompt    | `conversation.submit({ type: "input", requestId, whenBusy: "followUp" })`; a busy session queues the input                 |
+| abort     | `conversation.abort()`, then pending approvals become `canceled`                                                           |
+| fork      | `conversation.fork(entryId)`: the fork sees the parent's transcript through that entry; metadata copied in the same commit |
+| plan mode | `configure()` adds or clears the `scout-plan` extension, in the same commit as the metadata change                         |
+| delete    | abort, then remove the metadata entry. The transcript stays in storage, unlisted (pi-durable has no conversation deletion) |
 
 There is no in-session "branch": forking replaces it.
 
 ## Tools
 
-| Tool | Replay after restart | Gate |
-|------|----------------------|------|
-| `observe_systems`, `observe_alerts`, `observe_metrics`, `observe_plugins` | rerun (idempotent reads) | none |
-| `plugin_logs` | rerun (bounded read) | none |
-| `bash_run` | resumes approval wait; never re-executes | approval when `isMutation`, execution guard always |
-| `plugin_run_action` | resumes approval wait; never re-executes | approval when the action has `requiresConfirmation`, execution guard always |
-| plugin operator tools | resumes approval wait; never re-executes | approval unless `requiresConfirmation: false`, execution guard always |
-| `ask_user` | resumes wait | always waits for an answer |
+| Tool                                                                      | Replay after restart                     | Gate                                                                        |
+| ------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| `observe_systems`, `observe_alerts`, `observe_metrics`, `observe_plugins` | rerun (idempotent reads)                 | none                                                                        |
+| `plugin_logs`                                                             | rerun (bounded read)                     | none                                                                        |
+| `bash_run`                                                                | resumes approval wait; never re-executes | approval when `isMutation`, execution guard always                          |
+| `plugin_run_action`                                                       | resumes approval wait; never re-executes | approval when the action has `requiresConfirmation`, execution guard always |
+| plugin operator tools                                                     | resumes approval wait; never re-executes | approval unless `requiresConfirmation: false`, execution guard always       |
+| `ask_user`                                                                | resumes wait                             | always waits for an answer                                                  |
 
 Tool names use underscores: provider tool-name rules (`^[a-zA-Z0-9_-]+$`) reject dots.
 
@@ -136,13 +136,13 @@ of durable state:
 conversation view, the approvals document, or the session metadata, coalesced at 50 ms with a sliding buffer of
 one. pi-durable commits partial answers and tool output at most every 100 ms.
 
-| RPC | Kind |
-|-----|------|
-| `operator.sessions.list` / `get` | Query |
+| RPC                                                                                                                                 | Kind     |
+| ----------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `operator.sessions.list` / `get`                                                                                                    | Query    |
 | `operator.sessions.create` / `fork` / `setTitle` / `setApprovalMode` / `setPlanMode` / `setSkills` / `archive` / `delete` / `abort` | Mutation |
-| `operator.prompt` / `operator.approvals.resolve` | Mutation |
-| `operator.skills.list` / `operator.models.list` | Query |
-| `operator.sessions.watch` | Stream |
+| `operator.prompt` / `operator.approvals.resolve`                                                                                    | Mutation |
+| `operator.skills.list` / `operator.models.list`                                                                                     | Query    |
+| `operator.sessions.watch`                                                                                                           | Stream   |
 
 ## Access and Audit
 

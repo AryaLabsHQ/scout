@@ -60,15 +60,9 @@ describe("OperatorSkills service", () => {
       const skills = yield* OperatorSkills
       const list = yield* skills.list()
 
-      expect(list.map((skill) => skill.id)).toEqual([
-        "docker/docker-ops",
-        "incident-triage",
-        "plugin-ops",
-      ])
+      expect(list.map((skill) => skill.id)).toEqual(["docker/docker-ops", "incident-triage", "plugin-ops"])
       expect(list.find((skill) => skill.id === "incident-triage")?.source).toBe("builtin")
-      expect(
-        list.find((skill) => skill.id === "incident-triage")?.content.length,
-      ).toBeGreaterThan(0)
+      expect(list.find((skill) => skill.id === "incident-triage")?.content.length).toBeGreaterThan(0)
       expect(list.find((skill) => skill.id === "docker/docker-ops")?.source).toBe("plugin")
     }).pipe(Effect.provide(OperatorSkills.layer.pipe(Layer.provide(PluginRegistryTestLayer)))),
   )

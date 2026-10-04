@@ -24,9 +24,13 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
   const close = useCallback(() => setIsOpen(false), [])
   const toggle = useCallback(() => setIsOpen((prev) => !prev), [])
 
-  useHotkeys("mod+k", () => {
-    setIsOpen((prev) => !prev)
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true })
+  useHotkeys(
+    "mod+k",
+    () => {
+      setIsOpen((prev) => !prev)
+    },
+    { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true },
+  )
 
   return (
     <CommandPaletteContext.Provider value={{ isOpen, open, close, toggle, setOpen: setIsOpen }}>

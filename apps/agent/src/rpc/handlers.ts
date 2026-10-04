@@ -27,9 +27,7 @@ const toSpawnError = (error: unknown) =>
 
 const buildTerminalEnv = (cols: number, rows: number): Record<string, string> => ({
   ...Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([, value]) => value !== undefined,
-    ) as [string, string][],
+    Object.entries(process.env).filter(([, value]) => value !== undefined) as [string, string][],
   ),
   TERM: "xterm-256color",
   COLORTERM: "truecolor",
@@ -138,9 +136,7 @@ async function pumpStreamToQueue(
     if (value && value.length > 0) {
       const b64 = Buffer.from(value).toString("base64")
       try {
-        const offered = await Effect.runPromise(
-          Queue.offer(queue, { _tag: "output", dataBase64: b64 }),
-        )
+        const offered = await Effect.runPromise(Queue.offer(queue, { _tag: "output", dataBase64: b64 }))
         if (!offered) break
       } catch {
         break
@@ -208,7 +204,7 @@ const watchTerminalProcess = (
 export const startTerminalSession = (
   terminals: Ref.Ref<Map<string, TerminalHandle>>,
   procEffect: Effect.Effect<ReturnType<typeof Bun.spawn>>,
-)=>
+) =>
   Effect.gen(function* () {
     const sessionId = crypto.randomUUID()
     const queue = yield* Queue.unbounded<TerminalOutput, Cause.Done>()
@@ -232,8 +228,7 @@ export const startTerminalSession = (
 
 // ── ManagementError factory ───────────────────────────────────────────────────
 
-const fail = (code: string, message: string) =>
-  Effect.fail(new ManagementError({ code, message }))
+const fail = (code: string, message: string) => Effect.fail(new ManagementError({ code, message }))
 
 const mapPluginHostError = (error: Error) =>
   new ManagementError({
@@ -252,25 +247,27 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
       // ── Generic plugin control ────────────────────────────────────────────
 
       "plugins.runAction": ({ pluginId, actionId, entity, input }) =>
-        pluginHost.runAction({
-          pluginId,
-          actionId,
-          target: {
-            nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
-            ...(entity !== undefined && {
-              entity: {
-                pluginId: entity.pluginId,
-                kind: entity.kind,
-                nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
-                id: entity.id,
-              },
-            }),
-          },
-          ...(input !== undefined && { input }),
-        }).pipe(
-          Effect.map((output) => ({ success: true, output })),
-          Effect.mapError(mapPluginHostError),
-        ),
+        pluginHost
+          .runAction({
+            pluginId,
+            actionId,
+            target: {
+              nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
+              ...(entity !== undefined && {
+                entity: {
+                  pluginId: entity.pluginId,
+                  kind: entity.kind,
+                  nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
+                  id: entity.id,
+                },
+              }),
+            },
+            ...(input !== undefined && { input }),
+          })
+          .pipe(
+            Effect.map((output) => ({ success: true, output })),
+            Effect.mapError(mapPluginHostError),
+          ),
 
       // ── Terminal ───────────────────────────────────────────────────────────
 
@@ -297,8 +294,7 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
         Effect.gen(function* () {
           const map = yield* Ref.get(terminals)
           const term = map.get(sessionId)
-          if (!term)
-            return yield* fail("session-not-found", `No terminal session ${sessionId}`)
+          if (!term) return yield* fail("session-not-found", `No terminal session ${sessionId}`)
 
           yield* Effect.tryPromise(async () => {
             const bytes = Buffer.from(dataBase64, "base64")
@@ -310,8 +306,7 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
       "terminal.resize": ({ sessionId, cols, rows }) =>
         Effect.gen(function* () {
           const map = yield* Ref.get(terminals)
-          if (!map.has(sessionId))
-            return yield* fail("session-not-found", `No terminal session ${sessionId}`)
+          if (!map.has(sessionId)) return yield* fail("session-not-found", `No terminal session ${sessionId}`)
 
           // Best-effort resize; real PTY would SIGWINCH
           yield* Effect.logDebug(`terminal.resize: ${sessionId} → ${cols}x${rows}`)
@@ -320,8 +315,7 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
       "terminal.close": ({ sessionId }) =>
         Effect.gen(function* () {
           const term = yield* takeTerminalHandle(terminals, sessionId)
-          if (term === null)
-            return yield* fail("session-not-found", `No terminal session ${sessionId}`)
+          if (term === null) return yield* fail("session-not-found", `No terminal session ${sessionId}`)
 
           yield* closeTerminalHandle(term, { kill: true })
         }),
@@ -331,30 +325,32 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
       // stops the plugin's child process.
       "plugins.logs": ({ pluginId, streamId, entity, input }) =>
         Stream.unwrap(
-          pluginHost.openLogStream({
-            pluginId,
-            streamId,
-            target: {
-              nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
-              ...(entity !== undefined && {
-                entity: {
-                  pluginId: entity.pluginId,
-                  kind: entity.kind,
-                  nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
-                  id: entity.id,
-                },
-              }),
-            },
-            ...(input !== undefined && { input }),
-          }).pipe(
-            Effect.mapError(mapPluginHostError),
-            Effect.map((stream) =>
-              stream.pipe(
-                Stream.map((chunk): LogBatch => ({ lines: [...chunk.lines], timestamp: chunk.ts })),
-                Stream.mapError(mapPluginHostError),
+          pluginHost
+            .openLogStream({
+              pluginId,
+              streamId,
+              target: {
+                nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
+                ...(entity !== undefined && {
+                  entity: {
+                    pluginId: entity.pluginId,
+                    kind: entity.kind,
+                    nodeId: process.env["SCOUT_HOSTNAME"] ?? os.hostname(),
+                    id: entity.id,
+                  },
+                }),
+              },
+              ...(input !== undefined && { input }),
+            })
+            .pipe(
+              Effect.mapError(mapPluginHostError),
+              Effect.map((stream) =>
+                stream.pipe(
+                  Stream.map((chunk): LogBatch => ({ lines: [...chunk.lines], timestamp: chunk.ts })),
+                  Stream.mapError(mapPluginHostError),
+                ),
               ),
             ),
-          ),
         ),
     })
   }),

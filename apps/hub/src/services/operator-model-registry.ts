@@ -27,7 +27,14 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Use tools conservatively and explain concrete findings.",
 ].join(" ")
 
-const THINKING_LEVELS: ReadonlyArray<ModelThinkingLevel> = ["off", "minimal", "low", "medium", "high", "xhigh"]
+const THINKING_LEVELS: ReadonlyArray<ModelThinkingLevel> = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]
 
 const parseThinkingLevel = (value: string): ModelThinkingLevel =>
   THINKING_LEVELS.find((level) => level === value) ?? "medium"

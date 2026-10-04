@@ -23,57 +23,52 @@ export class OperatorResources extends Context.Service<
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorResource>>
     readonly resolve: (resourceIds: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<OperatorResource>>
   }
->()(
-  "@scout/OperatorResources",
-  {
-    make: Effect.gen(function* () {
-      const pluginRegistry = yield* PluginRegistry
-      const operatorPlugins = yield* pluginRegistry.listOperatorPlugins()
+>()("@scout/OperatorResources", {
+  make: Effect.gen(function* () {
+    const pluginRegistry = yield* PluginRegistry
+    const operatorPlugins = yield* pluginRegistry.listOperatorPlugins()
 
-      const resourceMap = new Map<string, OperatorResource>()
-      for (const resource of BUILTIN_RESOURCES) {
-        resourceMap.set(resource.id, resource)
-      }
+    const resourceMap = new Map<string, OperatorResource>()
+    for (const resource of BUILTIN_RESOURCES) {
+      resourceMap.set(resource.id, resource)
+    }
 
-      for (const plugin of operatorPlugins) {
-        for (const resource of plugin.operator.resources ?? []) {
-          const id = `${plugin.manifest.id}/${resource.id}`
-          if (resourceMap.has(id)) {
-            continue
-          }
-
-          resourceMap.set(id, {
-            id,
-            title: resource.title,
-            description: resource.description,
-            source: "plugin",
-            content: resource.content,
-          })
+    for (const plugin of operatorPlugins) {
+      for (const resource of plugin.operator.resources ?? []) {
+        const id = `${plugin.manifest.id}/${resource.id}`
+        if (resourceMap.has(id)) {
+          continue
         }
+
+        resourceMap.set(id, {
+          id,
+          title: resource.title,
+          description: resource.description,
+          source: "plugin",
+          content: resource.content,
+        })
       }
+    }
 
-      const list = () =>
-        Effect.succeed(
-          [...resourceMap.values()].sort((left, right) => left.title.localeCompare(right.title)),
-        )
+    const list = () =>
+      Effect.succeed([...resourceMap.values()].sort((left, right) => left.title.localeCompare(right.title)))
 
-      const resolve = (resourceIds: ReadonlyArray<string>) =>
-        Effect.succeed(
-          resourceIds.map((resourceId) => {
-            const resource = resourceMap.get(resourceId)
-            if (resource === undefined) {
-              throw new Error(`Operator resource ${resourceId} is not available`)
-            }
-            return resource
-          }),
-        )
+    const resolve = (resourceIds: ReadonlyArray<string>) =>
+      Effect.succeed(
+        resourceIds.map((resourceId) => {
+          const resource = resourceMap.get(resourceId)
+          if (resource === undefined) {
+            throw new Error(`Operator resource ${resourceId} is not available`)
+          }
+          return resource
+        }),
+      )
 
-      return {
-        list,
-        resolve,
-      }
-    }),
-  },
-) {
+    return {
+      list,
+      resolve,
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }

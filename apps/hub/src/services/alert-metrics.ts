@@ -9,9 +9,7 @@ export interface AlertMetricSample {
 export const alertMetricSamplesFromCoreMetrics = (
   sample: SystemMetricsSample,
 ): ReadonlyArray<AlertMetricSample> => {
-  const samples: AlertMetricSample[] = [
-    { metric: "cpu.usage", value: sample.cpuPercent },
-  ]
+  const samples: AlertMetricSample[] = [{ metric: "cpu.usage", value: sample.cpuPercent }]
 
   if (sample.memoryTotalBytes > 0) {
     samples.push({

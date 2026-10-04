@@ -4,10 +4,10 @@
 
 ## What it reads
 
-| Source | Endpoint | Reported |
-|--------|----------|----------|
-| cloudflared `--metrics` server | `GET /ready`, `GET /metrics` | ready, ready edge connections, HA connections, requests, request errors, edge locations, version |
-| Caddy admin API | `GET /reverse_proxy/upstreams`, `GET /config/` | upstream request and failure counts; sites with their hosts, listen addresses, and upstreams |
+| Source                         | Endpoint                                       | Reported                                                                                         |
+| ------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| cloudflared `--metrics` server | `GET /ready`, `GET /metrics`                   | ready, ready edge connections, HA connections, requests, request errors, edge locations, version |
+| Caddy admin API                | `GET /reverse_proxy/upstreams`, `GET /config/` | upstream request and failure counts; sites with their hosts, listen addresses, and upstreams     |
 
 ## Configuration
 

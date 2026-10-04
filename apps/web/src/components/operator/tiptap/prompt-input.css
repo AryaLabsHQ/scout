@@ -7,7 +7,9 @@
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-.operator-editor .ProseMirror p { margin: 0; }
+.operator-editor .ProseMirror p {
+  margin: 0;
+}
 .operator-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--color-muted-foreground);
@@ -31,7 +33,9 @@
   background: var(--color-popover);
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
   min-width: 14rem;
   max-width: 22rem;
   padding: 0;

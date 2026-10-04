@@ -34,9 +34,7 @@ export function OperatorShell({
   initialSessionId?: string
 }) {
   const navigate = useNavigate()
-  const sessionsResult = useAtomValue(
-    HubClient.query("operator.sessions.list", undefined),
-  )
+  const sessionsResult = useAtomValue(HubClient.query("operator.sessions.list", undefined))
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const createSession = useAtomSet(HubClient.mutation("operator.sessions.create"), {
     mode: "promise",
@@ -65,9 +63,7 @@ export function OperatorShell({
 
   const sessions = useMemo(() => {
     if (!optimisticSession) return persistedSessions
-    const alreadyPresent = persistedSessions.some(
-      (session) => session.id === optimisticSession.session.id,
-    )
+    const alreadyPresent = persistedSessions.some((session) => session.id === optimisticSession.session.id)
     return alreadyPresent ? persistedSessions : [optimisticSession.session, ...persistedSessions]
   }, [optimisticSession, persistedSessions])
 
@@ -104,12 +100,7 @@ export function OperatorShell({
   }, [createSession, navigate, openDrawer, setActiveSessionId, setOptimisticSession, variant])
 
   return (
-    <div
-      className={cn(
-        "h-full min-h-0 overflow-hidden bg-background",
-        className,
-      )}
-    >
+    <div className={cn("h-full min-h-0 overflow-hidden bg-background", className)}>
       <OperatorSessionSurface
         variant={variant}
         activeSessionId={resolvedSessionId}
@@ -148,8 +139,8 @@ function OperatorSessionSurface({
             title="Operator"
             meta={
               <span>
-                An agent that inspects your machines and asks before it changes anything · {onlineSystemCount} online
-                machine{onlineSystemCount === 1 ? "" : "s"}
+                An agent that inspects your machines and asks before it changes anything · {onlineSystemCount}{" "}
+                online machine{onlineSystemCount === 1 ? "" : "s"}
               </span>
             }
             actions={
@@ -174,7 +165,11 @@ function OperatorSessionSurface({
                 </thead>
                 <tbody>
                   {sessions.map((session) => (
-                    <SessionRow key={session.id} session={session} onSelect={() => onSelectSession(session.id)} />
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      onSelect={() => onSelectSession(session.id)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -211,7 +206,10 @@ function SessionRow({ session, onSelect }: { session: OperatorSessionSummary; on
     setRenaming(false)
     const next = title.trim()
     if (next.length === 0 || next === session.title) return
-    await rename({ payload: { sessionId: session.id, title: next }, reactivityKeys: [SESSION_LIST_REACTIVITY_KEY] })
+    await rename({
+      payload: { sessionId: session.id, title: next },
+      reactivityKeys: [SESSION_LIST_REACTIVITY_KEY],
+    })
   }
 
   const onArchive = async () => {
@@ -238,7 +236,10 @@ function SessionRow({ session, onSelect }: { session: OperatorSessionSummary; on
   }
 
   return (
-    <tr className="cursor-pointer border-t border-border first:border-t-0 hover:bg-raised" onClick={renaming ? undefined : onSelect}>
+    <tr
+      className="cursor-pointer border-t border-border first:border-t-0 hover:bg-raised"
+      onClick={renaming ? undefined : onSelect}
+    >
       <td className="truncate px-4 py-2.5">
         {renaming ? (
           <input
@@ -269,7 +270,9 @@ function SessionRow({ session, onSelect }: { session: OperatorSessionSummary; on
           {status.label}
         </span>
       </td>
-      <td className="px-4 py-2.5 text-right text-subtle"><TimeAgo at={session.updatedAt} /></td>
+      <td className="px-4 py-2.5 text-right text-subtle">
+        <TimeAgo at={session.updatedAt} />
+      </td>
       <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger

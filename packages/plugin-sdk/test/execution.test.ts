@@ -15,9 +15,7 @@ const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 
 describe("@scout/plugin-sdk execution", () => {
   it("executes a plugin action through the generic runtime", async () => {
-    const plugin = await run(
-      loadPluginPackage(path.join(fixturesDir, "valid-plugin")),
-    )
+    const plugin = await run(loadPluginPackage(path.join(fixturesDir, "valid-plugin")))
 
     const result = await run(
       executePluginAction(
@@ -48,9 +46,7 @@ describe("@scout/plugin-sdk execution", () => {
   })
 
   it("rejects actions when required permissions are missing", async () => {
-    const plugin = await run(
-      loadPluginPackage(path.join(fixturesDir, "valid-plugin")),
-    )
+    const plugin = await run(loadPluginPackage(path.join(fixturesDir, "valid-plugin")))
 
     await expect(
       run(
@@ -80,9 +76,7 @@ describe("@scout/plugin-sdk execution", () => {
   })
 
   it("opens plugin streams through the generic runtime", async () => {
-    const plugin = await run(
-      loadPluginPackage(path.join(fixturesDir, "valid-plugin")),
-    )
+    const plugin = await run(loadPluginPackage(path.join(fixturesDir, "valid-plugin")))
 
     const stream = await run(
       openPluginStream(

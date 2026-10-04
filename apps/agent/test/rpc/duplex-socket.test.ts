@@ -46,9 +46,7 @@ describe("makeDuplexRpcProtocols", () => {
     // Socket.fromWebSocket suspends writes while disconnected; model that
     // with a write that never completes.
     const socket = fakeSocket({
-      pull: Effect.fail(
-        new Socket.SocketError({ reason: new Socket.SocketCloseError({ code: 1006 }) }),
-      ),
+      pull: Effect.fail(new Socket.SocketError({ reason: new Socket.SocketCloseError({ code: 1006 }) })),
       write: Effect.never,
     })
 

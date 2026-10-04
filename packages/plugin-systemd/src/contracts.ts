@@ -43,14 +43,7 @@ export const systemdScopeOfKind = (kind: string): SystemdScope | null => {
   }
 }
 
-export const SYSTEMD_FEATURES = [
-  "collect",
-  "actions",
-  "logs",
-  "unit-files",
-  "timers",
-  "user-units",
-] as const
+export const SYSTEMD_FEATURES = ["collect", "actions", "logs", "unit-files", "timers", "user-units"] as const
 
 const NullableString = Schema.NullOr(Schema.String)
 const NullableNumber = Schema.NullOr(Schema.Number)
@@ -364,12 +357,7 @@ export const systemdScreens: ReadonlyArray<PluginUiScreen> = [
             },
           },
           visible: selectedEntityVisible,
-          children: [
-            "statusSection",
-            "resourceSection",
-            "controlsSection",
-            "logsSection",
-          ],
+          children: ["statusSection", "resourceSection", "controlsSection", "logsSection"],
         },
         statusSection: {
           type: "Section",

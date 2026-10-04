@@ -66,8 +66,4 @@ export const AgentRpcRoute = HttpRouter.add(
  * Includes the client-facing WS server, the agent registry, and the
  * /ws/rpc/agent route layer.
  */
-export const RpcLayer = Layer.mergeAll(
-  ClientRpcServerLayer,
-  AgentRegistryLayer,
-  AgentRpcRoute,
-)
+export const RpcLayer = Layer.mergeAll(ClientRpcServerLayer, AgentRegistryLayer, AgentRpcRoute)

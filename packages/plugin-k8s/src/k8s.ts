@@ -59,10 +59,7 @@ interface CommandResult {
 }
 
 export interface K8sDependencies {
-  readonly exec: (
-    command: string,
-    args: ReadonlyArray<string>,
-  ) => Effect.Effect<CommandResult, Error>
+  readonly exec: (command: string, args: ReadonlyArray<string>) => Effect.Effect<CommandResult, Error>
 }
 
 interface KubeList<T> {
@@ -365,9 +362,8 @@ const entityKey = (ref: EntityRef): string => `${ref.kind}:${ref.id}`
 
 const namespacedId = (namespace: string, name: string): string => `${namespace}/${name}`
 
-const isNonEmptyRecord = (
-  value: Record<string, string> | undefined,
-): value is Record<string, string> => value !== undefined && Object.keys(value).length > 0
+const isNonEmptyRecord = (value: Record<string, string> | undefined): value is Record<string, string> =>
+  value !== undefined && Object.keys(value).length > 0
 
 const getMetadataName = (metadata: KubeMetadata | undefined): string | undefined => metadata?.name?.trim()
 
@@ -389,8 +385,7 @@ const matchesSelector = (
 const parseJson = <T>(raw: string, label: string): Effect.Effect<T, PluginExecutionError> =>
   Effect.try({
     try: () => JSON.parse(raw) as T,
-    catch: (error) =>
-      makeExecutionError("invalid-json", `Failed to parse ${label} JSON: ${String(error)}`),
+    catch: (error) => makeExecutionError("invalid-json", `Failed to parse ${label} JSON: ${String(error)}`),
   })
 
 const parseListItems = <T>(
@@ -441,15 +436,11 @@ const runKubectl = (
           ),
     ),
     Effect.mapError((error) =>
-      error instanceof PluginExecutionError
-        ? error
-        : makeExecutionError("command-error", String(error)),
+      error instanceof PluginExecutionError ? error : makeExecutionError("command-error", String(error)),
     ),
   )
 
-const readSnapshot = (
-  deps: K8sDependencies,
-): Effect.Effect<K8sResourceSnapshot, PluginExecutionError> =>
+const readSnapshot = (deps: K8sDependencies): Effect.Effect<K8sResourceSnapshot, PluginExecutionError> =>
   Effect.all({
     cluster: runKubectl(deps, ["config", "view", "--minify", "-o", "json"]).pipe(
       Effect.flatMap((raw) => parseJson<KubeConfigView>(raw, "config")),
@@ -470,10 +461,13 @@ const readSnapshot = (
     services: runKubectl(deps, ["get", "services", "--all-namespaces", "-o", "json"]).pipe(
       Effect.flatMap((raw) => parseListItems<KubeService>(raw, "services")),
     ),
-    ingresses: runKubectl(
-      deps,
-      ["get", "ingresses.networking.k8s.io", "--all-namespaces", "-o", "json"],
-    ).pipe(Effect.flatMap((raw) => parseListItems<KubeIngress>(raw, "ingresses"))),
+    ingresses: runKubectl(deps, [
+      "get",
+      "ingresses.networking.k8s.io",
+      "--all-namespaces",
+      "-o",
+      "json",
+    ]).pipe(Effect.flatMap((raw) => parseListItems<KubeIngress>(raw, "ingresses"))),
     jobs: runKubectl(deps, ["get", "jobs.batch", "--all-namespaces", "-o", "json"]).pipe(
       Effect.flatMap((raw) => parseListItems<KubeJob>(raw, "jobs")),
     ),
@@ -483,7 +477,8 @@ const readSnapshot = (
     ),
   })
 
-const namespaceStatus = (namespace: KubeNamespace): string => namespace.status?.phase?.toLowerCase() ?? "unknown"
+const namespaceStatus = (namespace: KubeNamespace): string =>
+  namespace.status?.phase?.toLowerCase() ?? "unknown"
 
 const nodeStatus = (node: KubeNode): string => {
   const ready = getReadyConditionStatus(node.status?.conditions)
@@ -494,9 +489,7 @@ const nodeStatus = (node: KubeNode): string => {
 
 const podStatus = (pod: KubePod): string => {
   const phase = pod.status?.phase?.toLowerCase() ?? "unknown"
-  return phase === "running" && getReadyConditionStatus(pod.status?.conditions) === "True"
-    ? "ready"
-    : phase
+  return phase === "running" && getReadyConditionStatus(pod.status?.conditions) === "True" ? "ready" : phase
 }
 
 const deploymentStatus = (deployment: KubeDeployment): string => {
@@ -553,10 +546,7 @@ const serviceBackends = (ingress: KubeIngress): ReadonlyArray<string> => {
 }
 
 const podRestarts = (pod: KubePod): number =>
-  (pod.status?.containerStatuses ?? []).reduce(
-    (total, status) => total + (status.restartCount ?? 0),
-    0,
-  )
+  (pod.status?.containerStatuses ?? []).reduce((total, status) => total + (status.restartCount ?? 0), 0)
 
 const isReadyConditionTrue = (
   conditions: ReadonlyArray<{ readonly type?: string; readonly status?: string }> | undefined,
@@ -603,24 +593,22 @@ const requireTargetEntity = (
   actionId: string,
 ): Effect.Effect<EntityRef, PluginExecutionError> =>
   target.entity === undefined
-    ? Effect.fail(
-        makeExecutionError("invalid-target", `Action "${actionId}" requires a target entity`),
-      )
+    ? Effect.fail(makeExecutionError("invalid-target", `Action "${actionId}" requires a target entity`))
     : Effect.succeed(target.entity)
 
 const requireNamespacedTarget = (
   target: ActionTarget,
   actionId: string,
-): Effect.Effect<{ readonly ref: EntityRef; readonly namespace: string; readonly name: string }, PluginExecutionError> =>
+): Effect.Effect<
+  { readonly ref: EntityRef; readonly namespace: string; readonly name: string },
+  PluginExecutionError
+> =>
   requireTargetEntity(target, actionId).pipe(
     Effect.flatMap((ref) => {
       const parsed = splitNamespacedId(ref.id)
       return parsed === null
         ? Effect.fail(
-            makeExecutionError(
-              "invalid-target",
-              `Action "${actionId}" requires a namespaced target id`,
-            ),
+            makeExecutionError("invalid-target", `Action "${actionId}" requires a namespaced target id`),
           )
         : Effect.succeed({ ref, ...parsed })
     }),
@@ -676,18 +664,9 @@ const describeArgsForTarget = (
       const parsed = splitNamespacedId(ref.id)
       return parsed === null
         ? Effect.fail(
-            makeExecutionError(
-              "invalid-target",
-              `Describe target "${ref.id}" must include a namespace`,
-            ),
+            makeExecutionError("invalid-target", `Describe target "${ref.id}" must include a namespace`),
           )
-        : Effect.succeed<ReadonlyArray<string>>([
-            "describe",
-            resource,
-            parsed.name,
-            "-n",
-            parsed.namespace,
-          ])
+        : Effect.succeed<ReadonlyArray<string>>(["describe", resource, parsed.name, "-n", parsed.namespace])
     }),
   )
 
@@ -767,12 +746,7 @@ export const materializeK8sCollection = (
         phase: namespace.status?.phase ?? null,
       },
     })
-    addBidirectionalRelationship(
-      clusterRef,
-      RELATIONSHIP_TYPES.contains,
-      ref,
-      RELATIONSHIP_TYPES.containedBy,
-    )
+    addBidirectionalRelationship(clusterRef, RELATIONSHIP_TYPES.contains, ref, RELATIONSHIP_TYPES.containedBy)
   }
 
   const nodeRefs = new Map<string, EntityRef>()
@@ -809,12 +783,7 @@ export const materializeK8sCollection = (
         readyCondition: getReadyConditionStatus(node.status?.conditions) ?? null,
       },
     })
-    addBidirectionalRelationship(
-      clusterRef,
-      RELATIONSHIP_TYPES.contains,
-      ref,
-      RELATIONSHIP_TYPES.containedBy,
-    )
+    addBidirectionalRelationship(clusterRef, RELATIONSHIP_TYPES.contains, ref, RELATIONSHIP_TYPES.containedBy)
   }
 
   const deploymentRefs = new Map<string, EntityRef>()
@@ -918,9 +887,7 @@ export const materializeK8sCollection = (
         hosts: [
           ...new Set([
             ...(ingress.spec?.tls ?? []).flatMap((tls) => tls.hosts ?? []),
-            ...(ingress.spec?.rules ?? []).flatMap((rule) =>
-              rule.host === undefined ? [] : [rule.host],
-            ),
+            ...(ingress.spec?.rules ?? []).flatMap((rule) => (rule.host === undefined ? [] : [rule.host])),
           ]),
         ],
         backends: serviceBackends(ingress),
@@ -1128,19 +1095,12 @@ export const materializeK8sCollection = (
 
       const podRef = podRefs.get(namespacedId(namespace, podName))
       if (podRef !== undefined) {
-        addBidirectionalRelationship(
-          jobRef,
-          RELATIONSHIP_TYPES.manages,
-          podRef,
-          RELATIONSHIP_TYPES.managedBy,
-        )
+        addBidirectionalRelationship(jobRef, RELATIONSHIP_TYPES.manages, podRef, RELATIONSHIP_TYPES.managedBy)
       }
     }
   }
 
-  const readyNodes = snapshot.nodes.filter((node) =>
-    isReadyConditionTrue(node.status?.conditions),
-  ).length
+  const readyNodes = snapshot.nodes.filter((node) => isReadyConditionTrue(node.status?.conditions)).length
 
   metrics.push({
     pluginId: K8S_PLUGIN_ID,
@@ -1174,13 +1134,10 @@ export const materializeK8sCollection = (
 
     const readyDeployments = snapshot.deployments.filter(
       (deployment) =>
-        getMetadataNamespace(deployment.metadata) === name &&
-        deploymentStatus(deployment) === "ready",
+        getMetadataNamespace(deployment.metadata) === name && deploymentStatus(deployment) === "ready",
     ).length
     const completeJobs = snapshot.jobs.filter(
-      (job) =>
-        getMetadataNamespace(job.metadata) === name &&
-        jobStatus(job) === "complete",
+      (job) => getMetadataNamespace(job.metadata) === name && jobStatus(job) === "complete",
     ).length
 
     metrics.push({
@@ -1250,10 +1207,7 @@ export const materializeK8sCollection = (
     events.push({
       pluginId: K8S_PLUGIN_ID,
       eventId: event.reason?.trim().toLowerCase() || "k8s.event",
-      ts: toTimestamp(
-        event.eventTime ?? event.lastTimestamp ?? event.firstTimestamp,
-        ts,
-      ),
+      ts: toTimestamp(event.eventTime ?? event.lastTimestamp ?? event.firstTimestamp, ts),
       ...(entityKind !== undefined && entityId !== undefined
         ? { entity: entityRef(nodeId, entityKind, entityId) }
         : {}),
@@ -1323,8 +1277,7 @@ export const createK8sAgentPlugin = (
   const detect = (): Effect.Effect<PluginCapability> =>
     deps.exec("kubectl", ["version", "--client=true", "--output=json"]).pipe(
       Effect.matchEffect({
-        onFailure: (error: Error) =>
-          Effect.succeed(unsupportedCapability(String(error.message || error))),
+        onFailure: (error: Error) => Effect.succeed(unsupportedCapability(String(error.message || error))),
         onSuccess: ({ exitCode, stderr }) => {
           if (exitCode !== 0) {
             return Effect.succeed(
@@ -1337,8 +1290,7 @@ export const createK8sAgentPlugin = (
               contextExitCode === 0 && stdout.trim().length > 0
                 ? availableCapability()
                 : degradedCapability(
-                    contextStderr.trim() ||
-                      "kubectl is installed but no current context is configured",
+                    contextStderr.trim() || "kubectl is installed but no current context is configured",
                   ),
             ),
             Effect.orElseSucceed(() =>
@@ -1350,9 +1302,7 @@ export const createK8sAgentPlugin = (
     )
 
   const collect = (ctx: { readonly nodeId: string; readonly now: number }) =>
-    readSnapshot(deps).pipe(
-      Effect.map((snapshot) => materializeK8sCollection(ctx.nodeId, ctx.now, snapshot)),
-    )
+    readSnapshot(deps).pipe(Effect.map((snapshot) => materializeK8sCollection(ctx.nodeId, ctx.now, snapshot)))
 
   const actions: ReadonlyArray<ScoutActionHandler<unknown, unknown, PluginExecutionError>> = [
     {

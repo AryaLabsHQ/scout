@@ -3,15 +3,26 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { Effect, Fiber, Stream } from "effect"
-import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
+import {
+  fauxAssistantMessage,
+  type FauxResponseStep,
+  fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux"
 import type { OperatorSessionDetail, OperatorTimelineItem } from "@scout/shared"
 import { OperatorSessions } from "../../src/services/operator-sessions.js"
 import { executed, faux, operatorLayer } from "../helpers/operator.js"
 
 /** Run against the operator storage at `path`; the Harness closes when this returns, like a hub stop. */
-const withOperator = <A>(path: string, use: (sessions: typeof OperatorSessions.Service) => Effect.Effect<A, unknown>) =>
+const withOperator = <A>(
+  path: string,
+  use: (sessions: typeof OperatorSessions.Service) => Effect.Effect<A, unknown>,
+) =>
   Effect.runPromise(
-    Effect.scoped(Effect.gen(function* () { return yield* use(yield* OperatorSessions) })).pipe(Effect.provide(operatorLayer(path))) as Effect.Effect<A, unknown>,
+    Effect.scoped(
+      Effect.gen(function* () {
+        return yield* use(yield* OperatorSessions)
+      }),
+    ).pipe(Effect.provide(operatorLayer(path))) as Effect.Effect<A, unknown>,
   )
 
 /** Poll the session detail until `predicate` holds. */
@@ -31,7 +42,9 @@ const waitFor = (
   })
 
 const toolItems = (detail: OperatorSessionDetail) =>
-  detail.timeline.filter((item): item is Extract<OperatorTimelineItem, { kind: "tool" }> => item.kind === "tool")
+  detail.timeline.filter(
+    (item): item is Extract<OperatorTimelineItem, { kind: "tool" }> => item.kind === "tool",
+  )
 
 const lastAssistantText = (detail: OperatorSessionDetail) =>
   detail.timeline.filter((item) => item.kind === "assistant").at(-1)?.text
@@ -41,9 +54,12 @@ const isIdle = (detail: OperatorSessionDetail) => detail.session.status === "idl
 const script = (...steps: Array<FauxResponseStep>) => faux.setResponses(steps)
 
 const mutatingBash = (command: string) =>
-  fauxAssistantMessage(fauxToolCall("bash_run", { nodeId: "node-a", label: "restart", command, isMutation: true }), {
-    stopReason: "toolUse",
-  })
+  fauxAssistantMessage(
+    fauxToolCall("bash_run", { nodeId: "node-a", label: "restart", command, isMutation: true }),
+    {
+      stopReason: "toolUse",
+    },
+  )
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -61,21 +77,30 @@ afterEach(() => {
 })
 
 const createSession = (sessions: typeof OperatorSessions.Service) =>
-  sessions.create({ title: "Test", selectedNodeIds: ["node-a"] }).pipe(Effect.map((detail) => detail.session.id))
+  sessions
+    .create({ title: "Test", selectedNodeIds: ["node-a"] })
+    .pipe(Effect.map((detail) => detail.session.id))
 
 describe("OperatorSessions on pi-durable", () => {
   it("answers a prompt through a read-only tool call", async () => {
     script(
-      fauxAssistantMessage(fauxToolCall("bash_run", { nodeId: "node-a", label: "uptime", command: "uptime", isMutation: false }), {
-        stopReason: "toolUse",
-      }),
+      fauxAssistantMessage(
+        fauxToolCall("bash_run", { nodeId: "node-a", label: "uptime", command: "uptime", isMutation: false }),
+        {
+          stopReason: "toolUse",
+        },
+      ),
       fauxAssistantMessage("The node is up."),
     )
     const detail = await withOperator(storagePath, (sessions) =>
       Effect.gen(function* () {
         const id = yield* createSession(sessions)
         yield* sessions.prompt(id, "Is node-a up?")
-        return yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "The node is up.")
+        return yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "The node is up.",
+        )
       }),
     )
     expect(executed).toEqual(["bash:uptime"])
@@ -96,10 +121,24 @@ describe("OperatorSessions on pi-durable", () => {
         yield* Effect.sleep("50 millis")
         expect(executed).toEqual([])
         const approval = waiting.approvals[0]!
-        expect(approval).toMatchObject({ kind: "mutation", status: "pending", reason: "restart", affectedNodeIds: ["node-a"] })
+        expect(approval).toMatchObject({
+          kind: "mutation",
+          status: "pending",
+          reason: "restart",
+          affectedNodeIds: ["node-a"],
+        })
         expect(toolItems(waiting)[0]?.approvalId).toBe(approval.id)
-        yield* sessions.resolveApproval({ sessionId: id, approvalId: approval.id, decision: "approved", actor: "ops@example.com" })
-        const done = yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Restarted.")
+        yield* sessions.resolveApproval({
+          sessionId: id,
+          approvalId: approval.id,
+          decision: "approved",
+          actor: "ops@example.com",
+        })
+        const done = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Restarted.",
+        )
         expect(done.approvals[0]).toMatchObject({ status: "approved", actor: "ops@example.com" })
       }),
     )
@@ -125,7 +164,11 @@ describe("OperatorSessions on pi-durable", () => {
         expect(resumed.approvals.map((approval) => approval.id)).toEqual([approvalId])
         expect(executed).toEqual([])
         yield* sessions.resolveApproval({ sessionId: id, approvalId, decision: "approved" })
-        const done = yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Done after restart.")
+        const done = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Done after restart.",
+        )
         expect(toolItems(done)[0]).toMatchObject({ status: "completed", output: "ran reboot-service" })
       }),
     )
@@ -139,7 +182,11 @@ describe("OperatorSessions on pi-durable", () => {
         const id = yield* createSession(sessions)
         yield* sessions.prompt(id, "Run the job")
         const waiting = yield* waitFor(sessions, id, (detail) => detail.approvals[0]?.status === "pending")
-        yield* sessions.resolveApproval({ sessionId: id, approvalId: waiting.approvals[0]!.id, decision: "approved" })
+        yield* sessions.resolveApproval({
+          sessionId: id,
+          approvalId: waiting.approvals[0]!.id,
+          decision: "approved",
+        })
         yield* waitFor(sessions, id, () => executed.length === 1)
         return id
       }),
@@ -147,7 +194,11 @@ describe("OperatorSessions on pi-durable", () => {
     expect(executed).toEqual(["bash:hang"])
 
     const detail = await withOperator(storagePath, (sessions) =>
-      waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Reported the interruption."),
+      waitFor(
+        sessions,
+        id,
+        (detail) => isIdle(detail) && lastAssistantText(detail) === "Reported the interruption.",
+      ),
     )
     expect(executed).toEqual(["bash:hang"])
     const [tool] = toolItems(detail)
@@ -162,7 +213,11 @@ describe("OperatorSessions on pi-durable", () => {
         const id = yield* createSession(sessions)
         yield* sessions.prompt(id, "Clear the cache")
         const waiting = yield* waitFor(sessions, id, (detail) => detail.approvals[0]?.status === "pending")
-        yield* sessions.resolveApproval({ sessionId: id, approvalId: waiting.approvals[0]!.id, decision: "rejected" })
+        yield* sessions.resolveApproval({
+          sessionId: id,
+          approvalId: waiting.approvals[0]!.id,
+          decision: "rejected",
+        })
         return yield* waitFor(sessions, id, isIdle)
       }),
     )
@@ -185,7 +240,10 @@ describe("OperatorSessions on pi-durable", () => {
       ),
       (context) => {
         const last = context.messages.at(-1)
-        seen = last?.role === "toolResult" ? last.content.map((block) => (block.type === "text" ? block.text : "")).join("") : ""
+        seen =
+          last?.role === "toolResult"
+            ? last.content.map((block) => (block.type === "text" ? block.text : "")).join("")
+            : ""
         return fauxAssistantMessage("Thanks.")
       },
     )
@@ -194,7 +252,10 @@ describe("OperatorSessions on pi-durable", () => {
         const id = yield* createSession(sessions)
         yield* sessions.prompt(id, "Check something")
         const waiting = yield* waitFor(sessions, id, (detail) => detail.approvals[0]?.status === "pending")
-        expect(waiting.approvals[0]).toMatchObject({ kind: "clarification", question: { question: "Which node?" } })
+        expect(waiting.approvals[0]).toMatchObject({
+          kind: "clarification",
+          question: { question: "Which node?" },
+        })
         yield* sessions.resolveApproval({
           sessionId: id,
           approvalId: waiting.approvals[0]!.id,
@@ -210,7 +271,11 @@ describe("OperatorSessions on pi-durable", () => {
   it("blocks mutating calls in plan mode", async () => {
     script(
       fauxAssistantMessage(
-        fauxToolCall("plugin_run_action", { nodeId: "node-a", pluginId: "docker", actionId: "restart-container" }),
+        fauxToolCall("plugin_run_action", {
+          nodeId: "node-a",
+          pluginId: "docker",
+          actionId: "restart-container",
+        }),
         { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("Plan: restart the container."),
@@ -220,7 +285,11 @@ describe("OperatorSessions on pi-durable", () => {
         const id = yield* createSession(sessions)
         yield* sessions.setPlanMode(id, "plan_first")
         yield* sessions.prompt(id, "Restart the container")
-        return yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) !== undefined)
+        return yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) !== undefined,
+        )
       }),
     )
     expect(executed).toEqual([])
@@ -237,16 +306,28 @@ describe("OperatorSessions on pi-durable", () => {
       Effect.gen(function* () {
         const id = yield* createSession(sessions)
         yield* sessions.prompt(id, "First question")
-        const first = yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "First answer.")
+        const first = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "First answer.",
+        )
         yield* sessions.prompt(id, "Second question")
-        const parent = yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Second answer.")
+        const parent = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Second answer.",
+        )
         const answer = first.timeline.find((item) => item.kind === "assistant")
         const fork = yield* sessions.fork(id, answer!.kind === "assistant" ? answer!.entryId! : "", "Forked")
         return { parent, fork }
       }),
     )
     expect(parent.timeline.map((item) => item.kind)).toEqual(["user", "assistant", "user", "assistant"])
-    expect(fork.session).toMatchObject({ title: "Forked", parentSessionId: parent.session.id, selectedNodeIds: ["node-a"] })
+    expect(fork.session).toMatchObject({
+      title: "Forked",
+      parentSessionId: parent.session.id,
+      selectedNodeIds: ["node-a"],
+    })
     expect(fork.timeline.map((item) => (item.kind === "tool" ? item.name : item.text))).toEqual([
       "First question",
       "First answer.",
@@ -261,7 +342,11 @@ describe("OperatorSessions on pi-durable", () => {
         yield* sessions.prompt(id, "Run the long job")
         yield* waitFor(sessions, id, (detail) => detail.approvals[0]?.status === "pending")
         yield* sessions.abort(id)
-        return yield* waitFor(sessions, id, (detail) => detail.session.status !== "waiting_for_user" && detail.session.status !== "running")
+        return yield* waitFor(
+          sessions,
+          id,
+          (detail) => detail.session.status !== "waiting_for_user" && detail.session.status !== "running",
+        )
       }),
     )
     expect(executed).toEqual([])
@@ -299,7 +384,11 @@ describe("OperatorSessions on pi-durable", () => {
         )
         yield* Effect.sleep("100 millis")
         yield* sessions.prompt(id, "Stream please")
-        yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Streamed answer.")
+        yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Streamed answer.",
+        )
         yield* Effect.sleep("150 millis")
         yield* Fiber.interrupt(fiber)
         return collected

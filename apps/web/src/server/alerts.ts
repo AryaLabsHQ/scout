@@ -8,10 +8,8 @@ export const fetchAlerts = createServerFn({ method: "GET" }).handler(async (): P
   return res.json() as Promise<Alert[]>
 })
 
-export const fetchAlertRules = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AlertRule[]> => {
-    const res = await hubFetch("/api/alert-rules")
-    if (!res.ok) return []
-    return res.json() as Promise<AlertRule[]>
-  },
-)
+export const fetchAlertRules = createServerFn({ method: "GET" }).handler(async (): Promise<AlertRule[]> => {
+  const res = await hubFetch("/api/alert-rules")
+  if (!res.ok) return []
+  return res.json() as Promise<AlertRule[]>
+})

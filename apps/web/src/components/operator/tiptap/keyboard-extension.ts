@@ -22,9 +22,7 @@ export const PromptKeyboard = Extension.create<PromptKeyboardOptions>({
     const isSuggestionActive = () => {
       if (typeof document === "undefined") return false
       return Boolean(
-        document.querySelector(
-          '.tippy-box[data-theme~="suggestion-dropdown"]:not([data-state="hidden"])',
-        ),
+        document.querySelector('.tippy-box[data-theme~="suggestion-dropdown"]:not([data-state="hidden"])'),
       )
     }
 

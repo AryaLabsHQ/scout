@@ -28,7 +28,8 @@ function TerminalPage() {
           Open an interactive shell session on any connected agent. Sessions persist across navigation.
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          Tip: Press <kbd className="font-mono bg-muted px-1 rounded text-[10px]">Ctrl+`</kbd> to toggle the terminal panel.
+          Tip: Press <kbd className="font-mono bg-muted px-1 rounded text-[10px]">Ctrl+`</kbd> to toggle the
+          terminal panel.
         </p>
       </div>
 

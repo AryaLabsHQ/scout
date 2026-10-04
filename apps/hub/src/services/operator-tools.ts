@@ -337,7 +337,11 @@ export const toolNodeIds = (args: unknown, sessionNodeIds: ReadonlyArray<string>
 const parseJsonInput = (inputJson: string | undefined): unknown =>
   inputJson === undefined || inputJson.trim().length === 0 ? undefined : JSON.parse(inputJson)
 
-const resolvePluginEntity = (pluginId: string, entityKind: string | undefined, entityId: string | undefined) => {
+const resolvePluginEntity = (
+  pluginId: string,
+  entityKind: string | undefined,
+  entityId: string | undefined,
+) => {
   if (entityKind === undefined && entityId === undefined) return undefined
   if (entityKind === undefined || entityId === undefined) {
     throw new Error("Both entityKind and entityId are required when targeting a plugin entity")
@@ -483,11 +487,15 @@ const getConnectedClient = async (
 }
 
 const scopedNodeIdsSchema = Type.Object({
-  nodeIds: Type.Optional(Type.Array(Type.String({ description: "Optional subset of scoped node ids to inspect" }))),
+  nodeIds: Type.Optional(
+    Type.Array(Type.String({ description: "Optional subset of scoped node ids to inspect" })),
+  ),
 })
 
 const pluginInventorySchema = Type.Object({
-  nodeIds: Type.Optional(Type.Array(Type.String({ description: "Optional subset of scoped node ids to inspect" }))),
+  nodeIds: Type.Optional(
+    Type.Array(Type.String({ description: "Optional subset of scoped node ids to inspect" })),
+  ),
   pluginId: Type.Optional(Type.String({ description: "Optional plugin id to narrow discovery" })),
 })
 
@@ -495,11 +503,16 @@ const pluginActionSchema = Type.Object({
   nodeId: Type.String({ description: "Target node id from the current session scope" }),
   pluginId: Type.String({ description: "Plugin id to target on the selected node" }),
   actionId: Type.String({ description: `Plugin action id from ${OperatorToolNames.observePlugins}` }),
-  entityKind: Type.Optional(Type.String({ description: "Optional plugin entity kind when targeting an entity action" })),
-  entityId: Type.Optional(Type.String({ description: "Optional plugin entity id when targeting an entity action" })),
+  entityKind: Type.Optional(
+    Type.String({ description: "Optional plugin entity kind when targeting an entity action" }),
+  ),
+  entityId: Type.Optional(
+    Type.String({ description: "Optional plugin entity id when targeting an entity action" }),
+  ),
   inputJson: Type.Optional(
     Type.String({
-      description: "Optional JSON-encoded action input object. Omit it when the action does not require input.",
+      description:
+        "Optional JSON-encoded action input object. Omit it when the action does not require input.",
     }),
   ),
 })
@@ -511,10 +524,13 @@ const pluginLogsSchema = Type.Object({
   entityKind: Type.Optional(
     Type.String({ description: "Optional plugin entity kind when targeting an entity log stream" }),
   ),
-  entityId: Type.Optional(Type.String({ description: "Optional plugin entity id when targeting an entity log stream" })),
+  entityId: Type.Optional(
+    Type.String({ description: "Optional plugin entity id when targeting an entity log stream" }),
+  ),
   inputJson: Type.Optional(
     Type.String({
-      description: "Optional JSON-encoded stream input object. Omit it when the stream does not require input.",
+      description:
+        "Optional JSON-encoded stream input object. Omit it when the stream does not require input.",
     }),
   ),
   maxBatches: Type.Optional(
@@ -565,7 +581,13 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
     meta: OperatorSessionMeta,
     context: ChordContext,
   ): Promise<ToolExecutionResult | undefined> => {
-    const approval = requiresOperatorApproval(name, args, deps.manifests, pluginOperatorTools, meta.approvalMode)
+    const approval = requiresOperatorApproval(
+      name,
+      args,
+      deps.manifests,
+      pluginOperatorTools,
+      meta.approvalMode,
+    )
     if (approval.required) {
       const record = await awaitDecision(
         api,
@@ -591,7 +613,11 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
     replay: "safe",
     execute: async (args, api, context) => {
       const nodeIds = scopedNodeIds(await readSessionMeta(api, context), args.nodeIds)
-      const rows = deps.db.select().from(schema.systems).all().filter((row) => nodeIds.includes(row.id))
+      const rows = deps.db
+        .select()
+        .from(schema.systems)
+        .all()
+        .filter((row) => nodeIds.includes(row.id))
       return textResult(formatSystemsSnapshot(rows), { nodeIds, systems: rows })
     },
   })
@@ -623,13 +649,20 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
     execute: async (args, api, context) => {
       const nodeIds = scopedNodeIds(await readSessionMeta(api, context), args.nodeIds)
       const samples = await Promise.all(
-        nodeIds.map(async (systemId) => ({ systemId, sample: await run(deps.ingestion.queryLatest(systemId), context) })),
+        nodeIds.map(async (systemId) => ({
+          systemId,
+          sample: await run(deps.ingestion.queryLatest(systemId), context),
+        })),
       )
-      const metricRows = samples.flatMap((row) => (row.sample === null ? [] : [{ ...row, sample: row.sample }]))
+      const metricRows = samples.flatMap((row) =>
+        row.sample === null ? [] : [{ ...row, sample: row.sample }],
+      )
       const missingNodeIds = nodeIds.filter((nodeId) => !metricRows.some((row) => row.systemId === nodeId))
       const text = [
         formatMetricsSnapshot(metricRows),
-        ...(missingNodeIds.length > 0 ? [`No recent host metrics found for: ${missingNodeIds.join(", ")}`] : []),
+        ...(missingNodeIds.length > 0
+          ? [`No recent host metrics found for: ${missingNodeIds.join(", ")}`]
+          : []),
       ].join("\n")
       return textResult(text, { nodeIds, metrics: metricRows, missingNodeIds })
     },
@@ -643,7 +676,11 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
     replay: "safe",
     execute: async (args, api, context) => {
       const nodeIds = scopedNodeIds(await readSessionMeta(api, context), args.nodeIds)
-      const systems = deps.db.select().from(schema.systems).all().filter((row) => nodeIds.includes(row.id))
+      const systems = deps.db
+        .select()
+        .from(schema.systems)
+        .all()
+        .filter((row) => nodeIds.includes(row.id))
       const plugins = await Promise.all(
         systems.flatMap((row) => {
           const capabilities =
@@ -669,8 +706,12 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
                 metrics: manifest?.metrics ?? [],
                 entityKinds: manifest?.entityKinds ?? [],
                 entityCount: await count(deps.ingestion.queryPluginEntities(row.id, capability.pluginId)),
-                recentMetricCount: await count(deps.ingestion.queryPluginMetricPoints(row.id, capability.pluginId, 24)),
-                recentEventCount: await count(deps.ingestion.queryPluginEvents(row.id, capability.pluginId, 24)),
+                recentMetricCount: await count(
+                  deps.ingestion.queryPluginMetricPoints(row.id, capability.pluginId, 24),
+                ),
+                recentEventCount: await count(
+                  deps.ingestion.queryPluginEvents(row.id, capability.pluginId, 24),
+                ),
               }
             })
         }),
@@ -681,7 +722,8 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
 
   const pluginRunAction = defineTool({
     name: OperatorToolNames.pluginRunAction,
-    description: "Execute a plugin action on one scoped node using the Scout hub-to-agent plugin management RPC.",
+    description:
+      "Execute a plugin action on one scoped node using the Scout hub-to-agent plugin management RPC.",
     parameters: pluginActionSchema,
     // Reruns after a restart only to resume an approval wait; `gate` never executes twice.
     replay: "safe",
@@ -723,13 +765,15 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
 
   const pluginLogs = defineTool({
     name: OperatorToolNames.pluginLogs,
-    description: "Read a bounded slice of plugin log output from one scoped node without opening a long-lived tail.",
+    description:
+      "Read a bounded slice of plugin log output from one scoped node without opening a long-lived tail.",
     parameters: pluginLogsSchema,
     replay: "safe",
     execute: async (args, api, context) => {
       requireScopedNode(await readSessionMeta(api, context), args.nodeId)
       const streamDefinition = findPluginStreamDefinition(deps.manifests, args.pluginId, args.streamId)
-      if (streamDefinition === null) throw new Error(`Plugin stream ${args.pluginId}.${args.streamId} is not available`)
+      if (streamDefinition === null)
+        throw new Error(`Plugin stream ${args.pluginId}.${args.streamId} is not available`)
       if (streamDefinition.kind !== "logs") {
         throw new Error(`Plugin stream ${args.pluginId}.${args.streamId} is not a logs stream`)
       }
@@ -821,10 +865,16 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
       }
       const timedOut = completion !== null && Option.isNone(completion)
       if ((timedOut || failure !== null) && terminalSessionId !== "") {
-        await Effect.runPromise(client["terminal.close"]({ sessionId: terminalSessionId }).pipe(Effect.ignore))
+        await Effect.runPromise(
+          client["terminal.close"]({ sessionId: terminalSessionId }).pipe(Effect.ignore),
+        )
       }
       if (failure !== null) throw failure
-      const text = await extractTerminalText({ base64Chunks: chunks, cols: BASH_RUN_COLS, rows: BASH_RUN_ROWS })
+      const text = await extractTerminalText({
+        base64Chunks: chunks,
+        cols: BASH_RUN_COLS,
+        rows: BASH_RUN_ROWS,
+      })
       const details = {
         nodeId: args.nodeId,
         label: args.label,
@@ -836,7 +886,10 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
       if (timedOut) return textResult(text || "(command timed out after 30 seconds)", details)
       if (exitCode === null) throw new Error("terminal.exec ended without an exit code")
       if (exitCode !== 0) {
-        return { ...textResult(`${text || "(no output)"}\n\nCommand exited with code ${exitCode}`, details), isError: true }
+        return {
+          ...textResult(`${text || "(no output)"}\n\nCommand exited with code ${exitCode}`, details),
+          isError: true,
+        }
       }
       return textResult(text || "(no output)", details)
     },
@@ -866,7 +919,9 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
       if (record.status !== "approved") {
         return errorResult("The user declined to answer. Continue with what you know or stop and explain.")
       }
-      return textResult(`User answered: ${record.answer ?? "(no answer text)"}`, { answer: record.answer ?? null })
+      return textResult(`User answered: ${record.answer ?? "(no answer text)"}`, {
+        answer: record.answer ?? null,
+      })
     },
   })
 
@@ -924,7 +979,11 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
 
   const pluginHookInput = async (call: ToolCall, api: HookApi, context: ChordContext) => {
     const meta = await readSessionMeta(api, context)
-    return { session: toPluginSessionContext(String(api.conversationId), meta), toolName: call.name, args: call.arguments }
+    return {
+      session: toPluginSessionContext(String(api.conversationId), meta),
+      toolName: call.name,
+      args: call.arguments,
+    }
   }
 
   const scout = defineExtension({
@@ -934,7 +993,10 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
       section(
         "scout",
         async (input, context) => {
-          const meta = await readSessionMeta({ snapshot: input.read.snapshot, conversationId: input.conversationId }, context)
+          const meta = await readSessionMeta(
+            { snapshot: input.read.snapshot, conversationId: input.conversationId },
+            context,
+          )
           return [
             deps.systemPrompt,
             `Current session scope: ${meta.selectedNodeIds.join(", ") || "(empty)"}.`,
@@ -948,13 +1010,19 @@ export const makeOperatorExtensions = (deps: OperatorToolDependencies): Operator
         { tag: false },
       ),
       section("skills", async (input, context) => {
-        const meta = await readSessionMeta({ snapshot: input.read.snapshot, conversationId: input.conversationId }, context)
+        const meta = await readSessionMeta(
+          { snapshot: input.read.snapshot, conversationId: input.conversationId },
+          context,
+        )
         if (meta.attachedSkillIds.length === 0) return undefined
         const skills = await run(deps.skills.resolve(meta.attachedSkillIds), context)
         return skills.map((skill) => [`Skill: ${skill.name}`, skill.content].join("\n")).join("\n\n")
       }),
       section("plugins", async (input, context) => {
-        const meta = await readSessionMeta({ snapshot: input.read.snapshot, conversationId: input.conversationId }, context)
+        const meta = await readSessionMeta(
+          { snapshot: input.read.snapshot, conversationId: input.conversationId },
+          context,
+        )
         const skills = await run(deps.skills.resolve(meta.attachedSkillIds), context)
         const sections = await run(
           deps.extensions.beforePrompt({

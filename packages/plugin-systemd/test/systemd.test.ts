@@ -1,10 +1,6 @@
 import { Cause, Effect, Exit, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import {
-  decodePluginUiScreen,
-  executePluginAction,
-  openPluginStream,
-} from "@scout/plugin-sdk"
+import { decodePluginUiScreen, executePluginAction, openPluginStream } from "@scout/plugin-sdk"
 import {
   SYSTEMD_ACTION_IDS,
   SYSTEMD_PLUGIN_ID,
@@ -20,19 +16,14 @@ import {
 } from "../src/systemd.js"
 import { web } from "../src/web.js"
 
-const makeDeps = (
-  overrides: Partial<SystemdDependencies> = {},
-): SystemdDependencies => ({
+const makeDeps = (overrides: Partial<SystemdDependencies> = {}): SystemdDependencies => ({
   exec: () => Effect.succeed({ stdout: "", stderr: "", exitCode: 0 }),
   readFile: () => Effect.succeed(""),
   copyFile: () => Effect.void,
   writeFile: () => Effect.void,
   unlink: () => Effect.void,
   makeTempPath: () => "/tmp/scout-systemd.test",
-  followJournal: () =>
-    Stream.fromIterable([
-      { lines: ["line one", "line two"], ts: 123 },
-    ]),
+  followJournal: () => Stream.fromIterable([{ lines: ["line one", "line two"], ts: 123 }]),
   ...overrides,
 })
 
@@ -65,9 +56,7 @@ describe("systemd plugin", () => {
   })
 
   it("parses systemctl show output", () => {
-    expect(
-      parseSystemctlShow("MainPID=55\nMemoryCurrent=4096\nCPUUsageNSec=9000\n"),
-    ).toEqual({
+    expect(parseSystemctlShow("MainPID=55\nMemoryCurrent=4096\nCPUUsageNSec=9000\n")).toEqual({
       pid: 55,
       memoryBytes: 4096,
       cpuUsageNs: 9000,
@@ -86,9 +75,7 @@ describe("systemd plugin", () => {
       }),
     )
 
-    await expect(
-      Effect.runPromise(plugin.detect({ nodeId: "n1", now: 1 })),
-    ).resolves.toMatchObject({
+    await expect(Effect.runPromise(plugin.detect({ nodeId: "n1", now: 1 }))).resolves.toMatchObject({
       pluginId: SYSTEMD_PLUGIN_ID,
       status: "available",
     })
@@ -145,9 +132,7 @@ describe("systemd plugin", () => {
       }),
     )
 
-    const result = await Effect.runPromise(
-      plugin.collect!({ nodeId: "node-1", now: 42 }),
-    )
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 42 }))
 
     expect(result.entities).toHaveLength(2)
     expect(result.entities?.[0]).toMatchObject({
@@ -333,11 +318,7 @@ describe("systemd plugin", () => {
         packageUnderTest,
         {
           nodeId: "node-1",
-          permissions: new Set([
-            "node:systemd",
-            "node:stream-logs",
-            "node:spawn-process",
-          ]),
+          permissions: new Set(["node:systemd", "node:stream-logs", "node:spawn-process"]),
         },
         {
           pluginId: SYSTEMD_PLUGIN_ID,
@@ -357,9 +338,7 @@ describe("systemd plugin", () => {
     )
 
     const chunks = await Effect.runPromise(Stream.runCollect(stream))
-    expect([...chunks]).toEqual([
-      { lines: ["line one", "line two"], ts: 123 },
-    ])
+    expect([...chunks]).toEqual([{ lines: ["line one", "line two"], ts: 123 }])
   })
 
   it("exports valid json-render screens for the web runtime", async () => {
@@ -368,10 +347,7 @@ describe("systemd plugin", () => {
     )
 
     expect(screens).toHaveLength(2)
-    expect(screens.map((screen) => screen.id)).toEqual([
-      "systemd.overview",
-      "systemd.unit-detail",
-    ])
+    expect(screens.map((screen) => screen.id)).toEqual(["systemd.overview", "systemd.unit-detail"])
     expect(screens[0]?.kind).toBe("overview")
     expect(screens[1]).toMatchObject({
       kind: "entity-detail",

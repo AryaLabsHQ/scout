@@ -16,9 +16,8 @@ import { RpcLayer } from "./rpc/server.js"
 // Log level is controlled by SCOUT_LOG_LEVEL env var (debug|info|warn|error).
 // Effect's built-in logger respects the SCOUT_LOG_LEVEL via the consolePretty logger
 // which reads from the environment at startup.
-const LoggingLayer: Layer.Layer<never, never, never> = process.env["NODE_ENV"] === "production"
-  ? Logger.layer([Logger.consoleJson])
-  : Layer.empty
+const LoggingLayer: Layer.Layer<never, never, never> =
+  process.env["NODE_ENV"] === "production" ? Logger.layer([Logger.consoleJson]) : Layer.empty
 
 // ── Configuration + auth ─────────────────────────────────────────────────────
 
@@ -66,10 +65,9 @@ const AppServerLayer = AllRoutes.pipe(
   Layer.provide(AuthLayer),
 )
 
-const FullLayer = Layer.merge(
-  AppServerLayer,
-  RetentionBackgroundLayer.pipe(Layer.provide(AppLayer)),
-).pipe(Layer.provide(LoggingLayer))
+const FullLayer = Layer.merge(AppServerLayer, RetentionBackgroundLayer.pipe(Layer.provide(AppLayer))).pipe(
+  Layer.provide(LoggingLayer),
+)
 
 // ── Run ───────────────────────────────────────────────────────────────────────
 

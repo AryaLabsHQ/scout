@@ -42,13 +42,20 @@ function AlertRow({
     <tr className={cn("border-t border-border first:border-t-0", resolved && "opacity-55")}>
       <td className="truncate px-4 py-2.5">
         <span className="flex items-center gap-2.5">
-          <StatusDot tone={resolved ? "off" : alert.severity === "critical" ? "err" : "warn"} label={alert.severity} />
+          <StatusDot
+            tone={resolved ? "off" : alert.severity === "critical" ? "err" : "warn"}
+            label={alert.severity}
+          />
           <span className="truncate">{METRIC_LABELS[alert.metric] ?? alert.metric}</span>
           <span className="truncate font-mono text-xs text-subtle">{alert.metric}</span>
         </span>
       </td>
       <td className="truncate px-4 py-2.5">
-        <Link to="/systems/$systemId" params={{ systemId: alert.systemId }} className="font-mono hover:underline">
+        <Link
+          to="/systems/$systemId"
+          params={{ systemId: alert.systemId }}
+          className="font-mono hover:underline"
+        >
           {hostname}
         </Link>
       </td>
@@ -58,7 +65,12 @@ function AlertRow({
       </td>
       <td className="px-4 py-2.5 text-muted-foreground">
         <TimeAgo at={alert.triggeredAt} />
-        {alert.resolvedAt ? <span className="text-subtle"> · resolved <TimeAgo at={alert.resolvedAt} /></span> : null}
+        {alert.resolvedAt ? (
+          <span className="text-subtle">
+            {" "}
+            · resolved <TimeAgo at={alert.resolvedAt} />
+          </span>
+        ) : null}
       </td>
       <td className="px-4 py-1.5 text-right whitespace-nowrap">
         {alert.state === "active" ? (
@@ -88,9 +100,7 @@ function AlertsPage() {
   // Bridges the gap between a mutation and the next `alerts.list` refresh.
   const [overrides, setOverrides] = useState<Record<string, Alert>>({})
 
-  const hostnames = new Map(
-    lastValue(systemsResult, []).map((system) => [system.id, system.hostname]),
-  )
+  const hostnames = new Map(lastValue(systemsResult, []).map((system) => [system.id, system.hostname]))
   const live = lastValue(alertsResult, null)
   const liveIds = new Set(live?.map((alert) => alert.id))
   const merged = new Map<string, Alert>()
@@ -106,7 +116,8 @@ function AlertsPage() {
   const resolvedAlerts = all.filter((alert) => alert.state === "resolved")
   const rules = lastValue(rulesResult, [])
 
-  const label = (alert: Alert) => `${METRIC_LABELS[alert.metric] ?? alert.metric} on ${hostnames.get(alert.systemId) ?? alert.systemId}`
+  const label = (alert: Alert) =>
+    `${METRIC_LABELS[alert.metric] ?? alert.metric} on ${hostnames.get(alert.systemId) ?? alert.systemId}`
 
   // A failed mutation drops its optimistic state so the live list shows the truth again.
   const dropOverride = (alertId: string) =>
@@ -122,7 +133,10 @@ function AlertsPage() {
       confirmLabel: "Acknowledge",
     })
     if (!confirmed) return
-    setOverrides((current) => ({ ...current, [alert.id]: { ...alert, state: "acknowledged", acknowledgedAt: Date.now() } }))
+    setOverrides((current) => ({
+      ...current,
+      [alert.id]: { ...alert, state: "acknowledged", acknowledgedAt: Date.now() },
+    }))
     try {
       await ack({ payload: { alertId: alert.id }, reactivityKeys: ["alerts"] })
     } catch {
@@ -139,7 +153,10 @@ function AlertsPage() {
       destructive: true,
     })
     if (!confirmed) return
-    setOverrides((current) => ({ ...current, [alert.id]: { ...alert, state: "resolved", resolvedAt: Date.now() } }))
+    setOverrides((current) => ({
+      ...current,
+      [alert.id]: { ...alert, state: "resolved", resolvedAt: Date.now() },
+    }))
     try {
       await resolve({ payload: { alertId: alert.id }, reactivityKeys: ["alerts"] })
     } catch {
@@ -149,7 +166,11 @@ function AlertsPage() {
   }
 
   const rows = tab === "open" ? open : resolvedAlerts
-  const counts: Record<Tab, number> = { open: open.length, resolved: resolvedAlerts.length, rules: rules.length }
+  const counts: Record<Tab, number> = {
+    open: open.length,
+    resolved: resolvedAlerts.length,
+    rules: rules.length,
+  }
 
   return (
     <Page>
@@ -166,7 +187,9 @@ function AlertsPage() {
             search={value === "open" ? {} : { tab: value }}
             className={cn(
               "-mb-px flex items-center gap-2 border-b px-0.5 py-2.5 text-[13px] capitalize",
-              value === tab ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              value === tab
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {value === "resolved" ? "Resolved · 24h" : value}
@@ -200,7 +223,10 @@ function AlertsPage() {
               </thead>
               <tbody>
                 {rules.map((rule) => (
-                  <tr key={rule.id} className={cn("border-t border-border first:border-t-0", !rule.enabled && "opacity-55")}>
+                  <tr
+                    key={rule.id}
+                    className={cn("border-t border-border first:border-t-0", !rule.enabled && "opacity-55")}
+                  >
                     <td className="px-4 py-2.5">
                       {METRIC_LABELS[rule.metric] ?? rule.metric}{" "}
                       <span className="font-mono text-xs text-subtle">{rule.metric}</span>
@@ -217,7 +243,9 @@ function AlertsPage() {
                         {rule.severity}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-right text-muted-foreground">{rule.enabled ? "On" : "Off"}</td>
+                    <td className="px-4 py-2.5 text-right text-muted-foreground">
+                      {rule.enabled ? "On" : "Off"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

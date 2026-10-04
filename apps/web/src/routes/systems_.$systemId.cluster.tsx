@@ -25,15 +25,27 @@ import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/systems_/$systemId/cluster")({
   validateSearch: (search: Record<string, unknown>): { namespace?: string } =>
-    typeof search["namespace"] === "string" && search["namespace"].length > 0 ? { namespace: search["namespace"] } : {},
-  loader: async ({ params }) => ({ detail: await fetchSystemDetail({ data: { systemId: params.systemId } }) }),
+    typeof search["namespace"] === "string" && search["namespace"].length > 0
+      ? { namespace: search["namespace"] }
+      : {},
+  loader: async ({ params }) => ({
+    detail: await fetchSystemDetail({ data: { systemId: params.systemId } }),
+  }),
   component: ClusterPage,
 })
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
 
-function PodActions({ systemId, hostname, pod }: { systemId: string; hostname: string; pod: EntitySnapshot }) {
+function PodActions({
+  systemId,
+  hostname,
+  pod,
+}: {
+  systemId: string
+  hostname: string
+  pod: EntitySnapshot
+}) {
   const confirm = useConfirm()
   const runAction = useAtomSet(HubClient.mutation("plugins.runAction"), { mode: "promise" })
   const run = async (actionId: string, verb: string, effect: string, destructive: boolean) => {
@@ -76,7 +88,12 @@ function PodActions({ systemId, hostname, pod }: { systemId: string; hostname: s
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem
           onClick={() =>
-            void run(K8S_ACTION_IDS.restartPod, "Restart", "The pod is deleted and its controller schedules a replacement.", false)
+            void run(
+              K8S_ACTION_IDS.restartPod,
+              "Restart",
+              "The pod is deleted and its controller schedules a replacement.",
+              false,
+            )
           }
         >
           Restart pod…
@@ -84,7 +101,12 @@ function PodActions({ systemId, hostname, pod }: { systemId: string; hostname: s
         <DropdownMenuItem
           variant="destructive"
           onClick={() =>
-            void run(K8S_ACTION_IDS.deletePod, "Delete", "The pod is deleted; only a controller brings it back.", true)
+            void run(
+              K8S_ACTION_IDS.deletePod,
+              "Delete",
+              "The pod is deleted; only a controller brings it back.",
+              true,
+            )
           }
         >
           Delete pod…
@@ -107,13 +129,20 @@ function ClusterPage() {
 
   const namespaces = summarizeNamespaces(entities.items)
   const inScope = (entity: EntitySnapshot) => selected === undefined || namespaceOf(entity) === selected
-  const workloads = workloadsOf(entities.items).filter((workload) => selected === undefined || workload.namespace === selected)
+  const workloads = workloadsOf(entities.items).filter(
+    (workload) => selected === undefined || workload.namespace === selected,
+  )
   const pods = entities.items
     .filter((entity) => entity.ref.kind === K8S_ENTITY_KINDS.pod && inScope(entity))
     .sort((a, b) => a.ref.id.localeCompare(b.ref.id))
   const warnings = uniqueEvents(events.items)
     .filter((event) => event.severity !== "info")
-    .filter((event) => selected === undefined || event.entity?.id.startsWith(`${selected}/`) || event.entity?.id === selected)
+    .filter(
+      (event) =>
+        selected === undefined ||
+        event.entity?.id.startsWith(`${selected}/`) ||
+        event.entity?.id === selected,
+    )
     .sort((a, b) => b.ts - a.ts)
   const readyPods = pods.filter((pod) => pod.status === "ready" || pod.status === "succeeded").length
 
@@ -170,7 +199,9 @@ function ClusterPage() {
               search={{}}
               className={cn(
                 "inline-flex h-7 items-center rounded-full border px-3 text-[12.5px]",
-                selected === undefined ? "border-border-strong bg-muted" : "border-border text-muted-foreground hover:text-foreground",
+                selected === undefined
+                  ? "border-border-strong bg-muted"
+                  : "border-border text-muted-foreground hover:text-foreground",
               )}
             >
               All namespaces
@@ -216,7 +247,9 @@ function ClusterPage() {
                           <span className="truncate font-mono">{workload.name}</span>
                         </span>
                       </td>
-                      <td className="truncate px-4 py-2.5 font-mono text-muted-foreground">{workload.namespace}</td>
+                      <td className="truncate px-4 py-2.5 font-mono text-muted-foreground">
+                        {workload.namespace}
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground">{workload.status}</td>
                       <td className="px-4 py-2.5 text-right font-mono tabular">
                         {workload.ready}/{workload.desired}
@@ -251,7 +284,9 @@ function ClusterPage() {
                           <span className="truncate font-mono">{pod.displayName ?? pod.ref.id}</span>
                         </span>
                       </td>
-                      <td className="truncate px-4 py-2 font-mono text-muted-foreground">{namespaceOf(pod)}</td>
+                      <td className="truncate px-4 py-2 font-mono text-muted-foreground">
+                        {namespaceOf(pod)}
+                      </td>
                       <td className="px-4 py-2 text-muted-foreground">{pod.status ?? "unknown"}</td>
                       <td className="px-4 py-2 text-right font-mono tabular text-muted-foreground">
                         {String(record(pod.state)["restarts"] ?? 0)}
@@ -281,7 +316,9 @@ function ClusterPage() {
                       <span className="font-mono">{event.entity?.id ?? event.eventId}</span>{" "}
                       <span className="text-muted-foreground">{event.message}</span>
                     </span>
-                    <span className="shrink-0 text-subtle"><TimeAgo at={event.ts} /></span>
+                    <span className="shrink-0 text-subtle">
+                      <TimeAgo at={event.ts} />
+                    </span>
                   </li>
                 ))}
               </ul>

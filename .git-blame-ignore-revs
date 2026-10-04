@@ -1,0 +1,6 @@
+# Revisions that `git blame` should skip. Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically.
+
+# style: format the repo with oxfmt
+a634ba2095f881a73dcec70af4669b533e7b98e9

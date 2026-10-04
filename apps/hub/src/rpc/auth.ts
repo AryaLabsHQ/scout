@@ -89,9 +89,9 @@ export const ClientAuthMiddlewareLive = Layer.effect(
 
     return ClientAuthMiddleware.of((effect, { rpc, payload, headers }) =>
       Effect.gen(function* () {
-        const { identity, expiresAt } = yield* browserAuth.authenticate(headers).pipe(
-          Effect.mapError((error) => new Unauthorized({ message: error.message })),
-        )
+        const { identity, expiresAt } = yield* browserAuth
+          .authenticate(headers)
+          .pipe(Effect.mapError((error) => new Unauthorized({ message: error.message })))
         const actor = actorOf(identity)
 
         if (!UNAUDITED_RPCS.has(rpc._tag as ClientRpcTag)) {

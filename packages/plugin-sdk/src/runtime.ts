@@ -49,29 +49,19 @@ export interface ScoutActionHandler<Input = unknown, Output = unknown, E = never
   readonly definition: ActionDefinition
   readonly inputSchema: AnySchema<Input>
   readonly outputSchema: AnySchema<Output>
-  readonly execute: (
-    ctx: ActionContext,
-    target: ActionTarget,
-    input: Input,
-  ) => Effect.Effect<Output, E, R>
+  readonly execute: (ctx: ActionContext, target: ActionTarget, input: Input) => Effect.Effect<Output, E, R>
 }
 
 export interface ScoutStreamHandler<Input = unknown, Chunk = unknown, E = never, R = never> {
   readonly definition: StreamDefinition
   readonly inputSchema: AnySchema<Input>
   readonly chunkSchema: AnySchema<Chunk>
-  readonly open: (
-    ctx: StreamContext,
-    target: ActionTarget,
-    input: Input,
-  ) => Stream.Stream<Chunk, E, R>
+  readonly open: (ctx: StreamContext, target: ActionTarget, input: Input) => Stream.Stream<Chunk, E, R>
 }
 
 export interface ScoutAgentPlugin<E = never, R = never> {
   readonly detect: (ctx: DetectContext) => Effect.Effect<PluginCapability, E, R>
-  readonly collect?: (
-    ctx: CollectContext,
-  ) => Effect.Effect<PluginCollectionResult, E, R>
+  readonly collect?: (ctx: CollectContext) => Effect.Effect<PluginCollectionResult, E, R>
   readonly actions?: ReadonlyArray<ScoutActionHandler<unknown, unknown, E, R>>
   readonly streams?: ReadonlyArray<
     | ScoutStreamHandler<unknown, LogChunk, E, R>
@@ -111,10 +101,9 @@ export const definePlugin = <const T extends ScoutPlugin<any, any>>(plugin: T): 
 
 export const getLoadedPluginRuntimes = (
   plugin: Pick<ScoutPlugin, "agent" | "hub" | "web" | "operator">,
-): ReadonlyArray<ScoutPluginLoadedRuntime> =>
-  [
-    ...(plugin.agent !== undefined ? ["agent" as const] : []),
-    ...(plugin.hub !== undefined ? ["hub" as const] : []),
-    ...(plugin.web !== undefined ? ["web" as const] : []),
-    ...(plugin.operator !== undefined ? ["operator" as const] : []),
-  ]
+): ReadonlyArray<ScoutPluginLoadedRuntime> => [
+  ...(plugin.agent !== undefined ? ["agent" as const] : []),
+  ...(plugin.hub !== undefined ? ["hub" as const] : []),
+  ...(plugin.web !== undefined ? ["web" as const] : []),
+  ...(plugin.operator !== undefined ? ["operator" as const] : []),
+]

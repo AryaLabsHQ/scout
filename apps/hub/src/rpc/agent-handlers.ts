@@ -31,10 +31,7 @@ const CoreMetricsHandlerLive = AgentHubRpcs.toLayerHandler(
         const typedPayload = payload as Parameters<typeof mi.ingest>[0]
         yield* mi.ingest(typedPayload)
         yield* broadcast.publishMetrics(typedPayload.sample)
-        yield* alerts.evaluate(
-          typedPayload.systemId,
-          alertMetricSamplesFromCoreMetrics(typedPayload.sample),
-        )
+        yield* alerts.evaluate(typedPayload.systemId, alertMetricSamplesFromCoreMetrics(typedPayload.sample))
       })
   }),
 )
@@ -45,23 +42,12 @@ const AgentPluginCollectionHandlerLive = AgentHubRpcs.toLayerHandler(
     const mi = yield* MetricsIngestion
     const alerts = yield* AlertEngine
 
-    return ({
-      systemId,
-      collection,
-    }: {
-      systemId: string
-      collection: PluginCollectionResult
-    }) =>
+    return ({ systemId, collection }: { systemId: string; collection: PluginCollectionResult }) =>
       Effect.gen(function* () {
         yield* mi.ingestPluginCollection(systemId, collection)
-        yield* alerts.evaluate(
-          systemId,
-          alertMetricSamplesFromPluginCollection(collection),
-        )
+        yield* alerts.evaluate(systemId, alertMetricSamplesFromPluginCollection(collection))
       })
   }),
 )
 
-export const AgentHandlersLive = CoreMetricsHandlerLive.pipe(
-  Layer.merge(AgentPluginCollectionHandlerLive),
-)
+export const AgentHandlersLive = CoreMetricsHandlerLive.pipe(Layer.merge(AgentPluginCollectionHandlerLive))

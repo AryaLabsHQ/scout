@@ -1,9 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useState,
-} from "react"
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { SlashCommandItem } from "./types"
 
@@ -82,9 +77,7 @@ export const SlashCommandList = forwardRef<SlashCommandListRef, SlashCommandList
             onMouseEnter={() => setSelectedIndex(index)}
           >
             <span className="text-foreground whitespace-nowrap">/{item.trigger}</span>
-            {item.description && (
-              <span className="text-muted-foreground truncate">{item.description}</span>
-            )}
+            {item.description && <span className="text-muted-foreground truncate">{item.description}</span>}
           </button>
         ))}
       </div>

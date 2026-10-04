@@ -11,10 +11,7 @@ export const TEST_EMAIL = "user@example.com"
 export interface TestSigner {
   readonly kid: string
   readonly jwk: Record<string, string>
-  readonly sign: (
-    claims: Record<string, unknown>,
-    header?: Record<string, unknown>,
-  ) => Promise<string>
+  readonly sign: (claims: Record<string, unknown>, header?: Record<string, unknown>) => Promise<string>
 }
 
 const base64url = (bytes: Uint8Array | string) =>

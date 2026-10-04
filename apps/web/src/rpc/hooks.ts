@@ -6,10 +6,7 @@ import { useAtomValue, useAtomMount } from "@effect/atom-react"
  * loading/erroring. Suitable for cases where rendering with empty data
  * is acceptable (lists, etc.).
  */
-export function useHubQuery<A, E>(
-  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
-  fallback: A,
-): A {
+export function useHubQuery<A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>, fallback: A): A {
   const result = useAtomValue(atom)
   if (result._tag === "Success") return result.value
   return fallback
@@ -19,10 +16,7 @@ export function useHubQuery<A, E>(
  * useMountedHubQuery — same as useHubQuery but also mounts the atom so
  * it starts fetching immediately when the component mounts.
  */
-export function useMountedHubQuery<A, E>(
-  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
-  fallback: A,
-): A {
+export function useMountedHubQuery<A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>, fallback: A): A {
   useAtomMount(atom)
   return useHubQuery(atom, fallback)
 }

@@ -1,9 +1,11 @@
 # HUB APP
 
 ## OVERVIEW
+
 `apps/hub` is the control plane. It stores system state in SQLite via Drizzle, ingests metrics from agents, serves bootstrap REST endpoints, and hosts the browser and agent websocket RPC layers.
 
 ## STRUCTURE
+
 ```text
 apps/hub/
 ├── drizzle/          # SQLite schema and migrations
@@ -17,18 +19,20 @@ apps/hub/
 ```
 
 ## WHERE TO LOOK
-| Task | Location | Notes |
-|------|----------|-------|
-| Database schema or migration flow | `drizzle/schema.ts`, `drizzle.config.ts` | SQLite path comes from `SCOUT_DB_PATH` |
-| Service wiring | `src/app.ts` | Database and broadcast layers are the base infra layers |
-| REST endpoints for SSR/bootstrap | `src/routes.ts` | `/health`, `/api/systems`, `/api/alerts`, `/api/plugins`, etc. |
-| Browser / agent RPC entry points | `src/rpc/server.ts`, `src/rpc/agent-bridge.ts` | `/ws/rpc` for browsers, `/ws/rpc/agent` for agents |
-| Auth, startup config | `src/config.ts`, `src/auth/*`, `src/rpc/auth.ts` | Gate covers every path but `/health`; RPC middleware provides `CurrentIdentity` + audit log |
-| Plugin discovery | `src/services/plugin-registry.ts` | Loads packages from `SCOUT_PLUGIN_DIR` or `packages/` |
-| Operator session lifecycle | `src/services/operator-*.ts`, `src/services/AGENTS.md` | pi-durable harness, sessions, tools, models, skills, extensions, resources |
-| Operator RPC handlers | `src/rpc/client-handlers.ts` | operator.* methods (sessions, prompt, abort, approvals, skills, models, watch stream) |
+
+| Task                              | Location                                               | Notes                                                                                       |
+| --------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Database schema or migration flow | `drizzle/schema.ts`, `drizzle.config.ts`               | SQLite path comes from `SCOUT_DB_PATH`                                                      |
+| Service wiring                    | `src/app.ts`                                           | Database and broadcast layers are the base infra layers                                     |
+| REST endpoints for SSR/bootstrap  | `src/routes.ts`                                        | `/health`, `/api/systems`, `/api/alerts`, `/api/plugins`, etc.                              |
+| Browser / agent RPC entry points  | `src/rpc/server.ts`, `src/rpc/agent-bridge.ts`         | `/ws/rpc` for browsers, `/ws/rpc/agent` for agents                                          |
+| Auth, startup config              | `src/config.ts`, `src/auth/*`, `src/rpc/auth.ts`       | Gate covers every path but `/health`; RPC middleware provides `CurrentIdentity` + audit log |
+| Plugin discovery                  | `src/services/plugin-registry.ts`                      | Loads packages from `SCOUT_PLUGIN_DIR` or `packages/`                                       |
+| Operator session lifecycle        | `src/services/operator-*.ts`, `src/services/AGENTS.md` | pi-durable harness, sessions, tools, models, skills, extensions, resources                  |
+| Operator RPC handlers             | `src/rpc/client-handlers.ts`                           | operator.\* methods (sessions, prompt, abort, approvals, skills, models, watch stream)      |
 
 ## CONVENTIONS
+
 - Add new hub business logic as services first, then provide those layers from `src/app.ts`.
 - Keep shared wire contracts in `packages/shared`; the hub should implement them, not redefine them.
 - REST is mainly for health checks and SSR bootstrap. Live control and subscriptions go through RPC.
@@ -37,6 +41,7 @@ apps/hub/
 - New browser RPCs are audit-logged unless listed in `UNAUDITED_RPCS` (`src/rpc/auth.ts`); list only read-only ones.
 
 ## ANTI-PATTERNS
+
 - Do not add new websocket APIs straight to `src/routes.ts`; wire them through shared RPC groups and `src/rpc`.
 - Do not query plugin packages directly from route files; go through `PluginRegistry` or RPC handlers.
 - Do not hide new service dependencies in route handlers; extend the layer graph explicitly.

@@ -9,7 +9,8 @@ import type { StatusTone } from "@/components/status-dot"
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {}
-const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null)
+const num = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null
 const str = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null)
 const list = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : [])
 
@@ -97,7 +98,10 @@ export function edgeSummary(entity: EntitySnapshot): string {
   const state = proxyState(entity)
   if (!state.reachable) return state.error ?? `admin API at ${state.endpoint} not answering`
   const fails = state.upstreams.reduce((total, upstream) => total + upstream.fails, 0)
-  return ["caddy", plural(state.sites.length, "site"), plural(state.upstreams.length, "upstream"), plural(fails, "fail")].join(
-    " · ",
-  )
+  return [
+    "caddy",
+    plural(state.sites.length, "site"),
+    plural(state.upstreams.length, "upstream"),
+    plural(fails, "fail"),
+  ].join(" · ")
 }
