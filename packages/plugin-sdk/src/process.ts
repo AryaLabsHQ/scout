@@ -15,6 +15,8 @@ export interface FollowProcessLinesOptions {
   readonly maxBatchLines?: number
   /** Grace period between SIGTERM and SIGKILL on release. Defaults to 2 seconds. */
   readonly killTimeout?: Duration.Input
+  /** Batches buffered ahead of the consumer before stdout pauses. Defaults to 16. */
+  readonly bufferBatches?: number
 }
 
 const hasExited = (proc: ChildProcess): boolean =>
@@ -57,7 +59,9 @@ const terminate = (proc: ChildProcess, killTimeout: Duration.Input): Effect.Effe
  * pulling (completion, failure, or interruption from an RPC cancel or a
  * dropped connection), the child is killed and reaped. Lines are flushed at
  * the end of every stdout chunk, so a quiet follower still delivers what it
- * printed. The stream ends when the child exits.
+ * printed. A slow consumer applies backpressure: stdout pauses while the
+ * buffer is full, so the child blocks on its pipe instead of the agent
+ * buffering without limit. The stream ends when the child exits.
  */
 export const followProcessLines = (
   command: string,
@@ -66,6 +70,7 @@ export const followProcessLines = (
 ): Stream.Stream<ProcessLineBatch, Error> => {
   const maxBatchLines = options.maxBatchLines ?? 50
   const killTimeout = options.killTimeout ?? "2 seconds"
+  const bufferBatches = options.bufferBatches ?? 16
 
   return Stream.callback<ProcessLineBatch, Error>((queue) =>
     Effect.gen(function* () {
@@ -77,35 +82,43 @@ export const followProcessLines = (
         (child) => terminate(child, killTimeout),
       )
 
+      const stdout = proc.stdout!
       const decoder = new TextDecoder()
       let buffer = ""
 
-      const emit = (lines: Array<string>) => {
+      const toBatches = (lines: Array<string>): Array<ProcessLineBatch> => {
+        const batches: Array<ProcessLineBatch> = []
         for (let start = 0; start < lines.length; start += maxBatchLines) {
-          Queue.offerUnsafe(queue, {
-            lines: lines.slice(start, start + maxBatchLines),
-            ts: Date.now(),
-          })
+          batches.push({ lines: lines.slice(start, start + maxBatchLines), ts: Date.now() })
         }
+        return batches
       }
 
-      proc.stdout!.on("data", (chunk: Buffer) => {
+      stdout.on("data", (chunk: Buffer) => {
         buffer += decoder.decode(chunk, { stream: true })
         const lines = buffer.split("\n")
         buffer = lines.pop() ?? ""
-        emit(lines.filter((line) => line.length > 0))
+        const batches = toBatches(lines.filter((line) => line.length > 0))
+        if (batches.length === 0) return
+        // Hold further chunks (and "end") until the consumer has room, which
+        // also keeps batches in order.
+        stdout.pause()
+        Effect.runFork(
+          Queue.offerAll(queue, batches).pipe(Effect.ensuring(Effect.sync(() => stdout.resume()))),
+        )
       })
       proc.once("error", (error) => {
         Queue.failCauseUnsafe(queue, Cause.fail(new Error(`${command} failed: ${error.message}`)))
       })
-      // "close" fires after stdout is drained, so the trailing partial line is
-      // complete by then.
+      // "close" fires after stdout has ended, so every chunk has been offered
+      // and the trailing partial line is complete.
       proc.once("close", () => {
         buffer += decoder.decode()
-        if (buffer.length > 0) emit([buffer])
+        const tail = buffer.length > 0 ? toBatches([buffer]) : []
         buffer = ""
-        Queue.endUnsafe(queue)
+        Effect.runFork(Queue.offerAll(queue, tail).pipe(Effect.andThen(Queue.end(queue))))
       })
     }),
+    { bufferSize: bufferBatches },
   )
 }

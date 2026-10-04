@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs"
 import { Effect, Exit, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { followProcessLines } from "../src/process.js"
@@ -73,4 +74,34 @@ describe("followProcessLines", () => {
     expect(isRunning(Number(head.value.lines[0]))).toBe(false)
     expect(Date.now() - started).toBeGreaterThanOrEqual(200)
   })
+
+  it.skipIf(!existsSync("/proc/self/io"))(
+    "pauses the child while the consumer is behind instead of buffering without limit",
+    async () => {
+      const bytesWritten = (pid: number): number => {
+        const io = readFileSync(`/proc/${pid}/io`, "utf8")
+        return Number(/^wchar: (\d+)$/m.exec(io)?.[1] ?? Number.NaN)
+      }
+
+      // awk writes as fast as the pipe drains; only backpressure stops it.
+      // (`yes` is no good here: uutils `yes` splices, which wchar does not count.)
+      const written = await Effect.runPromise(
+        Stream.runHead(
+          followProcessLines("sh", ["-c", "echo $$; exec awk 'BEGIN { while (1) print \"scout-backpressure\" }'"]).pipe(
+            Stream.mapEffect((batch) =>
+              Effect.sleep("500 millis").pipe(
+                Effect.map(() => bytesWritten(Number(batch.lines[0]))),
+              ),
+            ),
+          ),
+        ).pipe(Effect.timeout("5 seconds")),
+      )
+
+      expect(written._tag).toBe("Some")
+      if (written._tag !== "Some") return
+      // A pipe buffer and one bounded queue (well under 1MB here), against
+      // 10-20MB in 500ms when nothing pushes back.
+      expect(written.value).toBeLessThan(3 * 1024 * 1024)
+    },
+  )
 })
