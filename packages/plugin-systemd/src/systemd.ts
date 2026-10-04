@@ -40,15 +40,10 @@ interface CommandResult {
   readonly exitCode: number
 }
 
-interface CommandOptions {
-  readonly sudo?: boolean
-}
-
 export interface SystemdDependencies {
   readonly exec: (
     command: string,
     args: ReadonlyArray<string>,
-    options?: CommandOptions,
   ) => Effect.Effect<CommandResult, Error>
   readonly readFile: (path: string) => Effect.Effect<string, Error>
   readonly copyFile: (from: string, to: string) => Effect.Effect<void, Error>
@@ -202,14 +197,10 @@ const getTargetUnit = (
 }
 
 const makeDefaultDependencies = (): SystemdDependencies => ({
-  exec: (command, args, options) =>
+  exec: (command, args) =>
     Effect.tryPromise({
       try: async () => {
-        const cmd =
-          options?.sudo === true && process.getuid?.() !== 0
-            ? ["sudo", command, ...args]
-            : [command, ...args]
-        const proc = spawn(cmd[0]!, cmd.slice(1), {
+        const proc = spawn(command, [...args], {
           stdio: ["ignore", "pipe", "pipe"],
         })
         const stdoutChunks: Buffer[] = []
@@ -254,13 +245,13 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
   followJournal: (unit, tail) =>
     Stream.fromAsyncIterable(
       (async function* () {
-        const cmd =
-          process.getuid?.() === 0
-            ? ["journalctl", "-f", "-u", unit, "-n", String(tail), "--output=short-iso"]
-            : ["sudo", "journalctl", "-f", "-u", unit, "-n", String(tail), "--output=short-iso"]
-        const proc = spawn(cmd[0]!, cmd.slice(1), {
-          stdio: ["ignore", "pipe", "pipe"],
-        })
+        // Unprivileged agents read system unit logs through journal group
+        // membership (`adm` or `systemd-journal`).
+        const proc = spawn(
+          "journalctl",
+          ["-f", "-u", unit, "-n", String(tail), "--output=short-iso"],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        )
         const decoder = new TextDecoder()
         let buffer = ""
         let lineBatch: string[] = []
@@ -310,9 +301,8 @@ const runChecked = (
   deps: SystemdDependencies,
   command: string,
   args: ReadonlyArray<string>,
-  options?: CommandOptions,
 ): Effect.Effect<string, PluginExecutionError> =>
-  deps.exec(command, args, options).pipe(
+  deps.exec(command, args).pipe(
     Effect.flatMap(({ stdout, stderr, exitCode }) =>
       exitCode === 0
         ? Effect.succeed(stdout)
@@ -330,10 +320,46 @@ const runChecked = (
     ),
   )
 
+/** Read-only systemctl queries; these work for any user on the system bus. */
 const runSystemctl = (
   deps: SystemdDependencies,
   args: ReadonlyArray<string>,
-): Effect.Effect<string, PluginExecutionError> => runChecked(deps, "systemctl", args, { sudo: true })
+): Effect.Effect<string, PluginExecutionError> => runChecked(deps, "systemctl", args)
+
+const AUTHORIZATION_DENIED = /interactive authentication required|access denied|not authorized|permission denied/i
+
+const permissionDenied = (operation: string, actionId: string) =>
+  failExecution(
+    "permission-denied",
+    `${operation} requires root or a polkit grant; this Scout agent runs as ` +
+      `uid ${String(process.getuid?.() ?? "unknown")} and never escalates with sudo.`,
+    { actionId },
+  )
+
+/**
+ * State-changing systemctl calls. `--no-ask-password` makes polkit refuse
+ * immediately instead of waiting for an interactive password, and a refusal
+ * surfaces as a `permission-denied` execution error.
+ */
+const runSystemctlMutation = (
+  deps: SystemdDependencies,
+  args: ReadonlyArray<string>,
+  actionId: string,
+): Effect.Effect<string, PluginExecutionError> =>
+  deps.exec("systemctl", ["--no-ask-password", ...args]).pipe(
+    Effect.mapError((error) => failExecution("command-error", String(error), { actionId })),
+    Effect.flatMap(({ stdout, stderr, exitCode }) => {
+      if (exitCode === 0) return Effect.succeed(stdout)
+      const detail = stderr.trim() || stdout.trim() || "unknown error"
+      return Effect.fail(
+        AUTHORIZATION_DENIED.test(detail)
+          ? permissionDenied(`systemctl ${args.join(" ")}`, actionId)
+          : failExecution("command-failed", `systemctl ${args.join(" ")} exited with ${exitCode}: ${detail}`, {
+              actionId,
+            }),
+      )
+    }),
+  )
 
 const getUnitFilePath = (
   deps: SystemdDependencies,
@@ -491,7 +517,7 @@ export const createSystemdAgentPlugin = (
 
   const executeUnitAction = (verb: string, actionId: string, target: ActionTarget) =>
     getTargetUnit(target, { actionId }).pipe(
-      Effect.flatMap((unit) => runSystemctl(deps, [verb, unit])),
+      Effect.flatMap((unit) => runSystemctlMutation(deps, [verb, unit], actionId)),
       Effect.as({}),
     )
 
@@ -536,7 +562,7 @@ export const createSystemdAgentPlugin = (
       inputSchema: EmptyInputSchema,
       outputSchema: EmptyInputSchema,
       execute: (_ctx, _target: ActionTarget, _input: unknown) =>
-        runSystemctl(deps, ["daemon-reload"]).pipe(Effect.as({})),
+        runSystemctlMutation(deps, ["daemon-reload"], SYSTEMD_ACTION_IDS.daemonReload).pipe(Effect.as({})),
     },
     {
       definition: manifest.actions.find((action) => action.id === SYSTEMD_ACTION_IDS.readUnitFile)!,
@@ -581,8 +607,18 @@ export const createSystemdAgentPlugin = (
                       ),
                     ),
                   ),
-                  Effect.flatMap(() => deps.copyFile(tempPath, targetPath)),
-                  Effect.flatMap(() => runSystemctl(deps, ["daemon-reload"])),
+                  Effect.flatMap(() =>
+                    deps.copyFile(tempPath, targetPath).pipe(
+                      Effect.mapError((error) =>
+                        /EACCES|EPERM|permission denied/i.test(String(error))
+                          ? permissionDenied(`Writing ${targetPath}`, SYSTEMD_ACTION_IDS.writeUnitFile)
+                          : error,
+                      ),
+                    ),
+                  ),
+                  Effect.flatMap(() =>
+                    runSystemctlMutation(deps, ["daemon-reload"], SYSTEMD_ACTION_IDS.writeUnitFile),
+                  ),
                   Effect.as({}),
                   Effect.ensuring(deps.unlink(tempPath)),
                   Effect.mapError((error) =>
