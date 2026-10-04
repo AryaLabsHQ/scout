@@ -255,7 +255,6 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
         const decoder = new TextDecoder()
         let buffer = ""
         let lineBatch: string[] = []
-        let batchStartedAt: number | null = null
 
         try {
           for await (const value of proc.stdout) {
@@ -266,16 +265,15 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
             for (const line of lines) {
               if (line.length === 0) continue
               lineBatch.push(line)
-              if (batchStartedAt === null) batchStartedAt = Date.now()
               if (lineBatch.length >= 50) {
                 yield { lines: lineBatch.splice(0), ts: Date.now() }
-                batchStartedAt = null
               }
             }
 
-            if (lineBatch.length > 0 && batchStartedAt !== null && Date.now() - batchStartedAt >= 100) {
+            // Flush what this chunk completed: a quiet unit may write nothing
+            // more, so waiting for the next chunk would hold its lines back.
+            if (lineBatch.length > 0) {
               yield { lines: lineBatch.splice(0), ts: Date.now() }
-              batchStartedAt = null
             }
           }
 
