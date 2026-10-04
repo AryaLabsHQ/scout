@@ -74,6 +74,15 @@ export const sessionStatus = (
   return "idle"
 }
 
+/** The newest model answer in the active transcript. */
+export const lastAnswerOf = (view: ConversationView): AssistantMessage | undefined => {
+  for (let index = view.entries.length - 1; index >= 0; index--) {
+    const message = view.entries[index]?.model?.[0]
+    if (view.entries[index]?.kind === "pi.assistant" && message?.role === "assistant") return message
+  }
+  return undefined
+}
+
 export const toSummary = (
   id: string,
   meta: OperatorSessionMeta,
@@ -311,22 +320,35 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           Effect.flatMap((detail) => (detail === null ? Effect.fail(notFound(sessionId)) : Effect.succeed(detail))),
         )
 
-      /** Unarchived sessions, newest first. Status comes from the same projection as the detail. */
+      /**
+       * Unarchived sessions, newest first. Reads each session's live state, approvals, and newest
+       * answer, without building timelines; a session deleted mid-read is left out.
+       */
       const list = () =>
         Effect.gen(function* () {
           const index = yield* readIndex
           const active = Object.entries(index).filter(([, meta]) => !meta.archived)
           const summaries = yield* Effect.forEach(active, ([id, meta]) =>
-            Effect.gen(function* () {
-              const { conversation } = yield* requireSession(id)
-              const view = yield* readView(conversation)
-              const approvals = yield* durable("operator-read", (context) =>
-                harness.snapshot(OperatorApprovalsDoc, conversation.id, context),
-              )
-              return projectSession(id, meta, view, approvals).session
+            durable("operator-read", async (context) => {
+              const conversation = await harness.conversation(Number(id) as ConversationId, context)
+              if (conversation === undefined) return []
+              const state = await conversation.viewState(context)
+              try {
+                const view = state.value
+                const approvals = await harness.snapshot(OperatorApprovalsDoc, conversation.id, context)
+                const status = sessionStatus(
+                  meta,
+                  view.docs["pi.live"] as LiveState | undefined,
+                  approvals,
+                  lastAnswerOf(view),
+                )
+                return [toSummary(id, meta, status)]
+              } finally {
+                state.dispose()
+              }
             }),
           )
-          return summaries.sort((left, right) => right.updatedAt - left.updatedAt)
+          return summaries.flat().sort((left, right) => right.updatedAt - left.updatedAt)
         })
 
       const create = (params: OperatorSessionCreateParams) =>
