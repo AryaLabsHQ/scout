@@ -271,9 +271,9 @@ function ClusterPage() {
               <EmptyRow>No warning events</EmptyRow>
             ) : (
               <ul>
-                {warnings.map((event, index) => (
+                {warnings.map((event) => (
                   <li
-                    key={`${event.ts}:${index}`}
+                    key={`${event.eventId}:${event.entity?.id ?? ""}:${event.ts}`}
                     className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
                   >
                     <StatusDot tone={event.severity === "error" ? "err" : "warn"} className="mt-1.5" />

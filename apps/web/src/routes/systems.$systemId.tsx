@@ -269,8 +269,8 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
               <EmptyRow>No warning events</EmptyRow>
             ) : (
               <ul>
-                {warnings.slice(0, 4).map((event, index) => (
-                  <li key={`${event.ts}:${index}`} className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0">
+                {warnings.slice(0, 4).map((event) => (
+                  <li key={`${event.eventId}:${event.entity?.id ?? ""}:${event.ts}`} className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0">
                     <StatusDot tone="warn" className="mt-1.5" />
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">
                       <span className="font-mono text-foreground">{event.entity?.id ?? event.eventId}</span> {event.message}
