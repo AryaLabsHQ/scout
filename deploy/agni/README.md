@@ -139,6 +139,20 @@ install -m 644 deploy/agni/systemd/scout-*.service ~/.config/systemd/user/ && sy
 systemctl --user restart scout-hub scout-web scout-agent
 ```
 
+**Migrating from the token Secret.** Older revisions of `k8s/rbac.yaml` created a
+`scout-agent-token` Secret holding a non-expiring token. Re-applying the manifest does not
+delete that Secret, so remove it once, rebuild the kubeconfig with the TokenRequest
+commands in [Install](#install), and restart the agent:
+
+```sh
+sudo kubectl -n scout delete secret scout-agent-token --ignore-not-found
+# rebuild ~/.config/scout/kubeconfig as in Install, then:
+systemctl --user restart scout-agent
+```
+
+Deleting the Secret revokes its token, so the old kubeconfig stops working; nothing else
+depends on it.
+
 ## Rollback
 
 - **Previous version**: check out the previous SHA, rebuild the web, restore the database backup
