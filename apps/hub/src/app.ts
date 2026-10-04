@@ -1,9 +1,8 @@
 import { Layer } from "effect"
 import { OperatorExtensions } from "./services/operator-extensions.js"
+import { OperatorHarness } from "./services/operator-harness.js"
 import { OperatorModelRegistry } from "./services/operator-model-registry.js"
-import { OperatorRuntime } from "./services/operator-runtime.js"
 import { OperatorResources } from "./services/operator-resources.js"
-import { OperatorSessionManager } from "./services/operator-session-manager.js"
 import { OperatorSessions } from "./services/operator-sessions.js"
 import { OperatorSkills } from "./services/operator-skills.js"
 import { Database } from "./services/database.js"
@@ -34,33 +33,30 @@ const AlertEngineLayer = AlertEngine.layer.pipe(
 
 const AgentRegistryLayer = AgentRegistry.layer.pipe(Layer.provide(DatabaseLayer))
 const OperatorModelRegistryLayer = OperatorModelRegistry.layer
-const OperatorSessionsLayer = OperatorSessions.layer.pipe(Layer.provide(DatabaseLayer))
 const PluginRegistryLayer = PluginRegistry.layer
 const OperatorSkillsLayer = OperatorSkills.layer.pipe(Layer.provide(PluginRegistryLayer))
 const OperatorResourcesLayer = OperatorResources.layer.pipe(Layer.provide(PluginRegistryLayer))
 const OperatorExtensionsLayer = OperatorExtensions.layer.pipe(Layer.provide(PluginRegistryLayer))
-const OperatorSessionManagerLayer = OperatorSessionManager.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      OperatorSessionsLayer,
-      OperatorSkillsLayer,
-      OperatorResourcesLayer,
-      OperatorModelRegistryLayer,
-      OperatorExtensionsLayer,
-    ),
-  ),
-)
-const OperatorRuntimeLayer = OperatorRuntime.layer.pipe(
+const OperatorHarnessLayer = OperatorHarness.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       DatabaseLayer,
       IngestionLayer,
       AgentRegistryLayer,
-      OperatorModelRegistryLayer,
-      OperatorSessionsLayer,
-      OperatorSessionManagerLayer,
-      OperatorExtensionsLayer,
       PluginRegistryLayer,
+      OperatorExtensionsLayer,
+      OperatorSkillsLayer,
+      OperatorModelRegistryLayer,
+    ),
+  ),
+)
+const OperatorSessionsLayer = OperatorSessions.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      OperatorHarnessLayer,
+      OperatorModelRegistryLayer,
+      OperatorSkillsLayer,
+      OperatorResourcesLayer,
     ),
   ),
 )
@@ -75,11 +71,10 @@ export const AppLayer = Layer.mergeAll(
   AlertEngineLayer,
   AgentRegistryLayer,
   OperatorModelRegistryLayer,
-  OperatorSessionsLayer,
   OperatorSkillsLayer,
   OperatorResourcesLayer,
   OperatorExtensionsLayer,
-  OperatorSessionManagerLayer,
-  OperatorRuntimeLayer,
+  OperatorHarnessLayer,
+  OperatorSessionsLayer,
   PluginRegistryLayer,
 )

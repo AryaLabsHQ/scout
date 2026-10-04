@@ -5,21 +5,16 @@ import { ClientAuthMiddleware } from "./client-auth.js"
 
 import {
   OperatorApprovalResolveParamsSchema,
-  OperatorEventsSubscribeParamsSchema,
   OperatorModelDescriptorSchema,
   OperatorPromptParamsSchema,
-  OperatorSessionArchiveParamsSchema,
-  OperatorSessionBranchParamsSchema,
   OperatorSessionCreateParamsSchema,
-  OperatorSessionDeleteParamsSchema,
   OperatorSessionDetailSchema,
   OperatorSessionForkParamsSchema,
-  OperatorSessionGetParamsSchema,
+  OperatorSessionIdParamsSchema,
   OperatorSessionSetApprovalModeParamsSchema,
   OperatorSessionSetPlanModeParamsSchema,
   OperatorSessionSetSkillsParamsSchema,
   OperatorSessionSetTitleParamsSchema,
-  OperatorSessionEventSchema,
   OperatorSkillSchema,
   OperatorSessionSummarySchema,
 } from "../schemas/operator.js"
@@ -92,7 +87,7 @@ export const ClientHubRpcs = RpcGroup.make(
     success: Schema.Array(OperatorSessionSummarySchema),
   }),
   Rpc.make("operator.sessions.get", {
-    payload: OperatorSessionGetParamsSchema,
+    payload: OperatorSessionIdParamsSchema,
     success: Schema.NullOr(OperatorSessionDetailSchema),
   }),
   Rpc.make("operator.skills.list", {
@@ -100,11 +95,6 @@ export const ClientHubRpcs = RpcGroup.make(
   }),
   Rpc.make("operator.models.list", {
     success: Schema.Array(OperatorModelDescriptorSchema),
-  }),
-  Rpc.make("operator.sessions.branch", {
-    payload: OperatorSessionBranchParamsSchema,
-    success: OperatorSessionDetailSchema,
-    error: ManagementError,
   }),
   Rpc.make("operator.sessions.fork", {
     payload: OperatorSessionForkParamsSchema,
@@ -168,6 +158,10 @@ export const ClientHubRpcs = RpcGroup.make(
     payload: OperatorPromptParamsSchema,
     error: ManagementError,
   }),
+  Rpc.make("operator.sessions.abort", {
+    payload: OperatorSessionIdParamsSchema,
+    error: ManagementError,
+  }),
   Rpc.make("operator.approvals.resolve", {
     payload: OperatorApprovalResolveParamsSchema,
     error: ManagementError,
@@ -186,11 +180,11 @@ export const ClientHubRpcs = RpcGroup.make(
     error: ManagementError,
   }),
   Rpc.make("operator.sessions.archive", {
-    payload: OperatorSessionArchiveParamsSchema,
+    payload: OperatorSessionIdParamsSchema,
     error: ManagementError,
   }),
   Rpc.make("operator.sessions.delete", {
-    payload: OperatorSessionDeleteParamsSchema,
+    payload: OperatorSessionIdParamsSchema,
     error: ManagementError,
   }),
 
@@ -234,9 +228,10 @@ export const ClientHubRpcs = RpcGroup.make(
     success: SystemUpdateSchema,
     stream: true,
   }),
-  Rpc.make("operator.events.subscribe", {
-    payload: OperatorEventsSubscribeParamsSchema,
-    success: OperatorSessionEventSchema,
+  /** The session's projected detail: one snapshot on subscribe, then one per durable change (coalesced). */
+  Rpc.make("operator.sessions.watch", {
+    payload: OperatorSessionIdParamsSchema,
+    success: OperatorSessionDetailSchema,
     error: ManagementError,
     stream: true,
   }),

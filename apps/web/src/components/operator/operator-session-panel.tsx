@@ -12,9 +12,13 @@ import { Effect, Stream } from "effect"
 import { usePanelRef } from "react-resizable-panels"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import type {
+  OperatorApprovalMode,
+  OperatorApprovalRequest,
+  OperatorPlanMode,
   OperatorSessionDetail,
-  OperatorSessionEvent,
   OperatorSessionSummary,
+  OperatorTerminalOutput,
+  OperatorTimelineItem,
   System,
 } from "@scout/shared"
 import { HubClient } from "@/rpc/client"
@@ -42,16 +46,9 @@ import {
 } from "@/components/ui/resizable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { OperatorShellVariant } from "./operator-utils"
-import {
-  SESSION_LIST_REACTIVITY_KEY,
-  applyOperatorEvent,
-  getApprovalStateMap,
-  getEntryIdBySourceEventMap,
-  getProjectionBase64Chunks,
-  getProjectionMap,
-} from "./operator-utils"
+import { SESSION_LIST_REACTIVITY_KEY, isOperatorSessionBusy } from "./operator-utils"
 import { ManageSkillsDialog } from "./operator-dialogs"
-import { OperatorEventCard, OperatorMarkdown } from "./operator-event-card"
+import { OperatorApprovalCard, OperatorTimelineItemCard } from "./operator-timeline-item"
 import { OperatorPromptInput } from "./operator-prompt-input"
 import { OperatorSessionMeta } from "./operator-session-meta"
 
@@ -76,7 +73,7 @@ export function OperatorSessionPanel({
   const promptMutation = useAtomSet(HubClient.mutation("operator.prompt"), {
     mode: "promise",
   })
-  const branchSession = useAtomSet(HubClient.mutation("operator.sessions.branch"), {
+  const abortSession = useAtomSet(HubClient.mutation("operator.sessions.abort"), {
     mode: "promise",
   })
   const forkSession = useAtomSet(HubClient.mutation("operator.sessions.fork"), {
@@ -98,15 +95,14 @@ export function OperatorSessionPanel({
     mode: "promise",
   })
   const { openOperatorProjection, updateOperatorProjection } = useTerminalPanel()
-  const { optimisticSession, setActiveSessionId, setOptimisticSession } = useOperator()
+  const { optimisticSession, setOptimisticSession } = useOperator()
   const [draft, setDraft] = useState("")
   const fillRef = useRef<((text: string) => void) | null>(null)
   const [isSkillsDialogOpen, setIsSkillsDialogOpen] = useState(false)
   const [draftSkillIds, setDraftSkillIds] = useState<ReadonlyArray<string>>([])
-  const [streamingContent, setStreamingContent] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isAborting, setIsAborting] = useState(false)
   const [isUpdatingSkills, setIsUpdatingSkills] = useState(false)
-  const [branchingEntryId, setBranchingEntryId] = useState<string | null>(null)
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null)
 
@@ -142,105 +138,43 @@ export function OperatorSessionPanel({
     return detailResult._tag === "Success" ? detailResult.value : null
   }, [detailResult, optimisticSession, sessionId])
 
+  // Latest `operator.sessions.watch` snapshot, patched locally by optimistic mode changes.
+  // Until the first snapshot arrives, the query / optimistic detail is shown.
   const [liveDetail, setLiveDetail] = useState<OperatorSessionDetail | null>(null)
 
-  useEffect(() => {
-    if (!detail) return
-    setLiveDetail((current) => {
-      if (current === null) return detail
-      // Always take the latest session metadata (title, status, etc.) from the
-      // query result, but keep the richer event list from streaming if ahead.
-      if (detail.session.lastEventSeq >= current.session.lastEventSeq) {
-        return detail
-      }
-      // Query is behind on events but may have fresher metadata (e.g. title update)
-      return {
-        ...current,
-        session: { ...current.session, title: detail.session.title },
-      }
-    })
-  }, [detail])
-
-  const streamAtom = useMemo(
+  // Bypass `HubClient.query` for the watch stream: AtomRpc's internal pull accumulates every
+  // emitted snapshot, while `disableAccumulation` hands over only the snapshots of each pull.
+  const watchAtom = useMemo(
     () =>
       HubClient.runtime.pull(
         Stream.unwrap(
           HubClient.use((client) =>
             Effect.succeed(
-              client("operator.events.subscribe", {
-                sessionId,
-                afterSeq: detail?.session.lastEventSeq ?? fallbackSummary?.lastEventSeq ?? 0,
-              }) as Stream.Stream<OperatorSessionEvent, unknown>,
+              client("operator.sessions.watch", { sessionId }) as Stream.Stream<
+                OperatorSessionDetail,
+                unknown
+              >,
             ),
           ),
         ),
         { disableAccumulation: true },
       ),
-    [detail?.session.lastEventSeq, fallbackSummary?.lastEventSeq, sessionId],
+    [sessionId],
   )
-  const streamResult = useAtomValue(streamAtom)
-  const pullNext = useAtomSet(streamAtom)
+  const watchResult = useAtomValue(watchAtom)
+  const pullNext = useAtomSet(watchAtom)
 
   useEffect(() => {
-    if (streamResult._tag === "Success") {
-      const { done, items } = streamResult.value
-      if (items.length > 0) {
-        // Separate transient events from persistent events
-        const transientTypes = new Set(["message.streaming", "session.title_updated", "session.summary_updated"])
-        const persistentItems = items.filter((e) => !transientTypes.has(e.type))
-        const streamingItems = items.filter((e) => e.type === "message.streaming")
-
-        // Handle title updates from server-side LLM generation
-        const titleUpdate = items.find((e) => e.type === "session.title_updated")
-        if (titleUpdate?.summary) {
-          setLiveDetail((current) => {
-            if (!current) return current
-            return {
-              ...current,
-              session: { ...current.session, title: titleUpdate.summary! },
-            }
-          })
-        }
-
-        // Handle summary updates from server-side generation
-        const summaryUpdate = items.find((e) => e.type === "session.summary_updated")
-        if (summaryUpdate?.summary) {
-          setLiveDetail((current) => {
-            if (!current) return current
-            return {
-              ...current,
-              session: { ...current.session, summary: summaryUpdate.summary! },
-            }
-          })
-        }
-
-        if (persistentItems.length > 0) {
-          setLiveDetail((current) => {
-            if (!current) return current
-            return persistentItems.reduce(applyOperatorEvent, current)
-          })
-        }
-
-        // Update streaming content from the latest streaming event
-        const lastStreaming = streamingItems.at(-1)
-        if (lastStreaming?.message?.content != null) {
-          setStreamingContent(lastStreaming.message.content || null)
-        }
-
-        // Clear streaming when a final assistant message arrives
-        if (
-          persistentItems.some(
-            (e) => e.type === "message.created" && e.message?.role === "assistant",
-          )
-        ) {
-          setStreamingContent(null)
-        }
-      }
-      if (!done) {
-        pullNext(undefined)
-      }
+    if (watchResult._tag !== "Success") return
+    const { done, items } = watchResult.value
+    const latest = items.at(-1)
+    if (latest) {
+      setLiveDetail(latest)
     }
-  }, [pullNext, streamResult])
+    if (!done) {
+      pullNext(undefined)
+    }
+  }, [pullNext, watchResult])
 
   useEffect(() => {
     if (detail && optimisticSession?.session.id === detail.session.id) {
@@ -249,82 +183,82 @@ export function OperatorSessionPanel({
   }, [detail, optimisticSession, setOptimisticSession])
 
   const resolvedDetail = liveDetail ?? detail
+  const timeline = useMemo(() => resolvedDetail?.timeline ?? [], [resolvedDetail?.timeline])
+  const sessionTitle = resolvedDetail?.session.title ?? ""
 
-  const finishedToolCallIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const event of resolvedDetail?.events ?? []) {
-      if (event.type === "tool.finished" && event.toolCall?.id) {
-        ids.add(event.toolCall.id)
-      }
+  const approvalById = useMemo(() => {
+    const approvals = new Map<string, OperatorApprovalRequest>()
+    for (const approval of resolvedDetail?.approvals ?? []) {
+      approvals.set(approval.id, approval)
     }
-    return ids
-  }, [resolvedDetail?.events])
+    return approvals
+  }, [resolvedDetail?.approvals])
 
-  const visibleEvents = useMemo(
-    () =>
-      (resolvedDetail?.events ?? []).filter((event) => {
-        if (event.type === "approval.resolved") return false
-        if (
-          event.type === "message.created" &&
-          event.message?.role === "assistant" &&
-          !event.message.content?.trim()
-        )
-          return false
-        // Hide tool.started when tool.finished exists for the same tool call
-        if (
-          event.type === "tool.started" &&
-          event.toolCall?.id &&
-          finishedToolCallIds.has(event.toolCall.id)
-        )
-          return false
-        return true
-      }),
-    [resolvedDetail?.events, finishedToolCallIds],
-  )
+  // Pending approvals whose tool item is not in the timeline still need a decision surface.
+  const orphanPendingApprovals = useMemo(() => {
+    const referenced = new Set<string>()
+    for (const item of timeline) {
+      if (item.kind === "tool" && item.approvalId) referenced.add(item.approvalId)
+    }
+    return (resolvedDetail?.approvals ?? []).filter(
+      (approval) => approval.status === "pending" && !referenced.has(approval.id),
+    )
+  }, [resolvedDetail?.approvals, timeline])
 
-  const approvalStateById = useMemo(
-    () => getApprovalStateMap(resolvedDetail?.approvals ?? []),
-    [resolvedDetail?.approvals],
-  )
-  const projectionByToolCallId = useMemo(
-    () => getProjectionMap(resolvedDetail?.terminalProjections ?? []),
-    [resolvedDetail?.terminalProjections],
-  )
-  const entryIdBySourceEventId = useMemo(
-    () => getEntryIdBySourceEventMap(resolvedDetail),
-    [resolvedDetail],
-  )
   const pendingApprovals = useMemo(
     () => resolvedDetail?.approvals.filter((approval) => approval.status === "pending").length ?? 0,
     [resolvedDetail?.approvals],
   )
 
-  const firstPendingApprovalId = useMemo(
-    () => resolvedDetail?.approvals.find((a) => a.status === "pending")?.id ?? null,
+  const firstPendingMutationApprovalId = useMemo(
+    () =>
+      resolvedDetail?.approvals.find((a) => a.status === "pending" && a.kind === "mutation")?.id ??
+      null,
     [resolvedDetail?.approvals],
   )
 
-  useEffect(() => {
-    if (!resolvedDetail) return
-
-    for (const projection of projectionByToolCallId.values()) {
-      updateOperatorProjection({
-        projectionId: projection.id,
+  const mirrorTerminal = useCallback(
+    (toolCallId: string, terminal: OperatorTerminalOutput) =>
+      openOperatorProjection({
+        projectionId: `${sessionId}:${toolCallId}`,
         sessionId,
-        toolCallId: projection.toolCallId,
-        nodeId: projection.nodeId,
-        label: `${resolvedDetail.session.title} • ${projection.nodeId}`,
-        base64Chunks: getProjectionBase64Chunks(resolvedDetail.events, projection.toolCallId),
+        toolCallId,
+        nodeId: terminal.nodeId,
+        label: `${sessionTitle} • ${terminal.nodeId}`,
+        base64Chunks: [...terminal.base64Chunks],
+      }),
+    [openOperatorProjection, sessionId, sessionTitle],
+  )
+
+  // Keep already-mirrored terminal tabs in sync; updates for unopened tabs are no-ops.
+  useEffect(() => {
+    for (const item of timeline) {
+      if (item.kind !== "tool" || !item.terminal) continue
+      updateOperatorProjection({
+        projectionId: `${sessionId}:${item.toolCallId}`,
+        sessionId,
+        toolCallId: item.toolCallId,
+        nodeId: item.terminal.nodeId,
+        label: `${sessionTitle} • ${item.terminal.nodeId}`,
+        base64Chunks: [...item.terminal.base64Chunks],
       })
     }
-  }, [projectionByToolCallId, resolvedDetail, sessionId, updateOperatorProjection])
+  }, [sessionId, sessionTitle, timeline, updateOperatorProjection])
 
-  // Auto-scroll: scroll to bottom when new events arrive or streaming updates (if user is near bottom)
+  const lastItem = timeline.at(-1)
+  const lastItemSize =
+    lastItem?.kind === "assistant"
+      ? lastItem.text.length + (lastItem.thinking?.length ?? 0)
+      : lastItem?.kind === "tool"
+        ? (lastItem.output?.length ?? 0)
+        : 0
+
+  // Auto-scroll: follow new timeline items and streaming growth while the user is near the bottom
   useEffect(() => {
     if (isAtBottom && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
-  }, [visibleEvents.length, streamingContent, isAtBottom])
+  }, [timeline.length, lastItemSize, orphanPendingApprovals.length, isAtBottom])
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
@@ -345,19 +279,17 @@ export function OperatorSessionPanel({
     if (!text) return
 
     // Detect if this is the first user prompt in the session
-    const isFirstPrompt =
-      (resolvedDetail?.events.filter((e) => e.message?.role === "user").length ?? 0) === 0
+    const isFirstPrompt = !timeline.some((item) => item.kind === "user")
 
     setIsSubmitting(true)
     try {
       await promptMutation({
-        payload: { sessionId, text },
+        payload: { sessionId, text, requestId: crypto.randomUUID() },
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
       })
       setDraft("")
 
-      // Set an immediate fallback title from the first prompt text.
-      // The server will asynchronously generate a better LLM title.
+      // The hub does not generate titles; name the session after its first prompt.
       if (isFirstPrompt) {
         const fallbackTitle = text.length > 50 ? `${text.slice(0, 50)}...` : text
         void setTitle({
@@ -370,14 +302,29 @@ export function OperatorSessionPanel({
     }
   }
 
+  const handleAbort = useCallback(async () => {
+    setIsAborting(true)
+    try {
+      await abortSession({
+        payload: { sessionId },
+        reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
+      })
+    } finally {
+      setIsAborting(false)
+    }
+  }, [abortSession, sessionId])
+
   const handleResolveApproval = useCallback(async (
     approvalId: string,
     decision: "approved" | "rejected",
+    answer?: string,
   ) => {
     setResolvingApprovalId(approvalId)
     try {
       await resolveApproval({
-        payload: { sessionId, approvalId, decision },
+        payload: answer === undefined
+          ? { sessionId, approvalId, decision }
+          : { sessionId, approvalId, decision, answer },
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
       })
     } finally {
@@ -385,39 +332,25 @@ export function OperatorSessionPanel({
     }
   }, [resolveApproval, sessionId])
 
-  const handleApprovalModeChange = useCallback(async (mode: string) => {
+  const handleApprovalModeChange = useCallback(async (mode: OperatorApprovalMode) => {
     await setApprovalMode({
-      payload: { sessionId, approvalMode: mode as any },
+      payload: { sessionId, approvalMode: mode },
       reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
     })
     setLiveDetail((current) =>
-      current ? { ...current, session: { ...current.session, approvalMode: mode as any } } : current,
+      current ? { ...current, session: { ...current.session, approvalMode: mode } } : current,
     )
   }, [setApprovalMode, sessionId])
 
-  const handlePlanModeChange = useCallback(async (mode: string) => {
+  const handlePlanModeChange = useCallback(async (mode: OperatorPlanMode) => {
     await setPlanMode({
-      payload: { sessionId, planMode: mode as any },
+      payload: { sessionId, planMode: mode },
       reactivityKeys: [`operator:session:${sessionId}`],
     })
     setLiveDetail((current) =>
-      current ? { ...current, session: { ...current.session, planMode: mode as any } } : current,
+      current ? { ...current, session: { ...current.session, planMode: mode } } : current,
     )
   }, [setPlanMode, sessionId])
-
-  const handleBranch = async (entryId: string) => {
-    setBranchingEntryId(entryId)
-    try {
-      const next = await branchSession({
-        payload: { sessionId, entryId },
-        reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
-      })
-      setOptimisticSession(next)
-      setLiveDetail(next)
-    } finally {
-      setBranchingEntryId(null)
-    }
-  }
 
   const handleFork = async (entryId: string) => {
     setForkingEntryId(entryId)
@@ -431,8 +364,7 @@ export function OperatorSessionPanel({
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY],
       })
       setOptimisticSession(next)
-      setActiveSessionId(next.session.id)
-      setLiveDetail(next)
+      onSelectSession(next.session.id)
     } finally {
       setForkingEntryId(null)
     }
@@ -446,7 +378,7 @@ export function OperatorSessionPanel({
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
       })
       setOptimisticSession(next)
-      setLiveDetail(next)
+      setLiveDetail((current) => (current ? next : current))
       setIsSkillsDialogOpen(false)
     } finally {
       setIsUpdatingSkills(false)
@@ -464,24 +396,20 @@ export function OperatorSessionPanel({
   }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail?.session.planMode, handlePlanModeChange])
 
   useHotkeys("mod+shift+a", () => {
-    const modes = ["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"] as const
-    const idx = modes.indexOf(resolvedDetail?.session.approvalMode as any)
-    void handleApprovalModeChange(modes[(idx + 1) % modes.length])
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail?.session.approvalMode, handleApprovalModeChange])
+    if (resolvedDetail) void handleApprovalModeChange(nextApprovalMode(resolvedDetail.session.approvalMode))
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail, handleApprovalModeChange])
 
   useHotkeys("mod+.", () => {
-    if (firstPendingApprovalId) void handleResolveApproval(firstPendingApprovalId, "approved")
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true, enabled: !!firstPendingApprovalId }, [firstPendingApprovalId, handleResolveApproval])
+    if (firstPendingMutationApprovalId) void handleResolveApproval(firstPendingMutationApprovalId, "approved")
+  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true, enabled: !!firstPendingMutationApprovalId }, [firstPendingMutationApprovalId, handleResolveApproval])
 
   // Command palette custom event listeners
   useEffect(() => {
     const onTogglePlan = () => void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
     const onCycleApproval = () => {
-      const modes = ["confirm_each_mutation", "auto_approve_reads", "auto_approve_all"] as const
-      const idx = modes.indexOf(resolvedDetail?.session.approvalMode as any)
-      void handleApprovalModeChange(modes[(idx + 1) % modes.length])
+      if (resolvedDetail) void handleApprovalModeChange(nextApprovalMode(resolvedDetail.session.approvalMode))
     }
-    const onApprovePending = () => { if (firstPendingApprovalId) void handleResolveApproval(firstPendingApprovalId, "approved") }
+    const onApprovePending = () => { if (firstPendingMutationApprovalId) void handleResolveApproval(firstPendingMutationApprovalId, "approved") }
 
     window.addEventListener("scout:operator:toggle-plan-mode", onTogglePlan)
     window.addEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
@@ -491,7 +419,7 @@ export function OperatorSessionPanel({
       window.removeEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
       window.removeEventListener("scout:operator:approve-pending", onApprovePending)
     }
-  }, [resolvedDetail?.session.planMode, resolvedDetail?.session.approvalMode, firstPendingApprovalId, handleApprovalModeChange, handlePlanModeChange, handleResolveApproval])
+  }, [resolvedDetail, firstPendingMutationApprovalId, handleApprovalModeChange, handlePlanModeChange, handleResolveApproval])
 
   if (detailResult._tag === "Initial" && !detail) {
     return (
@@ -572,7 +500,7 @@ export function OperatorSessionPanel({
               className="min-h-0 flex-1 overflow-y-auto scrollbar-thin"
             >
               <div className="mx-auto max-w-3xl space-y-3 p-4">
-                {visibleEvents.length === 0 ? (
+                {timeline.length === 0 && orphanPendingApprovals.length === 0 ? (
                   <div className="space-y-4">
                     <Card>
                       <CardHeader>
@@ -602,45 +530,37 @@ export function OperatorSessionPanel({
                   </div>
                 ) : (
                   <>
-                    {visibleEvents.map((event) => (
-                      <OperatorEventCard
-                        key={event.id}
-                        event={event}
-                        approvalState={event.approval ? approvalStateById.get(event.approval.id) : undefined}
-                        projection={
-                          event.toolCall ? projectionByToolCallId.get(event.toolCall.id) : event.projection
+                    {timeline.map((item) => (
+                      <OperatorTimelineItemCard
+                        key={timelineItemKey(item)}
+                        item={item}
+                        approval={
+                          item.kind === "tool" && item.approvalId
+                            ? approvalById.get(item.approvalId)
+                            : undefined
                         }
-                        branchTargetEntryId={entryIdBySourceEventId.get(event.id)}
-                        isBranching={branchingEntryId === entryIdBySourceEventId.get(event.id)}
-                        isForking={forkingEntryId === entryIdBySourceEventId.get(event.id)}
-                        isResolvingApproval={resolvingApprovalId === event.approval?.id}
-                        onBranch={handleBranch}
+                        forkingEntryId={forkingEntryId}
+                        resolvingApprovalId={resolvingApprovalId}
                         onFork={handleFork}
                         onResolveApproval={handleResolveApproval}
-                        onMirrorProjection={(projection) =>
-                          openOperatorProjection({
-                            projectionId: projection.id,
-                            sessionId,
-                            toolCallId: projection.toolCallId,
-                            nodeId: projection.nodeId,
-                            label: `${resolvedDetail.session.title} • ${projection.nodeId}`,
-                            base64Chunks: getProjectionBase64Chunks(resolvedDetail.events, projection.toolCallId),
-                          })
-                        }
+                        onMirrorTerminal={mirrorTerminal}
                       />
                     ))}
-                    {streamingContent && (
-                      <div className="border-l-2 border-primary/20 py-2 pl-3">
-                        <OperatorMarkdown content={streamingContent} isAnimating />
-                      </div>
-                    )}
+                    {orphanPendingApprovals.map((approval) => (
+                      <OperatorApprovalCard
+                        key={approval.id}
+                        approval={approval}
+                        isResolvingApproval={resolvingApprovalId === approval.id}
+                        onResolveApproval={handleResolveApproval}
+                      />
+                    ))}
                   </>
                 )}
               </div>
             </div>
 
             {/* Scroll-to-bottom floating button */}
-            {!isAtBottom && visibleEvents.length > 0 && (
+            {!isAtBottom && timeline.length > 0 && (
               <div className="pointer-events-none absolute inset-x-0 bottom-32 flex justify-center">
                 <Button
                   size="icon"
@@ -658,15 +578,18 @@ export function OperatorSessionPanel({
               setDraft={setDraft}
               isSubmitting={isSubmitting}
               onSubmit={() => void handlePromptSubmit()}
-              onCancel={() => setIsSubmitting(false)}
+              isBusy={isOperatorSessionBusy(resolvedDetail.session.status)}
+              isAborting={isAborting}
+              onAbort={() => void handleAbort()}
+              queuedInputs={resolvedDetail.queuedInputs}
               approvalMode={resolvedDetail.session.approvalMode}
               onApprovalModeChange={(mode) => void handleApprovalModeChange(mode)}
-              planMode={resolvedDetail.session.planMode ?? "off"}
+              planMode={resolvedDetail.session.planMode}
               onPlanModeChange={(mode) => void handlePlanModeChange(mode)}
               nodeCount={resolvedDetail.session.selectedNodeIds.length}
               systems={systems}
-              skills={resolvedDetail.availableSkills ?? []}
-              models={resolvedDetail.availableModels ?? []}
+              skills={resolvedDetail.availableSkills}
+              models={resolvedDetail.availableModels}
               selectedNodeIds={resolvedDetail.session.selectedNodeIds}
               modelId={resolvedDetail.session.modelId}
               modelProviderId={resolvedDetail.session.modelProviderId}
@@ -710,6 +633,27 @@ export function OperatorSessionPanel({
   )
 }
 
+const APPROVAL_MODE_CYCLE: ReadonlyArray<OperatorApprovalMode> = [
+  "confirm_each_mutation",
+  "auto_approve_reads",
+  "auto_approve_all",
+]
+
+function nextApprovalMode(mode: OperatorApprovalMode): OperatorApprovalMode {
+  return APPROVAL_MODE_CYCLE[(APPROVAL_MODE_CYCLE.indexOf(mode) + 1) % APPROVAL_MODE_CYCLE.length]!
+}
+
+function timelineItemKey(item: OperatorTimelineItem): string {
+  switch (item.kind) {
+    case "user":
+      return `user:${item.entryId}`
+    case "assistant":
+      return item.entryId ? `assistant:${item.entryId}` : `assistant:live:${item.createdAt}`
+    case "tool":
+      return `tool:${item.toolCallId}`
+  }
+}
+
 // ── Compact session header ──────────────────────────────────────────────────
 
 function SessionHeader({
@@ -731,7 +675,7 @@ function SessionHeader({
         <div className="flex min-w-0 items-center gap-2">
           <HugeiconsIcon icon={ArtificialIntelligence04Icon} size={16} className="shrink-0" />
           <h1 className="truncate font-heading text-base font-semibold">{session.title}</h1>
-          {session.status !== "active" ? (
+          {session.status !== "idle" ? (
             <Badge variant="outline" className="shrink-0 uppercase">
               {session.status}
             </Badge>

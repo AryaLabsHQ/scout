@@ -1,7 +1,4 @@
-import type {
-  OperatorSessionDetail,
-  OperatorSessionEvent,
-} from "@scout/shared"
+import type { OperatorSessionDetail } from "@scout/shared"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -18,11 +15,6 @@ export function OperatorSessionMeta({
   detail: OperatorSessionDetail
   pendingApprovals: number
 }) {
-  const latestSummary =
-    detail.planSnapshots.at(-1)?.summary ??
-    [...detail.events].reverse().find((event: OperatorSessionEvent) => event.summary)?.summary ??
-    detail.session.summary
-
   return (
     <>
       <Card size="sm">
@@ -55,10 +47,7 @@ export function OperatorSessionMeta({
             {detail.session.forkedFromEntryId ? (
               <div>Forked from entry: {detail.session.forkedFromEntryId}</div>
             ) : null}
-            {detail.session.currentLeafEntryId ? (
-              <div>Current leaf: {detail.session.currentLeafEntryId}</div>
-            ) : null}
-            <div>Last event seq: {detail.session.lastEventSeq}</div>
+            {detail.queuedInputs > 0 ? <div>Queued inputs: {detail.queuedInputs}</div> : null}
           </div>
         </CardContent>
       </Card>
@@ -80,16 +69,6 @@ export function OperatorSessionMeta({
               ))
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Latest Summary</CardTitle>
-          <CardDescription>Auto-generated after each operator turn.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">{latestSummary ?? "No summary yet."}</p>
         </CardContent>
       </Card>
     </>
