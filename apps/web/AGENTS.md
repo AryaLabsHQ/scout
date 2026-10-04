@@ -16,7 +16,7 @@ apps/web/
 ├── src/components/shell/     # top bar (machine switcher, nav, live indicator) and session banner
 ├── src/components/operator/  # operator chat UI (7 files + tiptap/)
 ├── src/hooks/        # pins, plugin data queries, unit actions, refresh intervals
-└── src/lib/          # connection state, health thresholds, systemd/k8s entity helpers, formatting
+└── src/lib/          # connection state, health thresholds, systemd/k8s/edge entity helpers, formatting
 ```
 
 ## WHERE TO LOOK
@@ -38,11 +38,14 @@ apps/web/
 - Server functions call the hub only through `hubFetch` (`src/server/hub.ts`), which forwards the Cloudflare Access credential; a raw `fetch` to the hub is rejected with 401.
 - The browser connects to `/ws/rpc` same-origin; never embed the hub's internal URL in client code.
 - `AtomProvider` must stay high in the tree so the HubClient runtime is pinned before consumers mount.
-- Shared contract types come from `@scout/shared`; plugin ids, kinds, actions, and streams come from each plugin's `contracts` subpath (`@scout/plugin-systemd/contracts`, `@scout/plugin-k8s/contracts`).
+- Shared contract types come from `@scout/shared`; plugin ids, kinds, actions, and streams come from each plugin's `contracts` subpath (`@scout/plugin-systemd/contracts`, `@scout/plugin-k8s/contracts`, `@scout/plugin-edge/contracts`).
+- systemd units come from two managers. The entity kind (`systemd.unit` vs `systemd.user-unit`) carries the scope; unit pages take `?scope=user`, actions pass it to `useUnitAction`, and user-unit pins are stored as `user:<id>` (`pinKey`).
+- Overview sections backed by optional collectors (Ingress from the edge plugin, Backups & timers from systemd timers) render nothing until their data exists.
 - Every state-changing action asks `useConfirm()` first, naming the action, its target, and the machine, and showing the exact command when there is one. Read-only actions (reading a unit file) run without a confirm.
 - Read query results with `lastValue()` (`src/lib/async-result.ts`) so a failed refresh, such as after the Access session expires, keeps the last good data on screen.
 - Colour only for status: `StatusDot` and the `ok` / `warn` / `err` / `off` tokens in `styles.css`. A health value turns amber or red only when it breaches an enabled alert rule (`src/lib/health.ts`).
 - Pinned units live in this browser's `localStorage` (`usePins`, one list per system); the hub knows nothing about them.
+- Relative future times ("next in 19h") use `TimeUntil` from the same module as `TimeAgo`.
 - Relative times use `TimeAgo`, which tolerates the server render and hydration straddling a minute.
 - Large route files are normal here; route-level state belongs with the route unless it becomes cross-page UI state.
 

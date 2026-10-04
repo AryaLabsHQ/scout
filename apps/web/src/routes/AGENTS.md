@@ -8,9 +8,9 @@ Route files here define page boundaries, page-level loaders, and most dashboard 
 apps/web/src/routes/
 ├── __root.tsx                                   # shell: top bar, session banner, terminal dock, seeded loaders
 ├── index.tsx                                    # `/`: redirects to the only machine; fleet list with 2+
-├── systems.$systemId.tsx                        # machine overview: health strip, services, cluster, activity
+├── systems.$systemId.tsx                        # machine overview: health strip, services, cluster, ingress, backups & timers, activity
 ├── systems_.$systemId.metrics.tsx               # metric charts with range switcher
-├── systems_.$systemId.services.tsx              # systemd units: filter, state chips, pins, actions
+├── systems_.$systemId.services.tsx              # systemd system and user units, timers: filter, state chips, pins, actions
 ├── systems_.$systemId.services_.$unitId.tsx     # unit detail: status, actions, properties, journal, unit file
 ├── systems_.$systemId.cluster.tsx               # k8s namespaces, workloads, pods, warning events
 ├── systems_.$systemId.plugins.$pluginId.tsx     # generic plugin screens (json-render catalog)

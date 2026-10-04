@@ -6,6 +6,7 @@ import {
   SYSTEMD_ACTION_IDS,
   SYSTEMD_METRIC_IDS,
   SYSTEMD_PLUGIN_ID,
+  SYSTEMD_SERVICE_KINDS,
   SYSTEMD_STREAM_IDS,
   SYSTEMD_UNIT_KIND,
 } from "@scout/plugin-systemd/contracts"
@@ -19,18 +20,35 @@ import { LogViewer } from "@/components/log-viewer"
 import { EmptyRow, Page, PageHeader, Section } from "@/components/section"
 import { Sparkline } from "@/components/sparkline"
 import { StatusDot } from "@/components/status-dot"
+import { TimeUntil } from "@/components/time-ago"
 import { PinButton, UnitActionsMenu } from "@/components/units-table"
 import { pluginUnavailable } from "@/components/plugin-status"
 import { formatBytes, formatDuration, formatTimeAgo } from "@/lib/format"
-import { unitState, unitTone } from "@/lib/systemd"
+import {
+  isTimerEntity,
+  pinKey,
+  shortUnitName,
+  timerState,
+  unitState,
+  unitTone,
+  type SystemdScope,
+} from "@/lib/systemd"
 import { cn } from "@/lib/utils"
 
 const TABS = ["overview", "journal", "unit file"] as const
 type Tab = (typeof TABS)[number]
 
+interface UnitSearch {
+  readonly tab?: Tab
+  /** `user` for a unit of the agent user's manager; absent for system units. */
+  readonly scope?: "user"
+}
+
 export const Route = createFileRoute("/systems_/$systemId/services_/$unitId")({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    TABS.includes(search["tab"] as Tab) && search["tab"] !== "overview" ? { tab: search["tab"] as Tab } : {},
+  validateSearch: (search: Record<string, unknown>): UnitSearch => ({
+    ...(TABS.includes(search["tab"] as Tab) && search["tab"] !== "overview" ? { tab: search["tab"] as Tab } : {}),
+    ...(search["scope"] === "user" ? { scope: "user" as const } : {}),
+  }),
   loader: async ({ params }) => ({ detail: await fetchSystemDetail({ data: { systemId: params.systemId } }) }),
   component: UnitPage,
 })
@@ -47,7 +65,7 @@ function cpuRates(points: ReadonlyArray<{ readonly ts: number; readonly value: n
   return rates
 }
 
-function UnitFile({ systemId, unitId }: { systemId: string; unitId: string }) {
+function UnitFile({ systemId, unitId, scope }: { systemId: string; unitId: string; scope: SystemdScope }) {
   const runAction = useAtomSet(HubClient.mutation("plugins.runAction"), { mode: "promise" })
   const [file, setFile] = useState<{ path: string; content: string } | { error: string } | null>(null)
 
@@ -60,7 +78,7 @@ function UnitFile({ systemId, unitId }: { systemId: string; unitId: string }) {
         agentId: systemId,
         pluginId: SYSTEMD_PLUGIN_ID,
         actionId: SYSTEMD_ACTION_IDS.readUnitFile,
-        entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_UNIT_KIND, id: unitId },
+        entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_SERVICE_KINDS[scope], id: unitId },
       },
     })
       .then((result) => {
@@ -78,7 +96,7 @@ function UnitFile({ systemId, unitId }: { systemId: string; unitId: string }) {
     return () => {
       cancelled = true
     }
-  }, [runAction, systemId, unitId])
+  }, [runAction, scope, systemId, unitId])
 
   return (
     <Section
@@ -101,24 +119,30 @@ function UnitFile({ systemId, unitId }: { systemId: string; unitId: string }) {
 
 function UnitPage() {
   const { systemId, unitId } = Route.useParams()
-  const { tab = "overview" } = Route.useSearch()
+  const { tab = "overview", scope = "system" } = Route.useSearch()
   const { detail } = Route.useLoaderData()
   const systemResult = useAtomValue(HubClient.query("systems.get", { id: systemId }))
   const system = lastValue(systemResult, null) ?? detail
   const hostname = system?.hostname ?? systemId
-  const units = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND)
+  const entities = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID)
+  const kind = SYSTEMD_SERVICE_KINDS[scope]
   const memory = usePluginMetrics(systemId, SYSTEMD_PLUGIN_ID, 1, SYSTEMD_METRIC_IDS.unitMemoryBytes)
   const cpu = usePluginMetrics(systemId, SYSTEMD_PLUGIN_ID, 1, SYSTEMD_METRIC_IDS.unitCpuUsageNs)
   const { isPinned, toggle } = usePins(systemId)
   const { run } = useUnitAction(systemId, hostname)
   const unavailable = pluginUnavailable(system, SYSTEMD_PLUGIN_ID, "systemd")
 
-  const unit = units.items.find((entity) => entity.ref.id === unitId) ?? null
+  const unit = entities.items.find((entity) => entity.ref.kind === kind && entity.ref.id === unitId) ?? null
   const state = unit ? unitState(unit) : null
-  const memorySeries = memory.items
-    .filter((point) => point.entity?.id === unitId)
-    .sort((a, b) => a.ts - b.ts)
-  const cpuSeries = cpuRates(cpu.items.filter((point) => point.entity?.id === unitId).sort((a, b) => a.ts - b.ts))
+  // The timer that starts this unit, if any (restic-backup.timer → restic-backup.service).
+  const timer =
+    entities.items.find(
+      (entity) => isTimerEntity(entity) && timerState(entity).scope === scope && timerState(entity).activates === unitId,
+    ) ?? null
+  const forUnit = (point: { readonly entity?: { readonly kind: string; readonly id: string } }) =>
+    point.entity?.kind === kind && point.entity.id === unitId
+  const memorySeries = memory.items.filter(forUnit).sort((a, b) => a.ts - b.ts)
+  const cpuSeries = cpuRates(cpu.items.filter(forUnit).sort((a, b) => a.ts - b.ts))
 
   const crumbs = (
     <>
@@ -131,26 +155,56 @@ function UnitPage() {
       </Link>
       <span>/</span>
       <span className="truncate">{unitId}</span>
+      {scope === "user" ? <span className="text-subtle">· user</span> : null}
     </>
   )
 
-  if (unavailable || (!unit && !units.loading)) {
+  if (unavailable || (!unit && !entities.loading)) {
     return (
       <Page>
         <PageHeader crumbs={crumbs} title={<span className="font-mono">{unitId}</span>} />
-        <Section className="mt-6">{unavailable ?? <EmptyRow>{hostname} does not report a unit named {unitId}.</EmptyRow>}</Section>
+        <Section className="mt-6">
+          {unavailable ?? (
+            <EmptyRow>
+              {hostname} does not report a {scope === "user" ? "user " : ""}unit named {unitId}.
+            </EmptyRow>
+          )}
+        </Section>
       </Page>
     )
   }
 
-  const pinned = isPinned(unitId)
-  const properties: ReadonlyArray<readonly [string, string]> = state
+  const key = pinKey(scope, unitId)
+  const pinned = isPinned(key)
+  const lastExit =
+    state?.execMainExitAt != null
+      ? `${state.execMainStatus !== null ? `status ${state.execMainStatus} · ` : ""}${formatTimeAgo(state.execMainExitAt)}`
+      : "—"
+  const timerInfo = timer ? timerState(timer) : null
+  const properties: ReadonlyArray<readonly [string, React.ReactNode, string?]> = state
     ? [
         ["Description", state.description || "—"],
+        ["Manager", scope === "user" ? "user (systemctl --user)" : "system"],
         ["Load state", state.loadState || "—"],
-        ["Active state", state.activeState || "—"],
-        ["Sub state", state.subState || "—"],
+        ["Unit file state", state.unitFileState ?? "—"],
+        ["Active state", `${state.activeState || "—"}${state.subState ? ` · ${state.subState}` : ""}`],
+        ["Active since", state.activeEnterAt !== null ? formatTimeAgo(state.activeEnterAt) : "—"],
+        ["Result", state.result ?? "—"],
+        ["Last exit", lastExit],
+        ["Restarts", state.restarts !== null ? String(state.restarts) : "—"],
         ["Main PID", state.pid !== null && state.pid > 0 ? String(state.pid) : "—"],
+        ...(timer && timerInfo
+          ? [
+              [
+                "Timer",
+                <>
+                  {shortUnitName(timer.ref.id)}
+                  {timerInfo.nextRunAt !== null ? <TimeUntil at={timerInfo.nextRunAt} prefix=" · next " /> : " · not scheduled"}
+                </>,
+                timer.ref.id,
+              ] as const,
+            ]
+          : []),
         ["Last reported", unit ? formatTimeAgo(unit.ts) : "—"],
       ]
     : []
@@ -167,18 +221,18 @@ function UnitPage() {
         }
         actions={
           <>
-            <PinButton pinned={pinned} onToggle={() => toggle(unitId)} />
-            <Button size="sm" variant="outline" onClick={() => void run("restart", unitId)}>
+            <PinButton pinned={pinned} onToggle={() => toggle(key)} />
+            <Button size="sm" variant="outline" onClick={() => void run("restart", unitId, scope)}>
               Restart
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void run("stop", unitId)}>
+            <Button size="sm" variant="outline" onClick={() => void run("stop", unitId, scope)}>
               Stop
             </Button>
             <UnitActionsMenu
               unitId={unitId}
               pinned={pinned}
-              onAction={(kind) => void run(kind, unitId)}
-              onTogglePin={() => toggle(unitId)}
+              onAction={(action) => void run(action, unitId, scope)}
+              onTogglePin={() => toggle(key)}
             />
           </>
         }
@@ -189,6 +243,10 @@ function UnitPage() {
                 {state.activeState} · {state.subState}
               </span>
               {state.pid !== null && state.pid > 0 ? <span className="font-mono tabular">pid {state.pid}</span> : null}
+              {state.activeState === "active" && state.activeEnterAt !== null ? (
+                <span>since {formatDuration((Date.now() - state.activeEnterAt) / 1000)}</span>
+              ) : null}
+              {scope === "user" ? <span>user unit</span> : null}
               <span className="text-subtle">{state.description}</span>
             </>
           ) : (
@@ -198,12 +256,12 @@ function UnitPage() {
       />
 
       <div className="mt-6 flex gap-6 border-b border-border">
-        {TABS.map((value) => (
+        {TABS.filter((value) => scope === "system" || value !== "journal").map((value) => (
           <Link
             key={value}
             to="/systems/$systemId/services/$unitId"
             params={{ systemId, unitId }}
-            search={value === "overview" ? {} : { tab: value }}
+            search={{ ...(value === "overview" ? {} : { tab: value }), ...(scope === "user" ? { scope } : {}) }}
             className={cn(
               "-mb-px border-b px-0.5 py-2.5 text-[13px] capitalize",
               value === tab ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
@@ -215,7 +273,7 @@ function UnitPage() {
       </div>
 
       {tab === "unit file" ? (
-        <UnitFile systemId={systemId} unitId={unitId} />
+        <UnitFile systemId={systemId} unitId={unitId} scope={scope} />
       ) : (
         <>
           {tab === "overview" && state ? (
@@ -234,7 +292,12 @@ function UnitPage() {
                     sub: state.cpuUsageNs !== null ? `${formatDuration(state.cpuUsageNs / 1e9)} total` : "",
                     series: cpuSeries,
                   },
-                  { label: "Main PID", value: state.pid !== null && state.pid > 0 ? String(state.pid) : "—", sub: "", series: [] },
+                  {
+                    label: "Restarts",
+                    value: state.restarts !== null ? String(state.restarts) : "—",
+                    sub: state.result && state.result !== "success" ? `last result ${state.result}` : "",
+                    series: [],
+                  },
                   { label: "State", value: state.subState || state.activeState, sub: state.activeState, series: [] },
                 ].map((cell, index) => (
                   <div
@@ -260,7 +323,7 @@ function UnitPage() {
 
               <Section className="mt-6" title="Properties">
                 <dl className="grid sm:grid-cols-2">
-                  {properties.map(([label, value], index) => (
+                  {properties.map(([label, value, title], index) => (
                     <div
                       key={label}
                       className={cn(
@@ -271,7 +334,10 @@ function UnitPage() {
                       )}
                     >
                       <dt className="text-subtle">{label}</dt>
-                      <dd className="truncate text-right font-mono text-[12.5px]" title={value}>
+                      <dd
+                        className="truncate text-right font-mono text-[12.5px]"
+                        title={title ?? (typeof value === "string" ? value : undefined)}
+                      >
                         {value}
                       </dd>
                     </div>
@@ -281,6 +347,14 @@ function UnitPage() {
             </>
           ) : null}
 
+          {scope === "user" ? (
+            <Section className="mt-6" title="Journal">
+              <EmptyRow>
+                Scout streams the journal of system units only. For this user unit, run{" "}
+                <span className="font-mono text-foreground">journalctl --user -u {unitId}</span> in a terminal.
+              </EmptyRow>
+            </Section>
+          ) : (
           <Section className="mt-6" title="Journal">
             <div className={tab === "journal" ? "h-[640px]" : "h-[420px]"}>
               <LogViewer
@@ -295,6 +369,7 @@ function UnitPage() {
               />
             </div>
           </Section>
+          )}
         </>
       )}
     </Page>
