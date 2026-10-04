@@ -16,7 +16,7 @@
  * owning both lifecycle (DB state) and typed client storage.
  */
 
-import { Config, Effect, Fiber, Layer, Ref } from "effect"
+import { Effect, Fiber, Layer, Ref } from "effect"
 import * as Context from "effect/Context"
 import { eq } from "drizzle-orm"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -33,6 +33,8 @@ import {
 } from "@scout/shared"
 import type { AgentCapabilities, AgentInfo, System } from "@scout/shared"
 import type { PluginCapability } from "@scout/plugin-sdk"
+import { HubConfig } from "../config.js"
+import { agentTokenEquals } from "../auth/http-gate.js"
 import { Database } from "../services/database.js"
 import * as schema from "../../drizzle/schema.js"
 import { AgentHandlersLive } from "./agent-handlers.js"
@@ -300,7 +302,8 @@ export class RegisterAgent extends Context.Service<
 // ── agent.connect handler override ────────────────────────────────────────────
 
 /**
- * Validates the SCOUT_TOKEN and delegates to the per-connection
+ * Validates the SCOUT_TOKEN carried in the payload (the upgrade request was
+ * already checked by `HttpAuthGate`) and delegates to the per-connection
  * `RegisterAgent` callback.
  *
  * IMPORTANT: This layer MUST be provided with `Layer.fresh(...)` at the
@@ -315,11 +318,11 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.connect",
   Effect.gen(function* () {
     const registerFn = yield* RegisterAgent
-    const expectedToken = yield* Config.String("SCOUT_TOKEN")
+    const { agentToken } = yield* HubConfig
 
     return ({ token, hostname, version, platform, capabilities, pluginCapabilities }) =>
       Effect.gen(function* () {
-        if (token !== expectedToken) {
+        if (!agentTokenEquals(token, agentToken)) {
           return yield* Effect.fail(
             new AgentConnectError({
               reason: "invalid-token",

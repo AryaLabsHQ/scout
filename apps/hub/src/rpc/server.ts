@@ -2,11 +2,11 @@
  * RPC server layer composition.
  *
  * Exposes two WebSocket endpoints:
- *   /ws/rpc       — ClientHubRpcs (browsers)
- *   /ws/rpc/agent — AgentHubRpcs  (agents via DuplexRpcSocket)
+ *   /ws/rpc       — ClientHubRpcs (browsers, Cloudflare Access identity)
+ *   /ws/rpc/agent — AgentHubRpcs  (agents via DuplexRpcSocket, SCOUT_TOKEN)
  *
- * The old /ws/client and /ws/agent handlers in routes.ts are NOT modified
- * (they stay for Phase E / Phase I cleanup).
+ * Both upgrades are authenticated by `HttpAuthGate` before they reach these
+ * routes; `ClientAuthMiddlewareLive` re-verifies each browser RPC.
  */
 
 import { Effect, Layer } from "effect"
@@ -15,7 +15,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as RpcServer from "effect/rpc/RpcServer"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import { ClientHubRpcs } from "@scout/shared"
-import { AuthMiddlewareLive } from "./auth.js"
+import { ClientAuthMiddlewareLive } from "./auth.js"
 import { ClientHandlersLive } from "./client-handlers.js"
 import { AgentRegistry, handleAgentRpcWebSocket } from "./agent-bridge.js"
 
@@ -23,13 +23,13 @@ import { AgentRegistry, handleAgentRpcWebSocket } from "./agent-bridge.js"
 
 /**
  * Serves all ClientHubRpcs over a WebSocket at /ws/rpc.
- * Requires: HttpRouter, all service layers from AppLayer.
+ * Requires: HttpRouter, BrowserAuth, all service layers from AppLayer.
  */
 export const ClientRpcServerLayer = RpcServer.layer(ClientHubRpcs, {
   disableFatalDefects: true,
 }).pipe(
   Layer.provide(ClientHandlersLive),
-  Layer.provide(AuthMiddlewareLive),
+  Layer.provide(ClientAuthMiddlewareLive),
   Layer.provide(RpcServer.layerProtocolWebsocket({ path: "/ws/rpc" })),
   Layer.provide(RpcSerialization.layerNdjson),
 )
