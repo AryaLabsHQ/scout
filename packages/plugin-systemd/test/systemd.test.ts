@@ -101,6 +101,9 @@ describe("systemd plugin", () => {
           if (command !== "systemctl") {
             return Effect.fail(new Error(`unexpected command: ${command}`))
           }
+          if (args[0] === "list-units" && args.includes("--type=timer")) {
+            return Effect.succeed({ stdout: "[]", stderr: "", exitCode: 0 })
+          }
           if (args[0] === "list-units") {
             return Effect.succeed({
               stdout: JSON.stringify([
@@ -125,10 +128,17 @@ describe("systemd plugin", () => {
           }
           if (args[0] === "show") {
             return Effect.succeed({
-              stdout: "MainPID=101\nMemoryCurrent=8192\nCPUUsageNSec=500\n",
+              stdout:
+                "Id=nginx.service\nMainPID=101\nMemoryCurrent=8192\nCPUUsageNSec=500\n\n" +
+                "Id=broken.service\nMainPID=0\nMemoryCurrent=[not set]\nCPUUsageNSec=[not set]\n",
               stderr: "",
               exitCode: 0,
             })
+          }
+          // No timers, and no user manager on this node.
+          if (args[0] === "list-timers") return Effect.succeed({ stdout: "[]", stderr: "", exitCode: 0 })
+          if (args[0] === "--user") {
+            return Effect.succeed({ stdout: "", stderr: "Failed to connect to bus", exitCode: 1 })
           }
           return Effect.fail(new Error(`unexpected args: ${args.join(" ")}`))
         },

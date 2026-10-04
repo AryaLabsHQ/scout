@@ -5,8 +5,14 @@ import {
   SYSTEMD_METRIC_IDS,
   SYSTEMD_PLUGIN_ID,
   SYSTEMD_STREAM_IDS,
+  SYSTEMD_TIMER_KIND,
   SYSTEMD_UNIT_KIND,
+  SYSTEMD_USER_TIMER_KIND,
+  SYSTEMD_USER_UNIT_KIND,
 } from "./contracts.js"
+
+/** Unit actions work on services of either manager; user units go through `systemctl --user`. */
+const SERVICE_KINDS = [SYSTEMD_UNIT_KIND, SYSTEMD_USER_UNIT_KIND]
 
 export const manifest = {
   apiVersion: "v0alpha1",
@@ -35,6 +41,24 @@ export const manifest = {
       pluralDisplayName: "Systemd Units",
       description: "A systemd service unit on a managed Linux node.",
     },
+    {
+      id: SYSTEMD_USER_UNIT_KIND,
+      displayName: "Systemd User Unit",
+      pluralDisplayName: "Systemd User Units",
+      description: "A service unit of the agent user's systemd manager (systemctl --user).",
+    },
+    {
+      id: SYSTEMD_TIMER_KIND,
+      displayName: "Systemd Timer",
+      pluralDisplayName: "Systemd Timers",
+      description: "A systemd timer unit: its schedule and the last run of the unit it activates.",
+    },
+    {
+      id: SYSTEMD_USER_TIMER_KIND,
+      displayName: "Systemd User Timer",
+      pluralDisplayName: "Systemd User Timers",
+      description: "A timer unit of the agent user's systemd manager.",
+    },
   ],
   metrics: [
     {
@@ -59,14 +83,14 @@ export const manifest = {
       id: SYSTEMD_METRIC_IDS.unitMemoryBytes,
       displayName: "Unit Memory",
       kind: "gauge",
-      entityKinds: [SYSTEMD_UNIT_KIND],
+      entityKinds: SERVICE_KINDS,
       unit: "bytes",
     },
     {
       id: SYSTEMD_METRIC_IDS.unitCpuUsageNs,
       displayName: "Unit CPU Time",
       kind: "counter",
-      entityKinds: [SYSTEMD_UNIT_KIND],
+      entityKinds: SERVICE_KINDS,
       unit: "ns",
     },
   ],
@@ -74,35 +98,35 @@ export const manifest = {
     {
       id: SYSTEMD_ACTION_IDS.startUnit,
       displayName: "Start Unit",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:spawn-process"],
       requiresConfirmation: false,
     },
     {
       id: SYSTEMD_ACTION_IDS.stopUnit,
       displayName: "Stop Unit",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:spawn-process"],
       requiresConfirmation: true,
     },
     {
       id: SYSTEMD_ACTION_IDS.restartUnit,
       displayName: "Restart Unit",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:spawn-process"],
       requiresConfirmation: true,
     },
     {
       id: SYSTEMD_ACTION_IDS.enableUnit,
       displayName: "Enable Unit",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:spawn-process"],
       requiresConfirmation: false,
     },
     {
       id: SYSTEMD_ACTION_IDS.disableUnit,
       displayName: "Disable Unit",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:spawn-process"],
       requiresConfirmation: true,
     },
@@ -116,14 +140,14 @@ export const manifest = {
     {
       id: SYSTEMD_ACTION_IDS.readUnitFile,
       displayName: "Read Unit File",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:read-files", "node:spawn-process"],
       requiresConfirmation: false,
     },
     {
       id: SYSTEMD_ACTION_IDS.writeUnitFile,
       displayName: "Write Unit File",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:read-files", "node:write-files", "node:spawn-process"],
       requiresConfirmation: true,
     },

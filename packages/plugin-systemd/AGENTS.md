@@ -27,6 +27,9 @@ packages/plugin-systemd/src/
 - Route package exports through `src/index.ts`. The `./contracts` subpath exports `contracts.ts` alone (ids and schemas only, no Node imports) for the web dashboard.
 - Keep runtime adapters thin and move core behavior into `src/systemd.ts`.
 - Add new service-management actions or streams through `contracts.ts` first.
+- Two managers, separate kinds: system services are `systemd.unit`, the agent user's are `systemd.user-unit` (`systemctl --user`), and timers are `systemd.timer` / `systemd.user-timer`. Both managers can own a unit with the same name, so the kind, not the id, selects the scope. `SystemdUnitStateSchema` / `SystemdTimerStateSchema` in `contracts.ts` describe each entity's `state`.
+- Collection is one `list-units` per type, one `list-timers`, and one batched `show` per manager. A missing user manager yields no user units rather than a failed collection; the unit totals and the `unit.failed` alert count system services only.
+- The journal stream targets system units only.
 - Never escalate privileges: reads run unprivileged, state changes run `systemctl --no-ask-password` and a polkit/permission refusal surfaces as a `permission-denied` execution error.
 
 ## ANTI-PATTERNS
