@@ -30,15 +30,23 @@
  * Interrupt, Eof, Ping) and `FromServerEncoded` tags (Chunk, Exit, Defect,
  * Pong, ClientProtocolError) are disjoint — verified in
  * `effect/rpc/RpcMessage.ts`.
+ *
+ * Liveness: `Socket.fromWebSocket` suspends writes while no connection is
+ * open, and a peer that stops responding without closing the TCP stream
+ * never produces a close event. The adapter therefore fails writes once the
+ * session has ended, and can optionally send RPC `Ping` frames and end the
+ * session when the peer stays silent for a full heartbeat interval. The
+ * remote `RpcServer` answers `Ping` with `Pong` on its own.
  */
 
-import { Deferred, Effect, Layer, Option, Queue } from "effect"
+import { Deferred, Duration, Effect, Layer, Option, Queue } from "effect"
 import { constVoid } from "effect/Function"
 import type * as Scope from "effect/Scope"
-import type * as Socket from "effect/socket/Socket"
-import type {
-  FromClientEncoded,
-  FromServerEncoded,
+import * as Socket from "effect/socket/Socket"
+import {
+  constPing,
+  type FromClientEncoded,
+  type FromServerEncoded,
 } from "effect/rpc/RpcMessage"
 import * as RpcClient from "effect/rpc/RpcClient"
 import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError"
@@ -69,11 +77,30 @@ const isFromClientEncoded = (
   }
 }
 
+/** Why a duplex session ended. */
+export type DuplexCloseReason =
+  /** The socket failed to open, the peer closed it, or the scope closed. */
+  | "SocketClosed"
+  /** The peer sent nothing for a full heartbeat interval after a `Ping`. */
+  | "HeartbeatTimeout"
+  /** A write to the socket failed; the connection can no longer be trusted. */
+  | "WriteFailed"
+
+export interface DuplexRpcOptions {
+  /**
+   * Send an RPC `Ping` every interval and end the session with
+   * `"HeartbeatTimeout"` when no frame arrives within the following
+   * interval. A silent peer is detected within two intervals. Disabled when
+   * omitted.
+   */
+  readonly heartbeatInterval?: Duration.Input | undefined
+}
+
 /**
  * Build an `RpcServer.Protocol` and an `RpcClient.Protocol` that share
  * one underlying WebSocket. Returns them as Layers that can be provided
  * to `RpcServer.layer(...)` and `RpcClient.make(...)` independently, plus a
- * `closed` effect that completes when the socket stops reading.
+ * `closed` effect that completes with the reason the session ended.
  *
  * The caller is responsible for providing a `Socket.Socket` scoped to
  * the lifetime of the desired RPC session, plus an `RpcSerialization`
@@ -84,12 +111,16 @@ const isFromClientEncoded = (
  */
 export const makeDuplexRpcProtocols = (
   socket: Socket.Socket,
+  options?: DuplexRpcOptions,
 ): Effect.Effect<
   {
     readonly serverProtocol: Layer.Layer<RpcServer.Protocol>
     readonly clientProtocol: Layer.Layer<RpcClient.Protocol>
-    /** Completes when the underlying socket stops reading (closed or failed). */
-    readonly closed: Effect.Effect<void>
+    /**
+     * Completes when the session ends: the socket stopped reading, or the
+     * heartbeat timed out. Writes fail from then on.
+     */
+    readonly closed: Effect.Effect<DuplexCloseReason>
   },
   never,
   RpcSerialization.RpcSerialization | Scope.Scope
@@ -133,9 +164,11 @@ export const makeDuplexRpcProtocols = (
           while: () => i < decoded.length,
           body: () => {
             const msg = decoded[i++]!
-            return isFromClientEncoded(msg)
-              ? routeToServer(PEER_CLIENT_ID, msg)
-              : routeToClient(msg)
+            if (isFromClientEncoded(msg)) return routeToServer(PEER_CLIENT_ID, msg)
+            // Answers to our heartbeat; the frame itself already counted
+            // as liveness, and RpcClient has no use for it.
+            if (msg._tag === "Pong") return Effect.void
+            return routeToClient(msg)
           },
           step: constVoid,
         })
@@ -147,21 +180,68 @@ export const makeDuplexRpcProtocols = (
       }
     }
 
-    // Completes once the reader loop stops: the socket failed to open, the
-    // peer closed it, or the scope closed. Socket writes suspend while
-    // disconnected, so callers must race their RPC session against this to
+    // Completes once the session ends: the reader loop stopped (the socket
+    // failed to open, the peer closed it, or the scope closed) or the
+    // heartbeat timed out. Callers race their RPC session against this to
     // notice a dead connection.
-    const closed = yield* Deferred.make<void>()
+    const closed = yield* Deferred.make<DuplexCloseReason>()
+
+    // ── Outbound writes ─────────────────────────────────────────────────
+
+    const sessionClosedError = new Socket.SocketError({
+      reason: new Socket.SocketWriteError({
+        cause: new Error("duplex socket session closed"),
+      }),
+    })
+
+    // The underlying WebSocket writer waits for an open connection, so a
+    // write issued after the peer went away would suspend forever. Fail it
+    // as soon as the session ends instead. A write that fails on its own ends
+    // the session, so a half-broken socket cannot silently drop responses.
+    const write = (chunk: Uint8Array | string): Effect.Effect<void, Socket.SocketError> =>
+      Deferred.isDoneUnsafe(closed)
+        ? Effect.fail(sessionClosedError)
+        : writer.write(chunk).pipe(
+            Effect.tapError(() => Deferred.succeed(closed, "WriteFailed")),
+            Effect.raceFirst(
+              Deferred.await(closed).pipe(Effect.andThen(Effect.fail(sessionClosedError))),
+            ),
+          )
+
+    // Set whenever a frame arrives; the heartbeat clears it on each ping.
+    let receivedSincePing = true
+
+    const heartbeat = (interval: Duration.Duration) => {
+      const ping = parser.encode(constPing)
+      return Effect.gen(function* () {
+        while (true) {
+          yield* Effect.sleep(interval)
+          if (!receivedSincePing) {
+            yield* Deferred.succeed(closed, "HeartbeatTimeout")
+            return
+          }
+          receivedSincePing = false
+          if (ping !== undefined) yield* Effect.ignore(write(ping))
+        }
+      })
+    }
 
     // Fork the socket reader loop. Acquiring the reader establishes the
     // connection; each pulled frame is dispatched to either the server- or
     // client-side handler by _tag. The pull fails with a SocketError when
-    // the connection closes, which ends the loop.
+    // the connection closes, which ends the loop. The heartbeat starts once
+    // the connection is open and stops with the loop.
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         const { pull } = yield* socket.reader
+        if (options?.heartbeatInterval !== undefined) {
+          yield* Effect.forkScoped(
+            heartbeat(Duration.fromInputUnsafe(options.heartbeatInterval)),
+          )
+        }
         while (true) {
           const frames = yield* pull
+          receivedSincePing = true
           for (const frame of frames) {
             yield* processFrame(frame)
           }
@@ -169,11 +249,11 @@ export const makeDuplexRpcProtocols = (
       }).pipe(
         Effect.scoped,
         Effect.ignore,
-        Effect.ensuring(Deferred.succeed(closed, undefined)),
+        Effect.ensuring(Deferred.succeed(closed, "SocketClosed")),
       ),
     )
 
-    // ── Outbound send functions ─────────────────────────────────────────
+    // ── Send functions ──────────────────────────────────────────────────
 
     const sendFromServer = (
       _clientId: number,
@@ -182,7 +262,9 @@ export const makeDuplexRpcProtocols = (
       try {
         const encoded = parser.encode(response)
         if (encoded === undefined) return Effect.void
-        return Effect.orDie(writer.write(encoded))
+        // A failed write has already ended the session (see `write`), and
+        // nobody is left to receive a response once it has.
+        return Effect.ignore(write(encoded))
       } catch {
         return Effect.void
       }
@@ -199,7 +281,7 @@ export const makeDuplexRpcProtocols = (
       try {
         const encoded = parser.encode(request)
         if (encoded === undefined) return Effect.void
-        return writer.write(encoded).pipe(
+        return write(encoded).pipe(
           Effect.mapError((cause) =>
             toClientError("duplex socket write failed", cause),
           ),

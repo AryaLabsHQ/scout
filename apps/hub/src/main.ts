@@ -35,7 +35,12 @@ const AuthLayer = BrowserAuth.layer.pipe(
 const ServerLayer = Effect.gen(function* () {
   const { host, port } = yield* HubConfig
   yield* Effect.logInfo("Scout hub listening", { host, port })
-  return BunHttpServer.layer({ hostname: host, port })
+  // Agents and browsers hold long-lived WebSockets that never drain on their
+  // own. The preemptive graceful stop would wait for them for up to 20s
+  // while the old process keeps every agent attached. Instead, interrupt the
+  // handlers on shutdown: sockets close with 1001 and agents reconnect to the
+  // next hub straight away.
+  return BunHttpServer.layer({ hostname: host, port, disablePreemptiveShutdown: true })
 }).pipe(Layer.unwrap, Layer.provide(ConfigLayer))
 
 // ── Retention background fiber ────────────────────────────────────────────────

@@ -138,6 +138,9 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 3. Agent reports core metrics every 15 seconds via `agent.report`
 4. Plugin collection results flow via `agent.reportPluginCollection`
 5. Hub-initiated commands (terminal sessions, plugin actions) are routed through `AgentRegistry` to the correct agent's RPC client
+6. Liveness: the agent sends an RPC `Ping` every 4 seconds and drops the session when the hub sends nothing for a full interval, so a hub that hangs without closing the socket is detected within 8 seconds. Socket closes are detected immediately.
+7. Reconnect: the agent redials as soon as a session ends, then backs off from 500ms up to a 4s cap (±20% jitter) while the hub stays unreachable. The backoff resets after every handshake, and `agent.connect` registers the agent again.
+8. Hub shutdown interrupts open WebSocket handlers instead of draining them (`disablePreemptiveShutdown`), so agents see a 1001 close the moment the hub stops rather than after the 20s graceful-shutdown timeout in `@effect/platform-bun`
 
 ## RPC Surface
 
