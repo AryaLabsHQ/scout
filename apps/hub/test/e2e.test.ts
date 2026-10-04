@@ -197,7 +197,7 @@ describe("E2E service pipeline", () => {
           const before = yield* registry.listConnected()
           expect(before.length).toBe(1)
 
-          yield* registry.unregister("test-grace")
+          yield* registry.unregister("test-grace", MOCK_HUB_AGENT_CLIENT)
 
           // Agent should be removed from connected list immediately
           const afterUnregister = yield* registry.listConnected()
@@ -209,6 +209,27 @@ describe("E2E service pipeline", () => {
           // Step 11-12: Agent is not in connected list, system is offline
           const agent = yield* registry.getConnected("test-grace")
           expect(agent).toBeNull()
+        }),
+      )
+    },
+  )
+
+  it.layer(TestAppLayer)(
+    "agent reconnect before the old socket closes",
+    (it) => {
+      it.effect("closing the superseded connection keeps the new one", () =>
+        Effect.gen(function* () {
+          const registry = yield* AgentRegistry
+          const oldClient = {} as HubAgentClient
+          const newClient = {} as HubAgentClient
+
+          yield* registry.register(makeAgentInfo("test-overlap"), DEFAULT_CAPABILITIES, [], oldClient)
+          yield* registry.register(makeAgentInfo("test-overlap"), DEFAULT_CAPABILITIES, [], newClient)
+
+          yield* registry.unregister("test-overlap", oldClient)
+          yield* TestClock.adjust("6 seconds")
+
+          expect(yield* registry.getClient("test-overlap")).toBe(newClient)
         }),
       )
     },
