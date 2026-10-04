@@ -141,17 +141,19 @@ systemctl --user restart scout-hub scout-web scout-agent
 
 **Migrating from the token Secret.** Older revisions of `k8s/rbac.yaml` created a
 `scout-agent-token` Secret holding a non-expiring token. Re-applying the manifest does not
-delete that Secret, so remove it once, rebuild the kubeconfig with the TokenRequest
-commands in [Install](#install), and restart the agent:
+delete that Secret. Switch the agent to a TokenRequest token first, then delete the Secret, so
+Kubernetes collection never breaks:
 
 ```sh
-sudo kubectl -n scout delete secret scout-agent-token --ignore-not-found
-# rebuild ~/.config/scout/kubeconfig as in Install, then:
+# 1. Rebuild ~/.config/scout/kubeconfig with the TokenRequest commands in Install,
+#    including the read-ok and can-i checks.
+# 2. Restart the agent on the new kubeconfig.
 systemctl --user restart scout-agent
+# 3. Only then revoke the old token.
+sudo kubectl -n scout delete secret scout-agent-token --ignore-not-found
 ```
 
-Deleting the Secret revokes its token, so the old kubeconfig stops working; nothing else
-depends on it.
+Deleting the Secret revokes its token; after step 1 nothing uses it.
 
 ## Rollback
 
