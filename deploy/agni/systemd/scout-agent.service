@@ -23,8 +23,8 @@ EnvironmentFile=%h/.config/scout/agent.env
 ExecStart=%h/.bun/bin/bun src/main.ts
 Restart=on-failure
 RestartSec=5
-# The agent never escalates: systemd mutations of system units fail with
-# permission-denied instead of going through sudo.
+# The agent never escalates: systemd mutations of system units are allowed only
+# for the dotfiles polkit allowlist and otherwise fail with permission-denied.
 NoNewPrivileges=yes
 
 [Install]

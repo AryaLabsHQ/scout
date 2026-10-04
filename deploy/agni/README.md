@@ -78,8 +78,11 @@ Kubernetes identity for the agent's k8s plugin (see [RBAC](#kubernetes-rbac)):
 
 ```sh
 sudo kubectl apply -f deploy/agni/k8s/rbac.yaml
-sudo kubectl -n scout get secret scout-agent-token -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/scout-ca.crt
-token=$(sudo kubectl -n scout get secret scout-agent-token -o jsonpath='{.data.token}' | base64 -d)
+umask 077
+# The CA comes from the public kube-root-ca.crt ConfigMap and the token from the
+# TokenRequest API, so no Secret is created or read.
+sudo kubectl -n scout get configmap kube-root-ca.crt -o jsonpath='{.data.ca\.crt}' > /tmp/scout-ca.crt
+token=$(sudo kubectl -n scout create token scout-agent --duration=87600h)
 export KUBECONFIG=$HOME/.config/scout/kubeconfig
 kubectl config set-cluster agni --server=https://127.0.0.1:6443 \
   --certificate-authority=/tmp/scout-ca.crt --embed-certs=true
@@ -148,7 +151,7 @@ systemctl --user restart scout-hub scout-web scout-agent
 
 ## Kubernetes RBAC
 
-`k8s/rbac.yaml` creates namespace `scout`, ServiceAccount `scout-agent`, a long-lived token Secret,
+`k8s/rbac.yaml` creates namespace `scout`, ServiceAccount `scout-agent`,
 and a cluster-wide `scout-agent` ClusterRole matching what `packages/plugin-k8s` runs:
 
 | kubectl call (plugin) | Grant |
@@ -161,19 +164,28 @@ and a cluster-wide `scout-agent` ClusterRole matching what `packages/plugin-k8s`
 
 There is no access to Secrets or ConfigMaps. The plugin also offers scale-workload on
 DaemonSets, Jobs, and CronJobs; Kubernetes cannot scale those, so they fail regardless of RBAC.
-Rotate the token by deleting the `scout-agent-token` Secret, re-applying, and rebuilding the
-kubeconfig.
+The kubeconfig token comes from the TokenRequest API and is valid for 10 years (k3s does not cap
+`--duration`). It is not bound to an object, so it stays valid until it expires or the
+`scout-agent` ServiceAccount is deleted. To rotate it, delete and re-apply the ServiceAccount
+(`sudo kubectl -n scout delete serviceaccount scout-agent`, then apply `rbac.yaml` again), which
+revokes every token issued for it, then rebuild the kubeconfig.
 
 ## systemd plugin on Agni
 
-The agent runs as `ubuntu` with `NoNewPrivileges=yes` and never uses sudo:
+The agent runs as `ubuntu` with `NoNewPrivileges=yes` and never uses sudo. Mutations run
+`systemctl --no-ask-password`, so polkit answers at once instead of prompting for a password.
+
+A polkit rule in dotfiles (`machines/agni/system/files/etc/polkit-1/rules.d/50-scout-unit-actions.rules`)
+lets `ubuntu` start, stop, restart and reload an allowlist of host units: `caddy`,
+`cloudflared-agni-host`, `fail2ban`, `glances`, `vnstat`, `restic-backup.service` and
+`restic-backup.timer`. Add a unit there to make it actionable from Scout.
 
 | Works as `ubuntu` | Fails with `permission-denied` |
 |-------------------|--------------------------------|
-| Collecting system service units (`systemctl list-units`, `show`) | start, stop, restart, enable, disable of system units |
+| Collecting system service units (`systemctl list-units`, `show`) | Actions on units outside the polkit allowlist (`k3s`, `tailscaled`, `ssh`, `postgresql`, ...) |
+| start, stop, restart, reload of allowlisted units | enable and disable of any system unit |
 | Unit logs (`journalctl -u`; `ubuntu` is in `adm`) | `daemon-reload` |
 | Reading unit files under `/etc` and `/usr/lib` | Writing unit files to system paths |
 
-Mutations run `systemctl --no-ask-password`, so polkit refuses at once instead of waiting for a
-password. The plugin manages system units only; user units such as `scout-hub.service` are not
-collected. Use a host shell with sudo for system-unit changes.
+The plugin manages system units only; user units such as `scout-hub.service` are not
+collected. Use a host shell with sudo for everything outside the allowlist.

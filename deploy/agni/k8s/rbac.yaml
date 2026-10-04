@@ -17,17 +17,6 @@ metadata:
   name: scout-agent
   namespace: scout
 ---
-# Long-lived token for the agent's kubeconfig. Rotate by deleting this
-# Secret, re-applying, and rebuilding ~/.config/scout/kubeconfig.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: scout-agent-token
-  namespace: scout
-  annotations:
-    kubernetes.io/service-account.name: scout-agent
-type: kubernetes.io/service-account-token
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
