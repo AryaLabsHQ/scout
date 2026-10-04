@@ -124,12 +124,12 @@ describe("parseProcMeminfo", () => {
 describe("parseProcLoadavg", () => {
   it("parses 1m, 5m, 15m load averages", () => {
     const result = parseProcLoadavg("0.25 0.15 0.10 1/234 5678\n")
-    expect(result).toEqual([0.25, 0.15, 0.10])
+    expect(result).toEqual([0.25, 0.15, 0.1])
   })
 
   it("handles high load", () => {
     const result = parseProcLoadavg("12.50 8.32 5.11 3/456 1234\n")
-    expect(result[0]).toBeCloseTo(12.50)
+    expect(result[0]).toBeCloseTo(12.5)
     expect(result[1]).toBeCloseTo(8.32)
     expect(result[2]).toBeCloseTo(5.11)
   })
@@ -165,7 +165,7 @@ const DF_VALID = `Mounted on      Source          Type        Size         Used
 describe("parseDiskUsage", () => {
   it("parses real disk entries", () => {
     const results = parseDiskUsage(DF_VALID)
-    const mounts = results.map(d => d.mount)
+    const mounts = results.map((d) => d.mount)
     expect(mounts).toContain("/")
     expect(mounts).toContain("/home")
     expect(mounts).toContain("/data")
@@ -173,19 +173,19 @@ describe("parseDiskUsage", () => {
 
   it("excludes tmpfs and virtual filesystems", () => {
     const results = parseDiskUsage(DF_VALID)
-    const mounts = results.map(d => d.mount)
+    const mounts = results.map((d) => d.mount)
     expect(mounts).not.toContain("/dev/shm")
   })
 
   it("excludes loop devices", () => {
     const results = parseDiskUsage(DF_VALID)
-    const devices = results.map(d => d.device)
-    expect(devices.every(d => !d.startsWith("/dev/loop"))).toBe(true)
+    const devices = results.map((d) => d.device)
+    expect(devices.every((d) => !d.startsWith("/dev/loop"))).toBe(true)
   })
 
   it("maps bytes correctly", () => {
     const results = parseDiskUsage(DF_VALID)
-    const root = results.find(d => d.mount === "/")
+    const root = results.find((d) => d.mount === "/")
     expect(root?.total).toBe(100000000000)
     expect(root?.used).toBe(50000000000)
   })

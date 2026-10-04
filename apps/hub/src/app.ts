@@ -25,9 +25,7 @@ const RetentionLayer = Retention.layer.pipe(Layer.provide(DatabaseLayer))
 
 // ── Layer 2: AlertEngine (depends on Database + MetricsBroadcast) ─────────
 
-const AlertEngineLayer = AlertEngine.layer.pipe(
-  Layer.provide(Layer.merge(DatabaseLayer, BroadcastLayer)),
-)
+const AlertEngineLayer = AlertEngine.layer.pipe(Layer.provide(Layer.merge(DatabaseLayer, BroadcastLayer)))
 
 // ── Layer 3: AgentRegistry (depends on Database) ──────────────────────────
 

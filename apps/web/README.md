@@ -12,6 +12,7 @@
 ## Configuration
 
 Common environment variable:
+
 - `SCOUT_HUB_URL`: hub base URL for SSR and server functions (default `http://127.0.0.1:3001`),
   also the Vite dev proxy target
 

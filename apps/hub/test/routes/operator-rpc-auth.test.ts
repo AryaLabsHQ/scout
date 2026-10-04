@@ -26,7 +26,15 @@ import { ClientAuthMiddlewareLive } from "../../src/rpc/auth.js"
 import { ClientHandlersLive } from "../../src/rpc/client-handlers.js"
 import { AlertEngine } from "../../src/services/alert-engine.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
-import { TEST_AUD, TEST_EMAIL, TEST_ISSUER, TEST_TEAM_DOMAIN, accessClaims, jwksOf, makeTestSigner } from "../helpers/access-jwt.js"
+import {
+  TEST_AUD,
+  TEST_EMAIL,
+  TEST_ISSUER,
+  TEST_TEAM_DOMAIN,
+  accessClaims,
+  jwksOf,
+  makeTestSigner,
+} from "../helpers/access-jwt.js"
 import { executed, faux, operatorLayer } from "../helpers/operator.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
 
@@ -98,63 +106,76 @@ const connectRpc = (token: string) =>
   })
 
 describe("operator RPCs behind Cloudflare Access", () => {
-  it.live("records the verified identity as the approval actor", () =>
-    Effect.gen(function* () {
-      executed.length = 0
-      faux.setResponses([
-        fauxAssistantMessage(
-          fauxToolCall("bash_run", { nodeId: "node-a", label: "restart", command: "restart", isMutation: true }),
-          { stopReason: "toolUse" },
-        ),
-        fauxAssistantMessage("Restarted."),
-      ])
-      const client = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
-      const created = yield* client["operator.sessions.create"]({ selectedNodeIds: ["node-a"] })
-      const sessionId = created.session.id
-      yield* client["operator.prompt"]({ sessionId, text: "Restart it" })
+  it.live(
+    "records the verified identity as the approval actor",
+    () =>
+      Effect.gen(function* () {
+        executed.length = 0
+        faux.setResponses([
+          fauxAssistantMessage(
+            fauxToolCall("bash_run", {
+              nodeId: "node-a",
+              label: "restart",
+              command: "restart",
+              isMutation: true,
+            }),
+            { stopReason: "toolUse" },
+          ),
+          fauxAssistantMessage("Restarted."),
+        ])
+        const client = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
+        const created = yield* client["operator.sessions.create"]({ selectedNodeIds: ["node-a"] })
+        const sessionId = created.session.id
+        yield* client["operator.prompt"]({ sessionId, text: "Restart it" })
 
-      const waitUntil = (predicate: (detail: OperatorSessionDetail) => boolean) =>
-        Effect.gen(function* () {
-          for (let attempt = 0; attempt < 300; attempt++) {
-            const detail = yield* client["operator.sessions.get"]({ sessionId })
-            if (detail !== null && predicate(detail)) return detail
-            yield* Effect.sleep("10 millis")
-          }
-          return yield* Effect.die("timed out")
+        const waitUntil = (predicate: (detail: OperatorSessionDetail) => boolean) =>
+          Effect.gen(function* () {
+            for (let attempt = 0; attempt < 300; attempt++) {
+              const detail = yield* client["operator.sessions.get"]({ sessionId })
+              if (detail !== null && predicate(detail)) return detail
+              yield* Effect.sleep("10 millis")
+            }
+            return yield* Effect.die("timed out")
+          })
+
+        const waiting = yield* waitUntil((detail) => detail.approvals[0]?.status === "pending")
+        expect(executed).toEqual([])
+        yield* client["operator.approvals.resolve"]({
+          sessionId,
+          approvalId: waiting.approvals[0]!.id,
+          decision: "approved",
         })
-
-      const waiting = yield* waitUntil((detail) => detail.approvals[0]?.status === "pending")
-      expect(executed).toEqual([])
-      yield* client["operator.approvals.resolve"]({
-        sessionId,
-        approvalId: waiting.approvals[0]!.id,
-        decision: "approved",
-      })
-      const done = yield* waitUntil((detail) => detail.session.status === "idle" && detail.approvals[0]?.status === "approved")
-      expect(done.approvals[0]?.actor).toBe(TEST_EMAIL)
-      expect(executed).toEqual(["bash:restart"])
-    }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "actor.sqlite")))),
+        const done = yield* waitUntil(
+          (detail) => detail.session.status === "idle" && detail.approvals[0]?.status === "approved",
+        )
+        expect(done.approvals[0]?.actor).toBe(TEST_EMAIL)
+        expect(executed).toEqual(["bash:restart"])
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "actor.sqlite")))),
     20_000,
   )
 
-  it.live("ends a session watch with Unauthorized when its JWT expires", () =>
-    Effect.gen(function* () {
-      const fresh = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
-      const created = yield* fresh["operator.sessions.create"]({ selectedNodeIds: ["node-a"] })
-      // Accepted thanks to the 30 s clock-skew leeway, which runs out ~2 s from now.
-      const expiring = yield* connectRpc(
-        yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 28 }))),
-      )
-      let frames = 0
-      const exit = yield* expiring["operator.sessions.watch"]({ sessionId: created.session.id }).pipe(
-        Stream.runForEach(() => Effect.sync(() => void frames++)),
-        Effect.timeout("10 seconds"),
-        Effect.exit,
-      )
-      expect(frames).toBeGreaterThan(0)
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
-    }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "watch.sqlite")))),
+  it.live(
+    "ends a session watch with Unauthorized when its JWT expires",
+    () =>
+      Effect.gen(function* () {
+        const fresh = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
+        const created = yield* fresh["operator.sessions.create"]({ selectedNodeIds: ["node-a"] })
+        // Accepted thanks to the 30 s clock-skew leeway, which runs out ~2 s from now.
+        const expiring = yield* connectRpc(
+          yield* Effect.promise(() =>
+            signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 28 })),
+          ),
+        )
+        let frames = 0
+        const exit = yield* expiring["operator.sessions.watch"]({ sessionId: created.session.id }).pipe(
+          Stream.runForEach(() => Effect.sync(() => void frames++)),
+          Effect.timeout("10 seconds"),
+          Effect.exit,
+        )
+        expect(frames).toBeGreaterThan(0)
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "watch.sqlite")))),
     20_000,
   )
 })

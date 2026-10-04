@@ -1,12 +1,6 @@
 import { createContext, useContext, useMemo, useSyncExternalStore, useState } from "react"
 import { defineCatalog } from "@json-render/core"
-import {
-  createStateStore,
-  defineRegistry,
-  JSONUIProvider,
-  Renderer,
-  useStateStore,
-} from "@json-render/react"
+import { createStateStore, defineRegistry, JSONUIProvider, Renderer, useStateStore } from "@json-render/react"
 import { schema } from "@json-render/react/schema"
 import { z } from "zod"
 import { toast } from "sonner"
@@ -25,14 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import type {
   EntityRef,
@@ -60,172 +47,216 @@ const unknownRecord = z.record(z.string(), z.any())
 const SCOUT_UI_CATALOG = defineCatalog(schema, {
   components: {
     Page: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        subtitle: stringOrDynamic.optional(),
-        description: stringOrDynamic.optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          subtitle: stringOrDynamic.optional(),
+          description: stringOrDynamic.optional(),
+        })
+        .passthrough(),
     },
     Section: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        description: stringOrDynamic.optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          description: stringOrDynamic.optional(),
+        })
+        .passthrough(),
     },
     Grid: {
-      props: z.object({
-        columns: z.number().optional(),
-        gap: z.enum(["sm", "md", "lg"]).optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          columns: z.number().optional(),
+          gap: z.enum(["sm", "md", "lg"]).optional(),
+        })
+        .passthrough(),
     },
     Stack: {
-      props: z.object({
-        direction: z.enum(["row", "column"]).optional(),
-        gap: z.enum(["sm", "md", "lg"]).optional(),
-        justify: z.enum(["start", "center", "end", "between"]).optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          direction: z.enum(["row", "column"]).optional(),
+          gap: z.enum(["sm", "md", "lg"]).optional(),
+          justify: z.enum(["start", "center", "end", "between"]).optional(),
+        })
+        .passthrough(),
     },
     Text: {
-      props: z.object({
-        text: stringOrDynamic,
-        tone: z.enum(["default", "muted", "danger"]).optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          text: stringOrDynamic,
+          tone: z.enum(["default", "muted", "danger"]).optional(),
+        })
+        .passthrough(),
     },
     Callout: {
-      props: z.object({
-        tone: z.enum(["default", "warning", "danger"]).optional(),
-        text: stringOrDynamic,
-      }).passthrough(),
+      props: z
+        .object({
+          tone: z.enum(["default", "warning", "danger"]).optional(),
+          text: stringOrDynamic,
+        })
+        .passthrough(),
     },
     StatGrid: {
-      props: z.object({
-        items: z.array(z.any()).optional(),
-        metrics: z.array(z.any()).optional(),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          items: z.array(z.any()).optional(),
+          metrics: z.array(z.any()).optional(),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     StatCard: {
-      props: z.object({
-        label: stringOrDynamic,
-        metricId: z.string().optional(),
-        value: stringOrDynamic.optional(),
-        unit: z.string().optional(),
-        tone: z.enum(["default", "success", "danger"]).optional(),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          metricId: z.string().optional(),
+          value: stringOrDynamic.optional(),
+          unit: z.string().optional(),
+          tone: z.enum(["default", "success", "danger"]).optional(),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     MetricStatCard: {
-      props: z.object({
-        label: stringOrDynamic,
-        metricId: z.string(),
-        unit: z.string().optional(),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          metricId: z.string(),
+          unit: z.string().optional(),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     EntityTable: {
-      props: z.object({
-        entityKind: z.string(),
-        columns: z.array(z.any()),
-        rowActions: z.array(z.any()).optional(),
-        detailScreenId: z.string().optional(),
-        statePath: z.string().optional(),
-        empty: z.object({
-          title: z.string().optional(),
-          description: z.string().optional(),
-        }).optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          entityKind: z.string(),
+          columns: z.array(z.any()),
+          rowActions: z.array(z.any()).optional(),
+          detailScreenId: z.string().optional(),
+          statePath: z.string().optional(),
+          empty: z
+            .object({
+              title: z.string().optional(),
+              description: z.string().optional(),
+            })
+            .optional(),
+        })
+        .passthrough(),
     },
     DetailList: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        fields: z.array(z.any()).optional(),
-        items: z.array(z.any()).optional(),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          fields: z.array(z.any()).optional(),
+          items: z.array(z.any()).optional(),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     MetricChart: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        metrics: z.array(z.any()).optional(),
-        metricId: z.string().optional(),
-        unit: z.string().optional(),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          metrics: z.array(z.any()).optional(),
+          metricId: z.string().optional(),
+          unit: z.string().optional(),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     ActionBar: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        actions: z.array(z.any()),
-        entityStatePath: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          actions: z.array(z.any()),
+          entityStatePath: z.string().optional(),
+        })
+        .passthrough(),
     },
     LogPanel: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-        streamId: z.string(),
-        entityStatePath: z.string().optional(),
-        targetEntityStatePath: z.string().optional(),
-        fallbackTargetKinds: z.array(z.string()).optional(),
-        relationshipTypes: z.array(z.string()).optional(),
-        tail: z.number().optional(),
-        statePath: z.string().optional(),
-        input: z.any().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+          streamId: z.string(),
+          entityStatePath: z.string().optional(),
+          targetEntityStatePath: z.string().optional(),
+          fallbackTargetKinds: z.array(z.string()).optional(),
+          relationshipTypes: z.array(z.string()).optional(),
+          tail: z.number().optional(),
+          statePath: z.string().optional(),
+          input: z.any().optional(),
+        })
+        .passthrough(),
     },
     Form: {
-      props: z.object({
-        title: stringOrDynamic.optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          title: stringOrDynamic.optional(),
+        })
+        .passthrough(),
     },
     ActionButton: {
-      props: z.object({
-        label: stringOrDynamic,
-        variant: z.enum(["default", "outline", "secondary", "ghost", "destructive"]).optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          variant: z.enum(["default", "outline", "secondary", "ghost", "destructive"]).optional(),
+        })
+        .passthrough(),
     },
     TextField: {
-      props: z.object({
-        label: stringOrDynamic,
-        statePath: z.string().optional(),
-        bindState: z.string().optional(),
-        placeholder: z.string().optional(),
-        multiline: z.boolean().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          statePath: z.string().optional(),
+          bindState: z.string().optional(),
+          placeholder: z.string().optional(),
+          multiline: z.boolean().optional(),
+        })
+        .passthrough(),
     },
     NumberField: {
-      props: z.object({
-        label: stringOrDynamic,
-        statePath: z.string().optional(),
-        bindState: z.string().optional(),
-        min: z.number().optional(),
-        max: z.number().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          statePath: z.string().optional(),
+          bindState: z.string().optional(),
+          min: z.number().optional(),
+          max: z.number().optional(),
+        })
+        .passthrough(),
     },
     BooleanField: {
-      props: z.object({
-        label: stringOrDynamic,
-        statePath: z.string().optional(),
-        bindState: z.string().optional(),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          statePath: z.string().optional(),
+          bindState: z.string().optional(),
+        })
+        .passthrough(),
     },
     SelectField: {
-      props: z.object({
-        label: stringOrDynamic,
-        statePath: z.string().optional(),
-        bindState: z.string().optional(),
-        options: z.array(
-          z.object({
-            label: z.string(),
-            value: z.union([z.string(), z.number(), z.boolean()]),
-          }),
-        ),
-      }).passthrough(),
+      props: z
+        .object({
+          label: stringOrDynamic,
+          statePath: z.string().optional(),
+          bindState: z.string().optional(),
+          options: z.array(
+            z.object({
+              label: z.string(),
+              value: z.union([z.string(), z.number(), z.boolean()]),
+            }),
+          ),
+        })
+        .passthrough(),
     },
     ResultPanel: {
-      props: z.object({
-        resultStatePath: z.string(),
-        errorStatePath: z.string(),
-      }).passthrough(),
+      props: z
+        .object({
+          resultStatePath: z.string(),
+          errorStatePath: z.string(),
+        })
+        .passthrough(),
     },
   },
   actions: {
@@ -278,17 +309,20 @@ function usePluginUiRuntime(): PluginUiRuntimeActions {
 
 const CHART_COLORS = ["#ededed", "#a1a1a1", "#707070", "#4a4a4a", "#2e2e2e"] as const
 
-const deepMerge = (left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> => {
+const deepMerge = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): Record<string, unknown> => {
   const output: Record<string, unknown> = { ...left }
   for (const [key, value] of Object.entries(right)) {
     const current = output[key]
     if (
-      value !== null
-      && typeof value === "object"
-      && !Array.isArray(value)
-      && current !== null
-      && typeof current === "object"
-      && !Array.isArray(current)
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      current !== null &&
+      typeof current === "object" &&
+      !Array.isArray(current)
     ) {
       output[key] = deepMerge(current as Record<string, unknown>, value as Record<string, unknown>)
     } else {
@@ -318,26 +352,25 @@ const getByStatePath = (value: unknown, path: string): unknown =>
     }, value)
 
 const entityRefEqual = (left: EntityRef | undefined, right: EntityRef | undefined): boolean =>
-  left !== undefined
-  && right !== undefined
-  && left.pluginId === right.pluginId
-  && left.kind === right.kind
-  && left.nodeId === right.nodeId
-  && left.id === right.id
+  left !== undefined &&
+  right !== undefined &&
+  left.pluginId === right.pluginId &&
+  left.kind === right.kind &&
+  left.nodeId === right.nodeId &&
+  left.id === right.id
 
 const resolveEntityFromRef = (
   entities: ReadonlyArray<EntitySnapshot>,
   ref: EntityRef | undefined,
 ): EntitySnapshot | null =>
-  ref === undefined ? null : entities.find((entity) => entityRefEqual(entity.ref, ref)) ?? null
+  ref === undefined ? null : (entities.find((entity) => entityRefEqual(entity.ref, ref)) ?? null)
 
 const metricMatchesEntity = (metric: MetricPoint, entity: EntitySnapshot | null): boolean => {
   if (entity === null) {
     return metric.entity === undefined
   }
 
-  return metric.entity !== undefined
-    && entityRefEqual(metric.entity, entity.ref)
+  return metric.entity !== undefined && entityRefEqual(metric.entity, entity.ref)
 }
 
 const latestMetric = (
@@ -348,7 +381,7 @@ const latestMetric = (
   const matches = metrics.filter(
     (metric) => metric.metricId === metricId && metricMatchesEntity(metric, entity),
   )
-  return matches.length === 0 ? null : matches[matches.length - 1] ?? null
+  return matches.length === 0 ? null : (matches[matches.length - 1] ?? null)
 }
 
 const formatMetricValue = (value: number, unit?: string): string => {
@@ -383,11 +416,7 @@ const resolveColumnValue = (
     case "status":
       return entity.status
     case "metric": {
-      const metric = latestMetric(
-        metrics,
-        (column.source as { metricId: string }).metricId,
-        entity,
-      )
+      const metric = latestMetric(metrics, (column.source as { metricId: string }).metricId, entity)
       return metric === null ? undefined : formatMetricValue(metric.value, metric.unit)
     }
     default:
@@ -405,8 +434,7 @@ const buildTimeseries = (
       metrics
         .filter(
           (metric) =>
-            metricRefs.some((ref) => ref.metricId === metric.metricId)
-            && metricMatchesEntity(metric, entity),
+            metricRefs.some((ref) => ref.metricId === metric.metricId) && metricMatchesEntity(metric, entity),
         )
         .map((metric) => metric.ts),
     ),
@@ -422,10 +450,10 @@ const buildTimeseries = (
       for (let index = metrics.length - 1; index >= 0; index -= 1) {
         const candidate = metrics[index]
         if (
-          candidate !== undefined
-          && candidate.metricId === ref.metricId
-          && candidate.ts === timestamp
-          && metricMatchesEntity(candidate, entity)
+          candidate !== undefined &&
+          candidate.metricId === ref.metricId &&
+          candidate.ts === timestamp &&
+          metricMatchesEntity(candidate, entity)
         ) {
           point = candidate
           break
@@ -455,9 +483,7 @@ const createEntitiesByKind = (
     return acc
   }, {})
 
-const createMetricsLatest = (
-  metrics: ReadonlyArray<MetricPoint>,
-): Record<string, number | null> => {
+const createMetricsLatest = (metrics: ReadonlyArray<MetricPoint>): Record<string, number | null> => {
   const output: Record<string, number | null> = {}
   for (const metric of metrics) {
     output[metric.metricId] = metric.value
@@ -490,20 +516,17 @@ const setSelectedEntityState = (store: StateStore, entity: EntitySnapshot | null
   store.set("/ui/selectedEntityRef", entity?.ref)
 }
 
-const getSelectedEntityForProps = (
-  state: PluginRouteState,
-  path?: string,
-): EntitySnapshot | null => {
+const getSelectedEntityForProps = (state: PluginRouteState, path?: string): EntitySnapshot | null => {
   if (path === undefined) {
     return state.selectedEntity ?? null
   }
 
   const candidate = getByStatePath(state, path)
   if (
-    candidate !== null
-    && candidate !== undefined
-    && typeof candidate === "object"
-    && "ref" in (candidate as Record<string, unknown>)
+    candidate !== null &&
+    candidate !== undefined &&
+    typeof candidate === "object" &&
+    "ref" in (candidate as Record<string, unknown>)
   ) {
     return candidate as EntitySnapshot
   }
@@ -530,9 +553,9 @@ const resolveLogTargetEntity = (
   const relationships = (selectedEntity.relationships ?? []) as ReadonlyArray<EntityRelationship>
   for (const relationship of relationships) {
     if (
-      relationshipTypes !== undefined
-      && relationshipTypes.length > 0
-      && !relationshipTypes.includes(relationship.type)
+      relationshipTypes !== undefined &&
+      relationshipTypes.length > 0 &&
+      !relationshipTypes.includes(relationship.type)
     ) {
       continue
     }
@@ -596,8 +619,7 @@ const normalizeActionInput = (
         break
       }
       case "number": {
-        const text =
-          typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw) : ""
+        const text = typeof raw === "string" ? raw.trim() : typeof raw === "number" ? String(raw) : ""
         if (text.length === 0) {
           if (field.required) throw new Error(`${field.label} is required`)
           continue
@@ -637,13 +659,11 @@ const hasRenderableActionResult = (result: unknown): boolean => {
   return true
 }
 
-const isUnitFileResult = (
-  value: unknown,
-): value is { readonly path: string; readonly content: string } =>
-  value !== null
-  && typeof value === "object"
-  && typeof (value as Record<string, unknown>)["path"] === "string"
-  && typeof (value as Record<string, unknown>)["content"] === "string"
+const isUnitFileResult = (value: unknown): value is { readonly path: string; readonly content: string } =>
+  value !== null &&
+  typeof value === "object" &&
+  typeof (value as Record<string, unknown>)["path"] === "string" &&
+  typeof (value as Record<string, unknown>)["content"] === "string"
 
 function readDisplayValue(value: unknown): string {
   if (value === null || value === undefined) return "—"
@@ -699,10 +719,12 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
     Grid: ({ props, children }) => (
       <div
         className={`grid ${
-          props.columns === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : props.columns === 2 ? "sm:grid-cols-2" : "grid-cols-1"
-        } ${
-          props.gap === "sm" ? "gap-2" : props.gap === "lg" ? "gap-6" : "gap-4"
-        }`}
+          props.columns === 3
+            ? "sm:grid-cols-2 lg:grid-cols-3"
+            : props.columns === 2
+              ? "sm:grid-cols-2"
+              : "grid-cols-1"
+        } ${props.gap === "sm" ? "gap-2" : props.gap === "lg" ? "gap-6" : "gap-4"}`}
       >
         {children}
       </div>
@@ -770,7 +792,9 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
     ActionButton: ({ props, emit }) => (
       <Button
         size="sm"
-        variant={(props.variant ?? "default") as "default" | "outline" | "secondary" | "ghost" | "destructive"}
+        variant={
+          (props.variant ?? "default") as "default" | "outline" | "secondary" | "ghost" | "destructive"
+        }
         onClick={() => emit("press")}
       >
         {readDisplayValue(props.label)}
@@ -811,9 +835,7 @@ function StatGridComponent(props: { readonly props: Record<string, unknown> }) {
         const latest = latestMetric(state.metrics, metric.metricId, entity)
         return (
           <div key={metric.id ?? metric.metricId} className="rounded-lg border border-border px-4 py-3">
-            <div className="text-[12.5px] text-muted-foreground">
-              {metric.label ?? metric.metricId}
-            </div>
+            <div className="text-[12.5px] text-muted-foreground">{metric.label ?? metric.metricId}</div>
             <div className="mt-1.5 font-mono text-[22px] font-medium tabular">
               {latest ? formatMetricValue(latest.value, metric.unit ?? latest.unit) : "—"}
             </div>
@@ -833,22 +855,23 @@ function StatCardComponent(props: { readonly props: Record<string, unknown> }) {
   const metricId = typeof props.props["metricId"] === "string" ? String(props.props["metricId"]) : undefined
   const label = readDisplayValue(props.props["label"])
   const tone =
-    props.props["tone"] === "success"
-      ? "text-ok"
-      : props.props["tone"] === "danger"
-        ? "text-err"
-        : ""
+    props.props["tone"] === "success" ? "text-ok" : props.props["tone"] === "danger" ? "text-err" : ""
 
   let value = props.props["value"]
   if (metricId !== undefined && (value === undefined || value === null)) {
     const latest = latestMetric(state.metrics, metricId, entity)
-    value = latest === null ? "—" : formatMetricValue(latest.value, String(props.props["unit"] ?? latest.unit ?? ""))
+    value =
+      latest === null
+        ? "—"
+        : formatMetricValue(latest.value, String(props.props["unit"] ?? latest.unit ?? ""))
   }
 
   return (
     <div className="rounded-lg border border-border px-4 py-3">
       <div className="text-[12.5px] text-muted-foreground">{label}</div>
-      <div className={`mt-1.5 font-mono text-[22px] font-medium tabular ${tone}`}>{readDisplayValue(value)}</div>
+      <div className={`mt-1.5 font-mono text-[22px] font-medium tabular ${tone}`}>
+        {readDisplayValue(value)}
+      </div>
     </div>
   )
 }
@@ -865,8 +888,10 @@ function EntityTableComponent(props: { readonly props: Record<string, unknown> }
   const rowActions = (props.props["rowActions"] ?? []) as ReadonlyArray<PluginActionItem>
   const entities =
     typeof props.props["statePath"] === "string"
-      ? ((getByStatePath(state, String(props.props["statePath"])) as ReadonlyArray<EntitySnapshot> | undefined) ?? [])
-      : state.entitiesByKind[entityKind] ?? []
+      ? ((getByStatePath(state, String(props.props["statePath"])) as
+          | ReadonlyArray<EntitySnapshot>
+          | undefined) ?? [])
+      : (state.entitiesByKind[entityKind] ?? [])
 
   if (entities.length === 0) {
     const empty = props.props["empty"] as { title?: string; description?: string } | undefined
@@ -927,10 +952,16 @@ function EntityTableComponent(props: { readonly props: Record<string, unknown> }
                   >
                     <span aria-hidden>⋯</span>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-52"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     {rowActions.map((action) => {
                       const actionId = action.actionId ?? action.id
-                      const metadata = state.plugin.agent?.actions.find((candidate) => candidate.id === actionId)
+                      const metadata = state.plugin.agent?.actions.find(
+                        (candidate) => candidate.id === actionId,
+                      )
                       return (
                         <DropdownMenuItem
                           key={action.id ?? actionId}
@@ -962,7 +993,9 @@ function DetailListComponent(props: { readonly props: Record<string, unknown> })
     state,
     typeof props.props["entityStatePath"] === "string" ? String(props.props["entityStatePath"]) : undefined,
   )
-  const items = props.props["items"] as ReadonlyArray<{ label: string; value: unknown; presentation?: "badge" }> | undefined
+  const items = props.props["items"] as
+    | ReadonlyArray<{ label: string; value: unknown; presentation?: "badge" }>
+    | undefined
   const fields = props.props["fields"] as ReadonlyArray<PluginTableColumn> | undefined
 
   if (items === undefined && entity === null) {
@@ -970,8 +1003,8 @@ function DetailListComponent(props: { readonly props: Record<string, unknown> })
   }
 
   const renderItems =
-    items
-    ?? (fields ?? []).map((field) => ({
+    items ??
+    (fields ?? []).map((field) => ({
       label: field.label,
       value: entity === null ? undefined : resolveColumnValue(entity, field, state.metrics),
       presentation: field.presentation,
@@ -981,9 +1014,7 @@ function DetailListComponent(props: { readonly props: Record<string, unknown> })
     <div className="grid gap-3 sm:grid-cols-2">
       {renderItems.map((item, index) => (
         <div key={`${item.label}:${index}`} className="rounded-lg border border-border px-4 py-3">
-          <div className="text-[12.5px] text-subtle">
-            {item.label}
-          </div>
+          <div className="text-[12.5px] text-subtle">{item.label}</div>
           <div className="mt-2 text-sm">
             {item.presentation === "badge" ? (
               <Badge variant="outline">{readDisplayValue(item.value)}</Badge>
@@ -1004,16 +1035,18 @@ function MetricChartComponent(props: { readonly props: Record<string, unknown> }
     typeof props.props["entityStatePath"] === "string" ? String(props.props["entityStatePath"]) : undefined,
   )
 
-  const metricRefs: ReadonlyArray<PluginMetricRef> =
-    Array.isArray(props.props["metrics"])
-      ? (props.props["metrics"] as ReadonlyArray<PluginMetricRef>)
-      : Array.isArray(props.props["series"])
-        ? (props.props["series"] as ReadonlyArray<PluginMetricRef>)
+  const metricRefs: ReadonlyArray<PluginMetricRef> = Array.isArray(props.props["metrics"])
+    ? (props.props["metrics"] as ReadonlyArray<PluginMetricRef>)
+    : Array.isArray(props.props["series"])
+      ? (props.props["series"] as ReadonlyArray<PluginMetricRef>)
       : typeof props.props["metricId"] === "string"
         ? [
             {
               metricId: String(props.props["metricId"]),
-              label: typeof props.props["title"] === "string" ? String(props.props["title"]) : String(props.props["metricId"]),
+              label:
+                typeof props.props["title"] === "string"
+                  ? String(props.props["title"])
+                  : String(props.props["metricId"]),
               unit: typeof props.props["unit"] === "string" ? String(props.props["unit"]) : undefined,
             },
           ]
@@ -1054,15 +1087,15 @@ function ActionBarComponent(props: { readonly props: Record<string, unknown> }) 
         const actionId = action.actionId ?? action.id
         const binding = action.action
         const resolvedActionId =
-          typeof binding?.params?.["actionId"] === "string"
-            ? String(binding.params["actionId"])
-            : actionId
+          typeof binding?.params?.["actionId"] === "string" ? String(binding.params["actionId"]) : actionId
         const metadata = state.plugin.agent?.actions.find((candidate) => candidate.id === resolvedActionId)
         return (
           <Button
             key={action.id ?? resolvedActionId}
             size="sm"
-            variant={(action.variant ?? "outline") as "default" | "outline" | "secondary" | "ghost" | "destructive"}
+            variant={
+              (action.variant ?? "outline") as "default" | "outline" | "secondary" | "ghost" | "destructive"
+            }
             onClick={async () => {
               const bindingTarget =
                 binding?.params?.["target"] !== null && typeof binding?.params?.["target"] === "object"
@@ -1071,9 +1104,9 @@ function ActionBarComponent(props: { readonly props: Record<string, unknown> }) 
               await runtime.runAction({
                 action: metadata,
                 targetRef:
-                  bindingTarget?.entityRef
-                  ?? (binding?.params?.["entityRef"] as EntityRef | undefined)
-                  ?? entity?.ref,
+                  bindingTarget?.entityRef ??
+                  (binding?.params?.["entityRef"] as EntityRef | undefined) ??
+                  entity?.ref,
                 explicitInput: binding?.params?.["input"] as Record<string, unknown> | undefined,
                 ...(binding?.confirm !== undefined && { confirmCopy: binding.confirm }),
               })
@@ -1096,14 +1129,15 @@ function LogPanelComponent(props: { readonly props: Record<string, unknown> }) {
     props.props["target"] !== null && typeof props.props["target"] === "object"
       ? (props.props["target"] as { entityRef?: EntityRef })
       : undefined
-  const explicitEntity = getSelectedEntityForProps(
-    state,
-    typeof props.props["targetEntityStatePath"] === "string"
-      ? String(props.props["targetEntityStatePath"])
-      : typeof props.props["entityStatePath"] === "string"
-        ? String(props.props["entityStatePath"])
-        : undefined,
-  ) ?? resolveEntityFromRef(state.entities, targetProp?.entityRef)
+  const explicitEntity =
+    getSelectedEntityForProps(
+      state,
+      typeof props.props["targetEntityStatePath"] === "string"
+        ? String(props.props["targetEntityStatePath"])
+        : typeof props.props["entityStatePath"] === "string"
+          ? String(props.props["entityStatePath"])
+          : undefined,
+    ) ?? resolveEntityFromRef(state.entities, targetProp?.entityRef)
 
   const fallbackKinds = Array.isArray(props.props["fallbackTargetKinds"])
     ? (props.props["fallbackTargetKinds"] as ReadonlyArray<string>)
@@ -1145,11 +1179,12 @@ function LogPanelComponent(props: { readonly props: Record<string, unknown> }) {
 
   const inputFromState =
     typeof props.props["statePath"] === "string"
-      ? ((getByStatePath(state, String(props.props["statePath"])) as Record<string, unknown> | undefined) ?? {})
+      ? ((getByStatePath(state, String(props.props["statePath"])) as Record<string, unknown> | undefined) ??
+        {})
       : undefined
   const input =
-    inputFromState
-    ?? (props.props["input"] !== null && typeof props.props["input"] === "object"
+    inputFromState ??
+    (props.props["input"] !== null && typeof props.props["input"] === "object"
       ? (props.props["input"] as Record<string, unknown>)
       : {})
   const tail =
@@ -1189,14 +1224,18 @@ function BoundTextField(props: { readonly props: Record<string, unknown> }) {
       {props.props["multiline"] === true ? (
         <Textarea
           value={typeof value === "string" ? value : ""}
-          placeholder={typeof props.props["placeholder"] === "string" ? String(props.props["placeholder"]) : undefined}
+          placeholder={
+            typeof props.props["placeholder"] === "string" ? String(props.props["placeholder"]) : undefined
+          }
           className="min-h-32"
           onChange={(event) => set(statePath, event.target.value)}
         />
       ) : (
         <Input
           value={typeof value === "string" ? value : ""}
-          placeholder={typeof props.props["placeholder"] === "string" ? String(props.props["placeholder"]) : undefined}
+          placeholder={
+            typeof props.props["placeholder"] === "string" ? String(props.props["placeholder"]) : undefined
+          }
           onChange={(event) => set(statePath, event.target.value)}
         />
       )}
@@ -1264,10 +1303,7 @@ function BoundSelectField(props: { readonly props: Record<string, unknown> }) {
   )
 }
 
-function ResultPanelComponent(props: {
-  readonly resultStatePath: string
-  readonly errorStatePath: string
-}) {
+function ResultPanelComponent(props: { readonly resultStatePath: string; readonly errorStatePath: string }) {
   const { get } = useStateStore()
   const error = get(props.errorStatePath)
   const result = get(props.resultStatePath)
@@ -1341,9 +1377,8 @@ function buildFormFieldElement(field: PluginFormFieldMetadata): PluginUiSpec["el
 }
 
 function buildFormSpec(action: PluginActionMetadata, targetRef?: EntityRef): PluginUiSpec {
-  const fieldKeys = action.input.kind === "struct"
-    ? action.input.fields.map((field) => `${field.name}-field`)
-    : []
+  const fieldKeys =
+    action.input.kind === "struct" ? action.input.fields.map((field) => `${field.name}-field`) : []
 
   const elements: PluginUiSpec["elements"] = {
     root: {
@@ -1359,9 +1394,10 @@ function buildFormSpec(action: PluginActionMetadata, targetRef?: EntityRef): Plu
     description: {
       type: "Text",
       props: {
-        text: targetRef !== undefined
-          ? `${action.displayName} — target ${targetRef.id}`
-          : action.description ?? "Node-scoped action",
+        text:
+          targetRef !== undefined
+            ? `${action.displayName} — target ${targetRef.id}`
+            : (action.description ?? "Node-scoped action"),
         tone: "muted",
       },
     },
@@ -1379,10 +1415,7 @@ function buildFormSpec(action: PluginActionMetadata, targetRef?: EntityRef): Plu
     ...Object.fromEntries(
       action.input.kind !== "struct"
         ? []
-        : action.input.fields.map((field) => [
-            `${field.name}-field`,
-            buildFormFieldElement(field),
-          ]),
+        : action.input.fields.map((field) => [`${field.name}-field`, buildFormFieldElement(field)]),
     ),
     result: {
       type: "ResultPanel",
@@ -1486,11 +1519,19 @@ function createRuntimeActions(args: {
       }
       store.set("/ui/activePrimaryScreenId", screenId)
       if (screen?.entityKind !== undefined) {
-        const nextEntity = state.entities.find((candidate) => candidate.ref.kind === screen.entityKind) ?? null
+        const nextEntity =
+          state.entities.find((candidate) => candidate.ref.kind === screen.entityKind) ?? null
         setSelectedEntityState(store, nextEntity)
       }
     },
-    runAction: async ({ action, targetRef, explicitInput, inputStatePath, closeFormOnSuccess, confirmCopy }) => {
+    runAction: async ({
+      action,
+      targetRef,
+      explicitInput,
+      inputStatePath,
+      closeFormOnSuccess,
+      confirmCopy,
+    }) => {
       const state = store.getSnapshot() as unknown as PluginRouteState
       if (action === undefined) {
         toast.error("Unknown plugin action")
@@ -1526,9 +1567,7 @@ function createRuntimeActions(args: {
         return
       }
 
-      const input =
-        explicitInput
-        ?? normalizeActionInput(action.input, rawFormInput ?? {})
+      const input = explicitInput ?? normalizeActionInput(action.input, rawFormInput ?? {})
 
       // Every plugin action runs behind the app's confirm dialog.
       const machine = String(state.system["hostname"] ?? state.system["id"] ?? "this machine")
@@ -1565,9 +1604,9 @@ function createRuntimeActions(args: {
 
         const output = result.output
         store.set("/ui/actionError", undefined)
-      if (hasRenderableActionResult(output)) {
-        store.set("/ui/actionResult", output)
-        const existingForm = getByStatePath(store.getSnapshot(), "/ui/actionForm")
+        if (hasRenderableActionResult(output)) {
+          store.set("/ui/actionResult", output)
+          const existingForm = getByStatePath(store.getSnapshot(), "/ui/actionForm")
           if (existingForm === undefined) {
             store.set("/ui/actionForm", {
               actionId: action.id,
@@ -1611,9 +1650,9 @@ function createHandlers(args: {
       await runtime.runAction({
         action,
         targetRef:
-          target?.entityRef
-          ?? (params?.["entityRef"] as EntityRef | undefined)
-          ?? (params?.["targetRef"] as EntityRef | undefined),
+          target?.entityRef ??
+          (params?.["entityRef"] as EntityRef | undefined) ??
+          (params?.["targetRef"] as EntityRef | undefined),
         explicitInput: params?.["input"] as Record<string, unknown> | undefined,
         inputStatePath: params?.["inputStatePath"] as string | undefined,
         closeFormOnSuccess: params?.["closeFormOnSuccess"] === true,
@@ -1640,10 +1679,7 @@ function createHandlers(args: {
       store.set("/ui/actionError", undefined)
     },
     "ui.showToast": async (params) => {
-      const message =
-        typeof params?.["message"] === "string"
-          ? String(params["message"])
-          : "Action completed"
+      const message = typeof params?.["message"] === "string" ? String(params["message"]) : "Action completed"
       if (params?.["variant"] === "error") {
         toast.error(message)
       } else {
@@ -1687,7 +1723,10 @@ export function buildPluginRouteInitialState(
     },
   }
 
-  return deepMerge(baseState as unknown as Record<string, unknown>, mergedScreenState) as unknown as PluginRouteState
+  return deepMerge(
+    baseState as unknown as Record<string, unknown>,
+    mergedScreenState,
+  ) as unknown as PluginRouteState
 }
 
 export function createPluginRouteStore(initialState: PluginRouteState) {
@@ -1699,17 +1738,13 @@ export function usePluginRouteStoreValue(
   selector: (state: PluginRouteState) => PluginRouteState | null,
 ): PluginRouteState | null {
   const noop = useMemo(() => () => () => {}, [])
-  const getSnapshot = store !== null
-    ? () => selector(store.getSnapshot() as unknown as PluginRouteState)
-    : () => null
-  const getServerSnapshot = store !== null && store.getServerSnapshot
-    ? () => selector(store.getServerSnapshot!() as unknown as PluginRouteState)
-    : getSnapshot
-  return useSyncExternalStore(
-    store?.subscribe ?? noop,
-    getSnapshot,
-    getServerSnapshot,
-  )
+  const getSnapshot =
+    store !== null ? () => selector(store.getSnapshot() as unknown as PluginRouteState) : () => null
+  const getServerSnapshot =
+    store !== null && store.getServerSnapshot
+      ? () => selector(store.getServerSnapshot!() as unknown as PluginRouteState)
+      : getSnapshot
+  return useSyncExternalStore(store?.subscribe ?? noop, getSnapshot, getServerSnapshot)
 }
 
 export function getPrimaryScreens(plugin: PluginDetailResponse): ReadonlyArray<PluginUiScreen> {
@@ -1722,16 +1757,15 @@ export function getActivePrimaryScreen(
 ): PluginUiScreen | null {
   const primaryScreens = getPrimaryScreens(plugin)
   return (
-    primaryScreens.find((screen) => screen.id === activePrimaryScreenId)
-    ?? primaryScreens[0]
-    ?? plugin.web?.screens?.[0]
-    ?? null
+    primaryScreens.find((screen) => screen.id === activePrimaryScreenId) ??
+    primaryScreens[0] ??
+    plugin.web?.screens?.[0] ??
+    null
   )
 }
 
 export function getSelectedEntity(state: PluginRouteState): EntitySnapshot | null {
-  return state.selectedEntity
-    ?? resolveEntityFromRef(state.entities, state.ui.selectedEntityRef)
+  return state.selectedEntity ?? resolveEntityFromRef(state.entities, state.ui.selectedEntityRef)
 }
 
 export function getDetailScreen(
@@ -1744,16 +1778,10 @@ export function getDetailScreen(
   }
 
   const matchingScreens = (plugin.web?.screens ?? []).filter(
-    (screen) =>
-      screen.kind === "entity-detail"
-      && screen.entityKind === selectedEntity.ref.kind,
+    (screen) => screen.kind === "entity-detail" && screen.entityKind === selectedEntity.ref.kind,
   )
 
-  return (
-    matchingScreens.find((screen) => screen.id === activeDetailScreenId)
-    ?? matchingScreens[0]
-    ?? null
-  )
+  return matchingScreens.find((screen) => screen.id === activeDetailScreenId) ?? matchingScreens[0] ?? null
 }
 
 export function createActionFormSpec(
@@ -1807,7 +1835,7 @@ export function PluginUiRenderer(props: {
   )
 
   return (
-      <PluginUiRuntimeContext.Provider value={runtime}>
+    <PluginUiRuntimeContext.Provider value={runtime}>
       <JSONUIProvider registry={registry} store={props.store} handlers={handlers}>
         <Renderer spec={props.spec as any} registry={registry} />
       </JSONUIProvider>

@@ -47,8 +47,8 @@ export function CreateSessionDialog({
         <DialogHeader>
           <DialogTitle>Create Operator Session</DialogTitle>
           <DialogDescription>
-            Pick an explicit node scope before the operator can start. Sessions begin
-            with no nodes selected by default.
+            Pick an explicit node scope before the operator can start. Sessions begin with no nodes selected
+            by default.
           </DialogDescription>
         </DialogHeader>
 
@@ -96,9 +96,7 @@ export function CreateSessionDialog({
                         </div>
                         <Checkbox
                           checked={checked}
-                          onCheckedChange={(nextChecked) =>
-                            onToggleNode(system.id, nextChecked === true)
-                          }
+                          onCheckedChange={(nextChecked) => onToggleNode(system.id, nextChecked === true)}
                         />
                       </label>
                     )
@@ -136,9 +134,7 @@ export function CreateSessionDialog({
                         </div>
                         <Checkbox
                           checked={checked}
-                          onCheckedChange={(nextChecked) =>
-                            onToggleSkill(skill.id, nextChecked === true)
-                          }
+                          onCheckedChange={(nextChecked) => onToggleSkill(skill.id, nextChecked === true)}
                         />
                       </label>
                     )
@@ -153,10 +149,7 @@ export function CreateSessionDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={() => void onCreate()}
-            disabled={selectedNodeIds.length === 0 || isCreating}
-          >
+          <Button onClick={() => void onCreate()} disabled={selectedNodeIds.length === 0 || isCreating}>
             {isCreating ? "Creating..." : "Start Session"}
           </Button>
         </DialogFooter>
@@ -188,8 +181,8 @@ export function ManageSkillsDialog({
         <DialogHeader>
           <DialogTitle>Manage Skills</DialogTitle>
           <DialogDescription>
-            Attach operator skills to this session. Attached skills are included in
-            prompt construction for future turns.
+            Attach operator skills to this session. Attached skills are included in prompt construction for
+            future turns.
           </DialogDescription>
         </DialogHeader>
 
@@ -213,9 +206,7 @@ export function ManageSkillsDialog({
                     </div>
                     <Checkbox
                       checked={checked}
-                      onCheckedChange={(nextChecked) =>
-                        onToggleSkill(skill.id, nextChecked === true)
-                      }
+                      onCheckedChange={(nextChecked) => onToggleSkill(skill.id, nextChecked === true)}
                     />
                   </label>
                 )

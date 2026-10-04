@@ -18,15 +18,11 @@ const TestAppLayer = Layer.mergeAll(
   MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
   AgentRegistry.layer.pipe(Layer.provide(TestDatabaseLayer)),
   Retention.layer.pipe(Layer.provide(TestDatabaseLayer)),
-  AlertEngine.layer.pipe(
-    Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
-  ),
+  AlertEngine.layer.pipe(Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer))),
   PluginRegistry.layer,
 )
 
-const HttpInfraLayer = BunHttpServer.layerTest.pipe(
-  Layer.provideMerge(TestAppLayer),
-)
+const HttpInfraLayer = BunHttpServer.layerTest.pipe(Layer.provideMerge(TestAppLayer))
 
 describe("GET /api/plugins", () => {
   it.effect("returns loaded plugin manifests from the first-party plugin package directory", () =>
@@ -71,41 +67,38 @@ describe("GET /api/systems/:id/plugins/:pluginId/*", () => {
 
       const ingestion = yield* MetricsIngestion
       const timestamp = Date.now()
-      yield* ingestion.ingestPluginCollection(
-        "plugin-route-systemd",
-        {
-          entities: [
-            {
-              ref: {
-                pluginId: "systemd",
-                kind: "systemd.unit",
-                nodeId: "plugin-route-systemd",
-                id: "nginx.service",
-              },
-              ts: timestamp,
-              displayName: "Nginx",
-              status: "active",
-            },
-          ],
-          metrics: [
-            {
+      yield* ingestion.ingestPluginCollection("plugin-route-systemd", {
+        entities: [
+          {
+            ref: {
               pluginId: "systemd",
-              metricId: "units.total",
-              ts: timestamp,
-              value: 1,
+              kind: "systemd.unit",
+              nodeId: "plugin-route-systemd",
+              id: "nginx.service",
             },
-          ],
-          events: [
-            {
-              pluginId: "systemd",
-              eventId: "unit.failed",
-              ts: timestamp,
-              severity: "warning",
-              message: "nginx.service briefly failed",
-            },
-          ],
-        },
-      )
+            ts: timestamp,
+            displayName: "Nginx",
+            status: "active",
+          },
+        ],
+        metrics: [
+          {
+            pluginId: "systemd",
+            metricId: "units.total",
+            ts: timestamp,
+            value: 1,
+          },
+        ],
+        events: [
+          {
+            pluginId: "systemd",
+            eventId: "unit.failed",
+            ts: timestamp,
+            severity: "warning",
+            message: "nginx.service briefly failed",
+          },
+        ],
+      })
 
       const entitiesResponse = yield* HttpClient.get(
         "/api/systems/plugin-route-systemd/plugins/systemd/entities",

@@ -14,12 +14,7 @@ export const manifest = {
   displayName: "Kubernetes",
   version: "0.0.1",
   description: "Inspect Kubernetes clusters and workloads from Scout.",
-  permissions: [
-    "node:k8s-api",
-    "node:spawn-process",
-    "node:stream-logs",
-    "node:read-files",
-  ],
+  permissions: ["node:k8s-api", "node:spawn-process", "node:stream-logs", "node:read-files"],
   capabilities: K8S_CAPABILITIES,
   entityKinds: K8S_ENTITY_KIND_DEFINITIONS,
   metrics: K8S_METRIC_DEFINITIONS,

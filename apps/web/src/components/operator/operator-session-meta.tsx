@@ -98,7 +98,9 @@ export function OperatorSessionMeta({
         ) : (
           <ul className="space-y-1 text-[13px]">
             {session.attachedSkillIds.map((skillId) => (
-              <li key={skillId}>{detail.availableSkills.find((skill) => skill.id === skillId)?.name ?? skillId}</li>
+              <li key={skillId}>
+                {detail.availableSkills.find((skill) => skill.id === skillId)?.name ?? skillId}
+              </li>
             ))}
           </ul>
         )}

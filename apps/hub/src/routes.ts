@@ -9,10 +9,7 @@ import { Database } from "./services/database.js"
 import { MetricsIngestion } from "./services/metrics-ingestion.js"
 import { PluginRegistry } from "./services/plugin-registry.js"
 import { AgentRegistry } from "./rpc/agent-bridge.js"
-import {
-  serializePluginActionMetadata,
-  serializePluginStreamMetadata,
-} from "./lib/plugin-input-metadata.js"
+import { serializePluginActionMetadata, serializePluginStreamMetadata } from "./lib/plugin-input-metadata.js"
 import * as schema from "../drizzle/schema.js"
 
 // Track server start time for uptime calculation
@@ -73,9 +70,7 @@ export const ListSystemsRoute = HttpRouter.add(
   "/api/systems",
   Effect.gen(function* () {
     const db = yield* Database
-    const rows = yield* Effect.sync(() =>
-      db.select().from(schema.systems).all(),
-    )
+    const rows = yield* Effect.sync(() => db.select().from(schema.systems).all())
     const systems = rows.map((row) => ({
       id: row.id,
       hostname: row.hostname,
@@ -149,9 +144,7 @@ export const GetSystemMetricsRoute = HttpRouter.add(
     const ingestion = yield* MetricsIngestion
     const rows = yield* ingestion.querySystemMetrics(systemId, hours, metricType)
 
-    return yield* HttpServerResponse.json(
-      rows.map((row) => row.data as unknown as SystemMetricsSample),
-    )
+    return yield* HttpServerResponse.json(rows.map((row) => row.data as unknown as SystemMetricsSample))
   }),
 )
 
@@ -327,8 +320,7 @@ export const GetSystemPluginEventsRoute = HttpRouter.add(
     const systemId = params["id"]!
     const pluginId = params["pluginId"]!
     const hoursRaw = searchParams["hours"]
-    const eventId =
-      typeof searchParams["eventId"] === "string" ? searchParams["eventId"] : undefined
+    const eventId = typeof searchParams["eventId"] === "string" ? searchParams["eventId"] : undefined
     const hours = typeof hoursRaw === "string" ? Number(hoursRaw) || 1 : 1
 
     const ingestion = yield* MetricsIngestion

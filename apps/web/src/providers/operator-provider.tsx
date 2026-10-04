@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from "react"
+import { createContext, useCallback, useContext, useMemo, useState } from "react"
 import type { OperatorSessionDetail } from "@scout/shared"
 
 interface OpenOperatorOptions {
@@ -36,8 +30,7 @@ const OperatorContext = createContext<OperatorState>({
 export function OperatorProvider({ children }: { children: React.ReactNode }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(null)
-  const [optimisticSession, setOptimisticSessionState] =
-    useState<OperatorSessionDetail | null>(null)
+  const [optimisticSession, setOptimisticSessionState] = useState<OperatorSessionDetail | null>(null)
 
   const setActiveSessionId = useCallback((sessionId: string | null) => {
     setActiveSessionIdState(sessionId)
@@ -88,11 +81,7 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
     ],
   )
 
-  return (
-    <OperatorContext.Provider value={value}>
-      {children}
-    </OperatorContext.Provider>
-  )
+  return <OperatorContext.Provider value={value}>{children}</OperatorContext.Provider>
 }
 
 export function useOperator(): OperatorState {

@@ -48,10 +48,7 @@ interface CommandResult {
 }
 
 export interface SystemdDependencies {
-  readonly exec: (
-    command: string,
-    args: ReadonlyArray<string>,
-  ) => Effect.Effect<CommandResult, Error>
+  readonly exec: (command: string, args: ReadonlyArray<string>) => Effect.Effect<CommandResult, Error>
   readonly readFile: (path: string) => Effect.Effect<string, Error>
   readonly copyFile: (from: string, to: string) => Effect.Effect<void, Error>
   readonly writeFile: (path: string, content: string) => Effect.Effect<void, Error>
@@ -170,7 +167,9 @@ const integerField = (value: string | undefined): number | null => {
 const stringField = (value: string | undefined): string | null =>
   value === undefined || value.length === 0 ? null : value
 
-export const parseSystemctlShow = (output: string): {
+export const parseSystemctlShow = (
+  output: string,
+): {
   readonly pid: number | null
   readonly memoryBytes: number | null
   readonly cpuUsageNs: number | null
@@ -306,11 +305,7 @@ const normalizeActiveState = (value: string | undefined): SystemdUnitMetrics["ac
   }
 }
 
-const failExecution = (
-  code: string,
-  message: string,
-  opts?: { actionId?: string; streamId?: string },
-) =>
+const failExecution = (code: string, message: string, opts?: { actionId?: string; streamId?: string }) =>
   new PluginExecutionError({
     code,
     message,
@@ -319,12 +314,13 @@ const failExecution = (
     ...(opts?.streamId !== undefined && { streamId: opts.streamId }),
   })
 
-const entityRef = (nodeId: string, kind: string, unit: string) => ({
-  pluginId: SYSTEMD_PLUGIN_ID,
-  kind,
-  nodeId,
-  id: unit,
-}) as const
+const entityRef = (nodeId: string, kind: string, unit: string) =>
+  ({
+    pluginId: SYSTEMD_PLUGIN_ID,
+    kind,
+    nodeId,
+    id: unit,
+  }) as const
 
 /** `systemctl` arguments that select the manager for a scope. */
 const scopeArgs = (scope: SystemdScope): ReadonlyArray<string> => (scope === "user" ? ["--user"] : [])
@@ -335,9 +331,7 @@ const getTargetUnit = (
 ): Effect.Effect<string, PluginExecutionError> => {
   const unit = target.entity?.id
   if (unit === undefined || !validateUnit(unit)) {
-    return Effect.fail(
-      failExecution("invalid-target", "Systemd actions require a valid unit target", opts),
-    )
+    return Effect.fail(failExecution("invalid-target", "Systemd actions require a valid unit target", opts))
   }
   return Effect.succeed(unit)
 }
@@ -348,16 +342,20 @@ const getTargetService = (
   actionId: string,
 ): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> =>
   getTargetUnit(target, { actionId }).pipe(
-    Effect.flatMap((unit): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> => {
-      const kind = target.entity?.kind
-      if (kind === SYSTEMD_UNIT_KIND) return Effect.succeed({ unit, scope: "system" })
-      if (kind === SYSTEMD_USER_UNIT_KIND) return Effect.succeed({ unit, scope: "user" })
-      return Effect.fail(
-        failExecution("invalid-target", `Systemd unit actions do not apply to ${String(kind)} entities`, {
-          actionId,
-        }),
-      )
-    }),
+    Effect.flatMap(
+      (
+        unit,
+      ): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> => {
+        const kind = target.entity?.kind
+        if (kind === SYSTEMD_UNIT_KIND) return Effect.succeed({ unit, scope: "system" })
+        if (kind === SYSTEMD_USER_UNIT_KIND) return Effect.succeed({ unit, scope: "user" })
+        return Effect.fail(
+          failExecution("invalid-target", `Systemd unit actions do not apply to ${String(kind)} entities`, {
+            actionId,
+          }),
+        )
+      },
+    ),
   )
 
 const makeDefaultDependencies = (): SystemdDependencies => ({
@@ -404,19 +402,11 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
       try: () => rmFile(path, { force: true }),
       catch: () => undefined,
     }).pipe(Effect.orElseSucceed(() => undefined)),
-  makeTempPath: (prefix) =>
-    join(tmpdir(), `${prefix}-${randomUUID()}.tmp`),
+  makeTempPath: (prefix) => join(tmpdir(), `${prefix}-${randomUUID()}.tmp`),
   // Unprivileged agents read system unit logs through journal group
   // membership (`adm` or `systemd-journal`).
   followJournal: (unit, tail) =>
-    followProcessLines("journalctl", [
-      "-f",
-      "-u",
-      unit,
-      "-n",
-      String(tail),
-      "--output=short-iso",
-    ]),
+    followProcessLines("journalctl", ["-f", "-u", unit, "-n", String(tail), "--output=short-iso"]),
 })
 
 const runChecked = (
@@ -436,9 +426,7 @@ const runChecked = (
           ),
     ),
     Effect.mapError((error) =>
-      error instanceof PluginExecutionError
-        ? error
-        : failExecution("command-error", String(error)),
+      error instanceof PluginExecutionError ? error : failExecution("command-error", String(error)),
     ),
   )
 
@@ -451,7 +439,8 @@ const runSystemctl = (
   args: ReadonlyArray<string>,
 ): Effect.Effect<string, PluginExecutionError> => runChecked(deps, "systemctl", args)
 
-const AUTHORIZATION_DENIED = /interactive authentication required|access denied|not authorized|permission denied/i
+const AUTHORIZATION_DENIED =
+  /interactive authentication required|access denied|not authorized|permission denied/i
 
 const permissionDenied = (operation: string, actionId: string) =>
   failExecution(
@@ -480,9 +469,13 @@ const runSystemctlMutation = (
       return Effect.fail(
         AUTHORIZATION_DENIED.test(detail)
           ? permissionDenied(`systemctl ${args.join(" ")}`, actionId)
-          : failExecution("command-failed", `systemctl ${args.join(" ")} exited with ${exitCode}: ${detail}`, {
-              actionId,
-            }),
+          : failExecution(
+              "command-failed",
+              `systemctl ${args.join(" ")} exited with ${exitCode}: ${detail}`,
+              {
+                actionId,
+              },
+            ),
       )
     }),
   )
@@ -499,9 +492,7 @@ const getUnitFilePath = (
       const path = match?.[1]?.trim() ?? ""
       return path.length > 0
         ? Effect.succeed(path)
-        : Effect.fail(
-            failExecution("not-found", "Unit file path not found", { actionId }),
-          )
+        : Effect.fail(failExecution("not-found", "Unit file path not found", { actionId }))
     }),
   )
 
@@ -657,24 +648,28 @@ export const buildCollection = (
       return [
         ...(details.memoryBytes === null
           ? []
-          : [{
-              pluginId: SYSTEMD_PLUGIN_ID,
-              metricId: SYSTEMD_METRIC_IDS.unitMemoryBytes,
-              ts,
-              entity: ref,
-              value: details.memoryBytes,
-              unit: "bytes",
-            }]),
+          : [
+              {
+                pluginId: SYSTEMD_PLUGIN_ID,
+                metricId: SYSTEMD_METRIC_IDS.unitMemoryBytes,
+                ts,
+                entity: ref,
+                value: details.memoryBytes,
+                unit: "bytes",
+              },
+            ]),
         ...(details.cpuUsageNs === null
           ? []
-          : [{
-              pluginId: SYSTEMD_PLUGIN_ID,
-              metricId: SYSTEMD_METRIC_IDS.unitCpuUsageNs,
-              ts,
-              entity: ref,
-              value: details.cpuUsageNs,
-              unit: "ns",
-            }]),
+          : [
+              {
+                pluginId: SYSTEMD_PLUGIN_ID,
+                metricId: SYSTEMD_METRIC_IDS.unitCpuUsageNs,
+                ts,
+                entity: ref,
+                value: details.cpuUsageNs,
+                unit: "ns",
+              },
+            ]),
       ]
     }),
   ]
@@ -720,7 +715,10 @@ export const createSystemdAgentPlugin = (
    */
   const showUnits = (scope: SystemdScope, units: ReadonlyArray<string>) => {
     if (units.length === 0) {
-      return Effect.succeed({ details: new Map<string, Record<string, string>>() as ReadonlyMap<string, Record<string, string>>, fresh: true })
+      return Effect.succeed({
+        details: new Map<string, Record<string, string>>() as ReadonlyMap<string, Record<string, string>>,
+        fresh: true,
+      })
     }
     const args = [...scopeArgs(scope), "show", `--property=${SHOW_PROPERTIES.join(",")}`, ...units]
     return runSystemctl(deps, [...args, "--timestamp=us+utc"]).pipe(
@@ -730,7 +728,9 @@ export const createSystemdAgentPlugin = (
       Effect.map((details) => ({ details, fresh: true })),
       Effect.catch((error) => {
         const previous = lastDetails.get(scope)
-        return previous === undefined ? Effect.fail(error) : Effect.succeed({ details: previous, fresh: false })
+        return previous === undefined
+          ? Effect.fail(error)
+          : Effect.succeed({ details: previous, fresh: false })
       }),
     )
   }
@@ -781,19 +781,29 @@ export const createSystemdAgentPlugin = (
             // A timer's service may not be loaded, so list-units can miss it.
             ...schedule.map((entry) => entry.activates).filter((unit) => unit.length > 0),
           ]),
-        ]).pipe(Effect.map(({ details, fresh }) => ({ scope, services, timers, schedule, details, detailsFresh: fresh }))),
+        ]).pipe(
+          Effect.map(({ details, fresh }) => ({
+            scope,
+            services,
+            timers,
+            schedule,
+            details,
+            detailsFresh: fresh,
+          })),
+        ),
       ),
     )
 
   const collect = (ctx: { readonly nodeId: string; readonly now: number }) =>
-    Effect.all(
-      [collectScope("system"), collectScope("user")],
-      { concurrency: "unbounded" },
-    ).pipe(Effect.map((snapshots) => buildCollection(ctx.nodeId, ctx.now, snapshots)))
+    Effect.all([collectScope("system"), collectScope("user")], { concurrency: "unbounded" }).pipe(
+      Effect.map((snapshots) => buildCollection(ctx.nodeId, ctx.now, snapshots)),
+    )
 
   const executeUnitAction = (verb: string, actionId: string, target: ActionTarget) =>
     getTargetService(target, actionId).pipe(
-      Effect.flatMap(({ unit, scope }) => runSystemctlMutation(deps, [...scopeArgs(scope), verb, unit], actionId)),
+      Effect.flatMap(({ unit, scope }) =>
+        runSystemctlMutation(deps, [...scopeArgs(scope), verb, unit], actionId),
+      ),
       Effect.as({}),
     )
 
@@ -884,13 +894,15 @@ export const createSystemdAgentPlugin = (
                     ),
                   ),
                   Effect.flatMap(() =>
-                    deps.copyFile(tempPath, targetPath).pipe(
-                      Effect.mapError((error) =>
-                        /EACCES|EPERM|permission denied/i.test(String(error))
-                          ? permissionDenied(`Writing ${targetPath}`, SYSTEMD_ACTION_IDS.writeUnitFile)
-                          : error,
+                    deps
+                      .copyFile(tempPath, targetPath)
+                      .pipe(
+                        Effect.mapError((error) =>
+                          /EACCES|EPERM|permission denied/i.test(String(error))
+                            ? permissionDenied(`Writing ${targetPath}`, SYSTEMD_ACTION_IDS.writeUnitFile)
+                            : error,
+                        ),
                       ),
-                    ),
                   ),
                   Effect.flatMap(() =>
                     runSystemctlMutation(

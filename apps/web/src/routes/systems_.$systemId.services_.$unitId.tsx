@@ -46,10 +46,14 @@ interface UnitSearch {
 
 export const Route = createFileRoute("/systems_/$systemId/services_/$unitId")({
   validateSearch: (search: Record<string, unknown>): UnitSearch => ({
-    ...(TABS.includes(search["tab"] as Tab) && search["tab"] !== "overview" ? { tab: search["tab"] as Tab } : {}),
+    ...(TABS.includes(search["tab"] as Tab) && search["tab"] !== "overview"
+      ? { tab: search["tab"] as Tab }
+      : {}),
     ...(search["scope"] === "user" ? { scope: "user" as const } : {}),
   }),
-  loader: async ({ params }) => ({ detail: await fetchSystemDetail({ data: { systemId: params.systemId } }) }),
+  loader: async ({ params }) => ({
+    detail: await fetchSystemDetail({ data: { systemId: params.systemId } }),
+  }),
   component: UnitPage,
 })
 
@@ -60,7 +64,8 @@ function cpuRates(points: ReadonlyArray<{ readonly ts: number; readonly value: n
     const previous = points[index - 1]!
     const current = points[index]!
     const elapsedNs = (current.ts - previous.ts) * 1e6
-    if (elapsedNs > 0 && current.value >= previous.value) rates.push(((current.value - previous.value) / elapsedNs) * 100)
+    if (elapsedNs > 0 && current.value >= previous.value)
+      rates.push(((current.value - previous.value) / elapsedNs) * 100)
   }
   return rates
 }
@@ -137,7 +142,10 @@ function UnitPage() {
   // The timer that starts this unit, if any (restic-backup.timer → restic-backup.service).
   const timer =
     entities.items.find(
-      (entity) => isTimerEntity(entity) && timerState(entity).scope === scope && timerState(entity).activates === unitId,
+      (entity) =>
+        isTimerEntity(entity) &&
+        timerState(entity).scope === scope &&
+        timerState(entity).activates === unitId,
     ) ?? null
   const forUnit = (point: { readonly entity?: { readonly kind: string; readonly id: string } }) =>
     point.entity?.kind === kind && point.entity.id === unitId
@@ -199,7 +207,11 @@ function UnitPage() {
                 "Timer",
                 <>
                   {shortUnitName(timer.ref.id)}
-                  {timerInfo.nextRunAt !== null ? <TimeUntil at={timerInfo.nextRunAt} prefix=" · next " /> : " · not scheduled"}
+                  {timerInfo.nextRunAt !== null ? (
+                    <TimeUntil at={timerInfo.nextRunAt} prefix=" · next " />
+                  ) : (
+                    " · not scheduled"
+                  )}
                 </>,
                 timer.ref.id,
               ] as const,
@@ -242,7 +254,9 @@ function UnitPage() {
               <span>
                 {state.activeState} · {state.subState}
               </span>
-              {state.pid !== null && state.pid > 0 ? <span className="font-mono tabular">pid {state.pid}</span> : null}
+              {state.pid !== null && state.pid > 0 ? (
+                <span className="font-mono tabular">pid {state.pid}</span>
+              ) : null}
               {state.activeState === "active" && state.activeEnterAt !== null ? (
                 <span>since {formatDuration((Date.now() - state.activeEnterAt) / 1000)}</span>
               ) : null}
@@ -261,10 +275,15 @@ function UnitPage() {
             key={value}
             to="/systems/$systemId/services/$unitId"
             params={{ systemId, unitId }}
-            search={{ ...(value === "overview" ? {} : { tab: value }), ...(scope === "user" ? { scope } : {}) }}
+            search={{
+              ...(value === "overview" ? {} : { tab: value }),
+              ...(scope === "user" ? { scope } : {}),
+            }}
             className={cn(
               "-mb-px border-b px-0.5 py-2.5 text-[13px] capitalize",
-              value === tab ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              value === tab
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {value}
@@ -298,7 +317,12 @@ function UnitPage() {
                     sub: state.result && state.result !== "success" ? `last result ${state.result}` : "",
                     series: [],
                   },
-                  { label: "State", value: state.subState || state.activeState, sub: state.activeState, series: [] },
+                  {
+                    label: "State",
+                    value: state.subState || state.activeState,
+                    sub: state.activeState,
+                    series: [],
+                  },
                 ].map((cell, index) => (
                   <div
                     key={cell.label}
@@ -312,7 +336,9 @@ function UnitPage() {
                     <div className="text-[12.5px] text-muted-foreground">{cell.label}</div>
                     <div className="mt-1.5 flex items-end justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate font-mono text-[22px] font-medium tracking-tight tabular">{cell.value}</div>
+                        <div className="truncate font-mono text-[22px] font-medium tracking-tight tabular">
+                          {cell.value}
+                        </div>
                         <div className="mt-0.5 text-xs text-subtle">{cell.sub}</div>
                       </div>
                       <Sparkline values={cell.series} className="hidden sm:block" />
@@ -351,24 +377,25 @@ function UnitPage() {
             <Section className="mt-6" title="Journal">
               <EmptyRow>
                 Scout streams the journal of system units only. For this user unit, run{" "}
-                <span className="font-mono text-foreground">journalctl --user -u {unitId}</span> in a terminal.
+                <span className="font-mono text-foreground">journalctl --user -u {unitId}</span> in a
+                terminal.
               </EmptyRow>
             </Section>
           ) : (
-          <Section className="mt-6" title="Journal">
-            <div className={tab === "journal" ? "h-[640px]" : "h-[420px]"}>
-              <LogViewer
-                title={`journalctl -u ${unitId}`}
-                params={{
-                  agentId: systemId,
-                  pluginId: SYSTEMD_PLUGIN_ID,
-                  streamId: SYSTEMD_STREAM_IDS.unitLogs,
-                  entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_UNIT_KIND, id: unitId },
-                  input: { tail: 200 },
-                }}
-              />
-            </div>
-          </Section>
+            <Section className="mt-6" title="Journal">
+              <div className={tab === "journal" ? "h-[640px]" : "h-[420px]"}>
+                <LogViewer
+                  title={`journalctl -u ${unitId}`}
+                  params={{
+                    agentId: systemId,
+                    pluginId: SYSTEMD_PLUGIN_ID,
+                    streamId: SYSTEMD_STREAM_IDS.unitLogs,
+                    entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_UNIT_KIND, id: unitId },
+                    input: { tail: 200 },
+                  }}
+                />
+              </div>
+            </Section>
           )}
         </>
       )}

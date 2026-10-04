@@ -54,12 +54,12 @@ Containers mount the repo read-only at `/opt/scout` so agents see your local edi
 
 ## Node Profiles
 
-| Node | Plugin capabilities | What it tests |
-|------|-------------------|---------------|
-| `node-server` | systemd | Service management (nginx, redis), unit files, journal logs |
-| `node-k3s` | systemd, k8s | Kubernetes workloads, pod logs, scale/restart actions |
-| `node-docker` | systemd, docker | Container lifecycle, image/network inventory, container logs |
-| `node-minimal` | systemd | Bare system — capability auto-discovery fallback |
+| Node           | Plugin capabilities | What it tests                                                |
+| -------------- | ------------------- | ------------------------------------------------------------ |
+| `node-server`  | systemd             | Service management (nginx, redis), unit files, journal logs  |
+| `node-k3s`     | systemd, k8s        | Kubernetes workloads, pod logs, scale/restart actions        |
+| `node-docker`  | systemd, docker     | Container lifecycle, image/network inventory, container logs |
+| `node-minimal` | systemd             | Bare system — capability auto-discovery fallback             |
 
 All nodes also report core system metrics (CPU, memory, disk, network, processes).
 
@@ -107,13 +107,13 @@ SCOUT_INTERVAL=15
 
 All scripts live in `e2e/scripts/` and should be run from the `e2e/` directory.
 
-| Script | Usage | Purpose |
-|--------|-------|---------|
-| `up.sh [node]` | `./scripts/up.sh` | Build images, start containers, launch agents |
-| `down.sh [--volumes]` | `./scripts/down.sh` | Stop containers, clean `.scout/` state |
-| `logs.sh [node]` | `./scripts/logs.sh node-k3s` | Tail agent logs (no args = last 20 lines from all) |
-| `exec.sh <node> [cmd]` | `./scripts/exec.sh node-server` | Shell into container (or run a command) |
-| `stop-agents.sh [node]` | `./scripts/stop-agents.sh` | SIGTERM agents without tearing down containers |
+| Script                  | Usage                           | Purpose                                            |
+| ----------------------- | ------------------------------- | -------------------------------------------------- |
+| `up.sh [node]`          | `./scripts/up.sh`               | Build images, start containers, launch agents      |
+| `down.sh [--volumes]`   | `./scripts/down.sh`             | Stop containers, clean `.scout/` state             |
+| `logs.sh [node]`        | `./scripts/logs.sh node-k3s`    | Tail agent logs (no args = last 20 lines from all) |
+| `exec.sh <node> [cmd]`  | `./scripts/exec.sh node-server` | Shell into container (or run a command)            |
+| `stop-agents.sh [node]` | `./scripts/stop-agents.sh`      | SIGTERM agents without tearing down containers     |
 
 ### Starting a single node
 
@@ -162,6 +162,7 @@ cd apps/hub && bun --env-file=.env.test run db:push
 **`connectedAgents: 0` after `up.sh`**
 
 Check agent logs: `./scripts/logs.sh`. Common causes:
+
 - Hub not running on port 3001
 - Schema not pushed (`bun --env-file=.env.test run db:push`)
 - Layer wiring error in agent (check for "Service not found" in logs)

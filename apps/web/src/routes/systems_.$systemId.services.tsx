@@ -39,7 +39,9 @@ export const Route = createFileRoute("/systems_/$systemId/services")({
     ...(typeof search["q"] === "string" && search["q"].length > 0 ? { q: search["q"] } : {}),
     ...(FILTERS.includes(search["state"] as Filter) ? { state: search["state"] as Filter } : {}),
   }),
-  loader: async ({ params }) => ({ detail: await fetchSystemDetail({ data: { systemId: params.systemId } }) }),
+  loader: async ({ params }) => ({
+    detail: await fetchSystemDetail({ data: { systemId: params.systemId } }),
+  }),
   component: ServicesPage,
 })
 
@@ -71,7 +73,8 @@ function ServicesPage() {
       timerStates.filter((timer) => timer.activeState === state).length
     return {
       all: units.length + timers.length,
-      failed: unitStates.filter((state) => state === "failed").length + timerStates.filter(timerFailed).length,
+      failed:
+        unitStates.filter((state) => state === "failed").length + timerStates.filter(timerFailed).length,
       active: byState("active"),
       inactive: byState("inactive"),
       pinned: units.filter((unit) => isUnitPinned(pins, unit)).length,
@@ -107,7 +110,10 @@ function ServicesPage() {
         if (filter === "pinned") return false
         if (filter === "failed" && !timerFailed(state)) return false
         if ((filter === "active" || filter === "inactive") && state.activeState !== filter) return false
-        return needle.length === 0 || `${timer.ref.id} ${state.activates} ${state.description}`.toLowerCase().includes(needle)
+        return (
+          needle.length === 0 ||
+          `${timer.ref.id} ${state.activates} ${state.description}`.toLowerCase().includes(needle)
+        )
       })
       .sort(byTimerPriority)
   }, [filter, q, timers])
@@ -148,12 +154,17 @@ function ServicesPage() {
         title="Services"
         meta={
           <span>
-            systemd system and user units, and timers, on {hostname} · ☆ pins a unit to the overview (stored in this
-            browser)
+            systemd system and user units, and timers, on {hostname} · ☆ pins a unit to the overview (stored
+            in this browser)
           </span>
         }
         actions={
-          <Button size="sm" variant="outline" onClick={() => void daemonReload()} disabled={unavailable !== null}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void daemonReload()}
+            disabled={unavailable !== null}
+          >
             Reload systemd
           </Button>
         }
@@ -180,7 +191,12 @@ function ServicesPage() {
               )}
             >
               {value}
-              <span className={cn("font-mono tabular", value === "failed" && counts.failed > 0 ? "text-err" : "text-subtle")}>
+              <span
+                className={cn(
+                  "font-mono tabular",
+                  value === "failed" && counts.failed > 0 ? "text-err" : "text-subtle",
+                )}
+              >
                 {counts[value]}
               </span>
             </button>
@@ -196,7 +212,12 @@ function ServicesPage() {
             <EmptyRow>No units reported yet.</EmptyRow>
           ) : (
             <>
-              {unitGroup("SYSTEM · systemctl", String(systemRows.length), systemRows, "No system units match this filter.")}
+              {unitGroup(
+                "SYSTEM · systemctl",
+                String(systemRows.length),
+                systemRows,
+                "No system units match this filter.",
+              )}
               {units.some((unit) => unitState(unit).scope === "user")
                 ? unitGroup(
                     "USER · systemctl --user",
@@ -210,7 +231,12 @@ function ServicesPage() {
       </Section>
 
       {unavailable === null && timers.length > 0 ? (
-        <Section id="timers" className="mt-6" title="Timers" aside={<span>next and last run of each timer</span>}>
+        <Section
+          id="timers"
+          className="mt-6"
+          title="Timers"
+          aside={<span>next and last run of each timer</span>}
+        >
           {timerRows.length > 0 ? (
             <TimersTable systemId={systemId} timers={timerRows} />
           ) : (

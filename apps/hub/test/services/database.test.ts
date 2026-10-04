@@ -22,9 +22,7 @@ describe("Database service", () => {
     run(
       Effect.gen(function* () {
         const db = yield* Database
-        const result = db.$client
-          .prepare("PRAGMA foreign_keys")
-          .get() as { foreign_keys: number }
+        const result = db.$client.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number }
         expect(result.foreign_keys).toBe(1)
       }),
     ))
@@ -57,9 +55,7 @@ describe("Database service", () => {
     run(
       Effect.gen(function* () {
         const db = yield* Database
-        const result = db.$client
-          .prepare("PRAGMA journal_mode")
-          .get() as { journal_mode: string }
+        const result = db.$client.prepare("PRAGMA journal_mode").get() as { journal_mode: string }
         // In-memory SQLite returns 'memory', file-based returns 'wal'
         expect(["memory", "wal"]).toContain(result.journal_mode)
       }),

@@ -1,8 +1,6 @@
 import type { CoreMetricsPayload, SystemMetricsSample } from "@scout/shared"
 
-export function makeSystemMetricsSample(
-  overrides?: Partial<SystemMetricsSample>,
-): SystemMetricsSample {
+export function makeSystemMetricsSample(overrides?: Partial<SystemMetricsSample>): SystemMetricsSample {
   return {
     timestamp: Date.now(),
     cpuPercent: 42.5,

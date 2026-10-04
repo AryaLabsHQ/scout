@@ -46,8 +46,18 @@ const APPROVAL_MODE_OPTIONS: ReadonlyArray<{
   desc: string
   icon: typeof Shield01Icon
 }> = [
-  { value: "confirm_each_mutation", label: "Confirm mutations", desc: "Approve every write action", icon: Shield01Icon },
-  { value: "auto_approve_reads", label: "Auto-approve reads", desc: "Only prompt for writes", icon: ShieldCheck },
+  {
+    value: "confirm_each_mutation",
+    label: "Confirm mutations",
+    desc: "Approve every write action",
+    icon: Shield01Icon,
+  },
+  {
+    value: "auto_approve_reads",
+    label: "Auto-approve reads",
+    desc: "Only prompt for writes",
+    icon: ShieldCheck,
+  },
   { value: "auto_approve_all", label: "Auto-approve all", desc: "No approval required", icon: Alert01Icon },
 ]
 
@@ -157,8 +167,7 @@ export function OperatorPromptInput({
 
       historyIndexRef.current = newIndex
 
-      const content =
-        newIndex === -1 ? savedDraftRef.current : history[newIndex] ?? ""
+      const content = newIndex === -1 ? savedDraftRef.current : (history[newIndex] ?? "")
 
       ed?.commands.setContent(content ? `<p>${content}</p>` : "")
       setDraft(content)
@@ -195,9 +204,7 @@ export function OperatorPromptInput({
   navigateHistoryStableRef.current = navigateHistory
 
   const builtinCommands: SlashCommandItem[] = useMemo(
-    () => [
-      { id: "cmd:clear", trigger: "clear", title: "Clear", description: "Clear prompt" },
-    ],
+    () => [{ id: "cmd:clear", trigger: "clear", title: "Clear", description: "Clear prompt" }],
     [],
   )
 
@@ -243,9 +250,7 @@ export function OperatorPromptInput({
       Mention.extend({ name: "slashCommand" }).configure({
         suggestion: createSlashSuggestion({
           getItems: (query) =>
-            [...builtinCommands, ...skillCommands].filter((c) =>
-              c.trigger.includes(query.toLowerCase()),
-            ),
+            [...builtinCommands, ...skillCommands].filter((c) => c.trigger.includes(query.toLowerCase())),
           onSelect: (item) => {
             const ed = editorRef.current
             if (item.id === "cmd:clear") {
@@ -316,11 +321,13 @@ export function OperatorPromptInput({
   }, [])
 
   return (
-    <div className={cn(
-      "relative border-t border-border",
-      approvalMode === "auto_approve_all" && "border-t-2 border-err/30",
-      (isSubmitting || isBusy) && "border-t-0",
-    )}>
+    <div
+      className={cn(
+        "relative border-t border-border",
+        approvalMode === "auto_approve_all" && "border-t-2 border-err/30",
+        (isSubmitting || isBusy) && "border-t-0",
+      )}
+    >
       {(isSubmitting || isBusy) && (
         <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-border">
           <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] bg-primary" />
@@ -330,12 +337,11 @@ export function OperatorPromptInput({
       {attachments.length > 0 && (
         <div className="flex gap-2 px-4 pt-3">
           {attachments.map((file, i) => (
-            <div key={`${file.name}-${i}`} className="relative size-16 rounded-md border border-border overflow-hidden bg-muted">
-              <img
-                src={URL.createObjectURL(file)}
-                alt={file.name}
-                className="size-full object-cover"
-              />
+            <div
+              key={`${file.name}-${i}`}
+              className="relative size-16 rounded-md border border-border overflow-hidden bg-muted"
+            >
+              <img src={URL.createObjectURL(file)} alt={file.name} className="size-full object-cover" />
               <button
                 type="button"
                 onClick={() => removeAttachment(i)}
@@ -359,9 +365,7 @@ export function OperatorPromptInput({
           {/* Attach button */}
           <Tooltip>
             <TooltipTrigger
-              render={
-                <Button size="icon" variant="ghost" className="size-7" onClick={openFilePicker} />
-              }
+              render={<Button size="icon" variant="ghost" className="size-7" onClick={openFilePicker} />}
             >
               <HugeiconsIcon icon={Image02Icon} size={14} />
             </TooltipTrigger>
@@ -380,9 +384,7 @@ export function OperatorPromptInput({
           {onNodeToggle ? (
             <Popover>
               <PopoverTrigger
-                render={
-                  <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" />
-                }
+                render={<Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" />}
               >
                 {selectedNodeIds.length} node{selectedNodeIds.length === 1 ? "" : "s"}
               </PopoverTrigger>
@@ -394,16 +396,12 @@ export function OperatorPromptInput({
                   >
                     <Checkbox
                       checked={selectedNodeIds.includes(system.id)}
-                      onCheckedChange={(checked) =>
-                        onNodeToggle(system.id, checked === true)
-                      }
+                      onCheckedChange={(checked) => onNodeToggle(system.id, checked === true)}
                     />
                     <span
                       className={cn(
                         "size-1.5 shrink-0 rounded-full",
-                        system.status === "online"
-                          ? "bg-ok"
-                          : "bg-muted-foreground/40",
+                        system.status === "online" ? "bg-ok" : "bg-muted-foreground/40",
                       )}
                     />
                     <span>{system.hostname}</span>
@@ -421,9 +419,7 @@ export function OperatorPromptInput({
           {onModelChange ? (
             <Popover>
               <PopoverTrigger
-                render={
-                  <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" />
-                }
+                render={<Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" />}
               >
                 {modelProviderId}/{modelId}
               </PopoverTrigger>
@@ -435,9 +431,7 @@ export function OperatorPromptInput({
                     onClick={() => onModelChange(model.providerId, model.modelId)}
                     className={cn(
                       "flex w-full items-center gap-2 px-2 py-1.5 text-xs text-left hover:bg-muted/40 rounded-sm",
-                      model.modelId === modelId &&
-                        model.providerId === modelProviderId &&
-                        "bg-accent",
+                      model.modelId === modelId && model.providerId === modelProviderId && "bg-accent",
                     )}
                   >
                     <span>{model.label}</span>
@@ -461,18 +455,28 @@ export function OperatorPromptInput({
             <Popover>
               <PopoverTrigger
                 render={
-                  <Button size="sm" variant="ghost" className={cn(
-                    "h-7 text-xs",
-                    approvalMode === "auto_approve_all" && "text-err",
-                  )} />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={cn("h-7 text-xs", approvalMode === "auto_approve_all" && "text-err")}
+                  />
                 }
               >
                 {approvalMode === "confirm_each_mutation" ? (
-                  <><HugeiconsIcon icon={Shield01Icon} size={12} className="mr-1 inline" />confirm</>
+                  <>
+                    <HugeiconsIcon icon={Shield01Icon} size={12} className="mr-1 inline" />
+                    confirm
+                  </>
                 ) : approvalMode === "auto_approve_reads" ? (
-                  <><HugeiconsIcon icon={ShieldCheck} size={12} className="mr-1 inline" />auto-reads</>
+                  <>
+                    <HugeiconsIcon icon={ShieldCheck} size={12} className="mr-1 inline" />
+                    auto-reads
+                  </>
                 ) : (
-                  <><HugeiconsIcon icon={Alert01Icon} size={12} className="mr-1 inline" />auto-all</>
+                  <>
+                    <HugeiconsIcon icon={Alert01Icon} size={12} className="mr-1 inline" />
+                    auto-all
+                  </>
                 )}
               </PopoverTrigger>
               <PopoverContent className="w-64 p-2" align="start">
@@ -497,8 +501,21 @@ export function OperatorPromptInput({
             </Popover>
           ) : (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <HugeiconsIcon icon={approvalMode === "auto_approve_all" ? Alert01Icon : approvalMode === "auto_approve_reads" ? ShieldCheck : Shield01Icon} size={12} />
-              {approvalMode === "confirm_each_mutation" ? "confirm" : approvalMode === "auto_approve_reads" ? "auto-reads" : "auto-all"}
+              <HugeiconsIcon
+                icon={
+                  approvalMode === "auto_approve_all"
+                    ? Alert01Icon
+                    : approvalMode === "auto_approve_reads"
+                      ? ShieldCheck
+                      : Shield01Icon
+                }
+                size={12}
+              />
+              {approvalMode === "confirm_each_mutation"
+                ? "confirm"
+                : approvalMode === "auto_approve_reads"
+                  ? "auto-reads"
+                  : "auto-all"}
             </span>
           )}
 

@@ -9,13 +9,7 @@ import type {
 
 export const DOCKER_PLUGIN_ID = "@scout/plugin-docker"
 export const DOCKER_CAPABILITY_ID = "docker"
-export const DOCKER_FEATURES = [
-  "inventory",
-  "relationships",
-  "metrics",
-  "actions",
-  "logs",
-] as const
+export const DOCKER_FEATURES = ["inventory", "relationships", "metrics", "actions", "logs"] as const
 
 export const DOCKER_ENTITY_KINDS = {
   daemon: "docker.daemon",
@@ -442,12 +436,7 @@ export const DOCKER_UI_SCREENS: ReadonlyArray<PluginUiScreen> = [
           props: {
             title: "Container Detail",
           },
-          children: [
-            "container-fields",
-            "runtime-metrics",
-            "container-actions",
-            "container-logs",
-          ],
+          children: ["container-fields", "runtime-metrics", "container-actions", "container-logs"],
         },
         "container-fields": {
           type: "DetailList",

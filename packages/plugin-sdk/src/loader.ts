@@ -2,10 +2,7 @@ import { Effect } from "effect"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import {
-  decodePluginManifest,
-  PluginLoadError,
-} from "./schemas.js"
+import { decodePluginManifest, PluginLoadError } from "./schemas.js"
 import type { LoadedScoutPlugin, ScoutPlugin } from "./runtime.js"
 
 const PLUGIN_ENTRYPOINT_CANDIDATES = [
@@ -49,9 +46,7 @@ const statIfExists = (filePath: string) =>
       }),
   })
 
-const resolvePluginEntrypoint = (
-  rootDir: string,
-): Effect.Effect<string | null, PluginLoadError> =>
+const resolvePluginEntrypoint = (rootDir: string): Effect.Effect<string | null, PluginLoadError> =>
   Effect.gen(function* () {
     for (const relativePath of PLUGIN_ENTRYPOINT_CANDIDATES) {
       const candidate = path.join(rootDir, relativePath)
@@ -63,19 +58,12 @@ const resolvePluginEntrypoint = (
     return null
   })
 
-const hasPluginEntrypoint = (
-  rootDir: string,
-): Effect.Effect<boolean, PluginLoadError> =>
-  resolvePluginEntrypoint(rootDir).pipe(
-    Effect.map((entrypoint) => entrypoint !== null),
-  )
+const hasPluginEntrypoint = (rootDir: string): Effect.Effect<boolean, PluginLoadError> =>
+  resolvePluginEntrypoint(rootDir).pipe(Effect.map((entrypoint) => entrypoint !== null))
 
-const pickPluginExport = (module: Record<string, unknown>) =>
-  module["plugin"] ?? module["default"] ?? null
+const pickPluginExport = (module: Record<string, unknown>) => module["plugin"] ?? module["default"] ?? null
 
-export const loadPluginPackage = (
-  rootDir: string,
-): Effect.Effect<LoadedScoutPlugin, PluginLoadError> =>
+export const loadPluginPackage = (rootDir: string): Effect.Effect<LoadedScoutPlugin, PluginLoadError> =>
   Effect.gen(function* () {
     const pluginPath = yield* resolvePluginEntrypoint(rootDir)
     if (pluginPath === null) {
@@ -113,9 +101,7 @@ export const loadPluginPackage = (
     } satisfies LoadedScoutPlugin
   })
 
-export const loadPluginManifest = (
-  rootDir: string,
-) =>
+export const loadPluginManifest = (rootDir: string) =>
   loadPluginPackage(rootDir).pipe(
     Effect.map(({ rootDir, pluginPath, manifest }) => ({
       rootDir,
@@ -131,11 +117,9 @@ export const discoverPluginRoots = (
     const entries = yield* Effect.tryPromise({
       try: async () => fs.readdir(pluginDirectory),
       catch: (cause) =>
-        failLoad(
-          "plugin-directory-read-failed",
-          `Failed to read plugin directory: ${String(cause)}`,
-          { path: pluginDirectory },
-        ),
+        failLoad("plugin-directory-read-failed", `Failed to read plugin directory: ${String(cause)}`, {
+          path: pluginDirectory,
+        }),
     })
 
     const directoryEntries = yield* Effect.all(
@@ -152,9 +136,7 @@ export const discoverPluginRoots = (
       { concurrency: "unbounded" },
     )
 
-    return directoryEntries
-      .filter((entry): entry is string => entry !== null)
-      .sort()
+    return directoryEntries.filter((entry): entry is string => entry !== null).sort()
   })
 
 export const loadPluginsFromDirectory = (

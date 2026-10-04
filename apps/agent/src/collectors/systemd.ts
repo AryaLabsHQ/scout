@@ -41,7 +41,7 @@ export function parseSystemctlListUnits(json: string): SystemdServiceMetrics[] {
     return []
   }
 
-  return parsed.map(entry => ({
+  return parsed.map((entry) => ({
     unit: entry.unit ?? "",
     description: entry.description ?? "",
     loadState: normalizeLoadState(entry.load),
@@ -55,21 +55,31 @@ export function parseSystemctlListUnits(json: string): SystemdServiceMetrics[] {
 
 function normalizeLoadState(s: string | undefined): SystemdServiceMetrics["loadState"] {
   switch (s) {
-    case "loaded": return "loaded"
-    case "not-found": return "not-found"
-    case "masked": return "masked"
-    default: return "error"
+    case "loaded":
+      return "loaded"
+    case "not-found":
+      return "not-found"
+    case "masked":
+      return "masked"
+    default:
+      return "error"
   }
 }
 
 function normalizeActiveState(s: string | undefined): SystemdServiceMetrics["activeState"] {
   switch (s) {
-    case "active": return "active"
-    case "inactive": return "inactive"
-    case "failed": return "failed"
-    case "activating": return "activating"
-    case "deactivating": return "deactivating"
-    default: return "inactive"
+    case "active":
+      return "active"
+    case "inactive":
+      return "inactive"
+    case "failed":
+      return "failed"
+    case "activating":
+      return "activating"
+    case "deactivating":
+      return "deactivating"
+    default:
+      return "inactive"
   }
 }
 
@@ -128,9 +138,7 @@ export const systemdCollector: CollectorPlugin = {
       return proc.exitCode === 0
     },
     catch: () => new Error("which systemctl failed"),
-  }).pipe(
-    Effect.orElseSucceed(() => false),
-  ),
+  }).pipe(Effect.orElseSucceed(() => false)),
   collect: Effect.gen(function* () {
     const listOutput = yield* runCommand("systemctl", [
       "list-units",
@@ -142,9 +150,7 @@ export const systemdCollector: CollectorPlugin = {
     const services = parseSystemctlListUnits(listOutput)
 
     // Fetch resource usage for active services (capped)
-    const activeServices = services
-      .filter(s => s.activeState === "active")
-      .slice(0, MAX_ACTIVE_SERVICES)
+    const activeServices = services.filter((s) => s.activeState === "active").slice(0, MAX_ACTIVE_SERVICES)
 
     for (const svc of activeServices) {
       const showOutput = yield* Effect.tryPromise({
@@ -158,9 +164,7 @@ export const systemdCollector: CollectorPlugin = {
           return text
         },
         catch: (e) => new Error(`systemctl show failed for ${svc.unit}: ${String(e)}`),
-      }).pipe(
-        Effect.orElseSucceed(() => ""),
-      )
+      }).pipe(Effect.orElseSucceed(() => ""))
 
       const resources = parseSystemctlShow(showOutput)
       svc.pid = resources.pid

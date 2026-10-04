@@ -8,25 +8,12 @@ import { useAtomSet } from "@effect/atom-react"
 import { HubClient } from "@/rpc/client"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -98,10 +85,7 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
   const [severity, setSeverity] = useState<"warning" | "critical">("warning")
   const [enabled, setEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
-  const runUpdateAlertRule = useAtomSet(
-    HubClient.mutation("alertRules.update"),
-    { mode: "promise" },
-  )
+  const runUpdateAlertRule = useAtomSet(HubClient.mutation("alertRules.update"), { mode: "promise" })
 
   // Sync form with selected rule whenever it changes
   const prevRuleId = useState<string | null>(null)
@@ -147,7 +131,12 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
   }
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Sheet
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+    >
       <SheetContent side="right" className="w-80 sm:max-w-sm">
         <SheetHeader>
           <SheetTitle>Edit Alert Rule</SheetTitle>
@@ -197,10 +186,7 @@ function EditRuleSheet({ rule, open, onClose, onSaved }: EditRuleSheetProps) {
 
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-foreground">Enabled</label>
-              <Switch
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
             </div>
           </div>
         )}
@@ -224,10 +210,7 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
   const [rules, setRules] = useState(initialRules)
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
-  const runUpdateAlertRule = useAtomSet(
-    HubClient.mutation("alertRules.update"),
-    { mode: "promise" },
-  )
+  const runUpdateAlertRule = useAtomSet(HubClient.mutation("alertRules.update"), { mode: "promise" })
 
   function handleEdit(rule: AlertRule) {
     setEditingRule(rule)
@@ -280,18 +263,10 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
                   <SeverityBadge severity={rule.severity} />
                 </TableCell>
                 <TableCell>
-                  <Switch
-                    checked={rule.enabled}
-                    onCheckedChange={(v) => handleToggle(rule, v)}
-                    size="sm"
-                  />
+                  <Switch checked={rule.enabled} onCheckedChange={(v) => handleToggle(rule, v)} size="sm" />
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={() => handleEdit(rule)}
-                  >
+                  <Button variant="outline" size="xs" onClick={() => handleEdit(rule)}>
                     Edit
                   </Button>
                 </TableCell>
@@ -316,10 +291,7 @@ function AlertRulesTab({ initialRules }: { initialRules: AlertRule[] }) {
 function AgentsTab({ initialSystems }: { initialSystems: System[] }) {
   const [systems, setSystems] = useState(initialSystems)
   const router = useRouter()
-  const runRemoveSystem = useAtomSet(
-    HubClient.mutation("systems.remove"),
-    { mode: "promise" },
-  )
+  const runRemoveSystem = useAtomSet(HubClient.mutation("systems.remove"), { mode: "promise" })
 
   async function handleRemove(systemId: string) {
     try {
@@ -362,9 +334,7 @@ function AgentsTab({ initialSystems }: { initialSystems: System[] }) {
             return (
               <TableRow key={system.id}>
                 <TableCell className="font-mono">{system.hostname}</TableCell>
-                <TableCell className="text-muted-foreground font-mono">
-                  {system.tailscaleIp ?? "—"}
-                </TableCell>
+                <TableCell className="text-muted-foreground font-mono">{system.tailscaleIp ?? "—"}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     <StatusDot status={system.status} />
@@ -378,9 +348,7 @@ function AgentsTab({ initialSystems }: { initialSystems: System[] }) {
                         {cap}
                       </Badge>
                     ))}
-                    {enabledCaps.length === 0 && (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    {enabledCaps.length === 0 && <span className="text-muted-foreground">—</span>}
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
@@ -430,20 +398,14 @@ function NotificationsTab() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Coming soon
-        </p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Coming soon</p>
 
         <div className="flex items-center justify-between opacity-50">
           <div>
             <p className="text-xs font-medium">Discord webhook</p>
             <p className="text-xs text-muted-foreground">Post alerts to a Discord channel.</p>
           </div>
-          <Input
-            disabled
-            placeholder="https://discord.com/api/webhooks/…"
-            className="w-56"
-          />
+          <Input disabled placeholder="https://discord.com/api/webhooks/…" className="w-56" />
         </div>
 
         <div className="flex items-center justify-between opacity-50">
@@ -451,11 +413,7 @@ function NotificationsTab() {
             <p className="text-xs font-medium">Slack webhook</p>
             <p className="text-xs text-muted-foreground">Post alerts to a Slack channel.</p>
           </div>
-          <Input
-            disabled
-            placeholder="https://hooks.slack.com/…"
-            className="w-56"
-          />
+          <Input disabled placeholder="https://hooks.slack.com/…" className="w-56" />
         </div>
 
         <div className="flex items-center justify-between opacity-50">
@@ -525,7 +483,9 @@ function SettingsPage() {
     <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-6 px-6 pt-8 pb-24">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1.5 text-[13px] text-muted-foreground">Alert rules, connected agents, and hub details.</p>
+        <p className="mt-1.5 text-[13px] text-muted-foreground">
+          Alert rules, connected agents, and hub details.
+        </p>
       </div>
 
       <Tabs defaultValue="alert-rules">

@@ -6,13 +6,7 @@ import type { LogBatch } from "@scout/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { PluginLogsParams } from "@scout/shared"
 
 interface PluginLogViewerProps {
@@ -40,7 +34,10 @@ function highlightMatch(line: string, search: string): string {
   if (!search) return escapeHtml(line)
   const safe = escapeHtml(line)
   const safeSearch = escapeHtml(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  return safe.replace(new RegExp(`(${safeSearch})`, "gi"), '<mark class="bg-warn/30 text-foreground">$1</mark>')
+  return safe.replace(
+    new RegExp(`(${safeSearch})`, "gi"),
+    '<mark class="bg-warn/30 text-foreground">$1</mark>',
+  )
 }
 
 // ── Inner component that owns the stream atom ─────────────────────────────────
@@ -62,7 +59,9 @@ function LogStream({ params, tail, onTailChange, onClose, title: titleProp, clas
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const autoScrollRef = useRef(autoScroll)
-  useEffect(() => { autoScrollRef.current = autoScroll }, [autoScroll])
+  useEffect(() => {
+    autoScrollRef.current = autoScroll
+  }, [autoScroll])
 
   // Build a fresh per-instance log stream atom.
   //
@@ -80,9 +79,7 @@ function LogStream({ params, tail, onTailChange, onClose, title: titleProp, clas
       HubClient.runtime.pull(
         Stream.unwrap(
           HubClient.use((client) =>
-            Effect.succeed(
-              client("plugins.logs", params) as Stream.Stream<LogBatch, unknown>,
-            ),
+            Effect.succeed(client("plugins.logs", params) as Stream.Stream<LogBatch, unknown>),
           ),
         ),
         { disableAccumulation: true },
@@ -129,18 +126,14 @@ function LogStream({ params, tail, onTailChange, onClose, title: titleProp, clas
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 40)
   }, [])
 
-  const filteredLines = search
-    ? lines.filter((l) => l.toLowerCase().includes(search.toLowerCase()))
-    : lines
+  const filteredLines = search ? lines.filter((l) => l.toLowerCase().includes(search.toLowerCase())) : lines
 
   const isStreaming = pullResult._tag === "Success"
-  const errorMsg = pullResult._tag === "Failure"
-    ? "Log stream error — check agent connection"
-    : null
+  const errorMsg = pullResult._tag === "Failure" ? "Log stream error — check agent connection" : null
 
-  const title = titleProp ?? (params.entity?.id
-    ? `${params.pluginId}: ${params.entity.id}`
-    : `${params.pluginId}: ${params.streamId}`)
+  const title =
+    titleProp ??
+    (params.entity?.id ? `${params.pluginId}: ${params.entity.id}` : `${params.pluginId}: ${params.streamId}`)
 
   return (
     <div className={`flex h-full flex-col bg-background ${className ?? ""}`}>
@@ -223,7 +216,9 @@ function LogStream({ params, tail, onTailChange, onClose, title: titleProp, clas
  */
 export function LogViewer({ onClose, params, title, className }: LogViewerProps) {
   const initialTail =
-    typeof params.input === "object" && params.input !== null && typeof (params.input as Record<string, unknown>)["tail"] === "number"
+    typeof params.input === "object" &&
+    params.input !== null &&
+    typeof (params.input as Record<string, unknown>)["tail"] === "number"
       ? Number((params.input as Record<string, unknown>)["tail"])
       : 200
   // A tail picked in the selector applies to the target it was picked for; a new
@@ -235,14 +230,11 @@ export function LogViewer({ onClose, params, title, className }: LogViewerProps)
   // Keyed on the params' content so an inline params object from the caller
   // does not restart the stream on every render; a new tail size does.
   const paramsKey = JSON.stringify(params)
-  const streamParams = useMemo<PluginLogsParams>(
-    () => {
-      const base = JSON.parse(paramsKey) as PluginLogsParams
-      const input = typeof base.input === "object" && base.input !== null ? base.input : {}
-      return { ...base, input: { ...input, tail } }
-    },
-    [paramsKey, tail],
-  )
+  const streamParams = useMemo<PluginLogsParams>(() => {
+    const base = JSON.parse(paramsKey) as PluginLogsParams
+    const input = typeof base.input === "object" && base.input !== null ? base.input : {}
+    return { ...base, input: { ...input, tail } }
+  }, [paramsKey, tail])
   return (
     <LogStream
       key={`plugin:${params.agentId}:${params.pluginId}:${params.streamId}:${params.entity?.id ?? "none"}:${tail}`}

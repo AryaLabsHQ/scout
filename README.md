@@ -3,6 +3,7 @@
 Scout is a Bun + Effect monorepo for monitoring and managing remote systems.
 
 It is split into three runtime apps:
+
 - `agent`: runs on nodes, collects host and plugin data, and executes management actions
 - `hub`: stores state, ingests reports, evaluates alerts, and serves REST + RPC APIs
 - `web`: TanStack Start dashboard that bootstraps over HTTP and stays live over RPC
@@ -35,17 +36,17 @@ Cross-runtime shapes come from [`packages/shared`](./packages/shared/README.md),
 
 ## Monorepo Layout
 
-| Path | Purpose |
-| --- | --- |
-| [`apps/agent`](./apps/agent/README.md) | Node-side runtime for collection, reporting, and action execution |
-| [`apps/hub`](./apps/hub/README.md) | Hub service, database, alert engine, and RPC server |
-| [`apps/web`](./apps/web/README.md) | Dashboard UI and browser RPC client |
-| [`packages/shared`](./packages/shared/README.md) | Shared schemas, types, and RPC groups |
-| [`packages/plugin-sdk`](./packages/plugin-sdk/README.md) | Plugin manifest, loader, and execution SDK |
-| [`packages/plugin-docker`](./packages/plugin-docker/README.md) | Docker integration plugin |
-| [`packages/plugin-k8s`](./packages/plugin-k8s/README.md) | Kubernetes integration plugin |
-| [`packages/plugin-systemd`](./packages/plugin-systemd/README.md) | systemd integration plugin |
-| [`e2e`](./e2e/README.md) | Docker test lab for exercising the full stack |
+| Path                                                             | Purpose                                                           |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`apps/agent`](./apps/agent/README.md)                           | Node-side runtime for collection, reporting, and action execution |
+| [`apps/hub`](./apps/hub/README.md)                               | Hub service, database, alert engine, and RPC server               |
+| [`apps/web`](./apps/web/README.md)                               | Dashboard UI and browser RPC client                               |
+| [`packages/shared`](./packages/shared/README.md)                 | Shared schemas, types, and RPC groups                             |
+| [`packages/plugin-sdk`](./packages/plugin-sdk/README.md)         | Plugin manifest, loader, and execution SDK                        |
+| [`packages/plugin-docker`](./packages/plugin-docker/README.md)   | Docker integration plugin                                         |
+| [`packages/plugin-k8s`](./packages/plugin-k8s/README.md)         | Kubernetes integration plugin                                     |
+| [`packages/plugin-systemd`](./packages/plugin-systemd/README.md) | systemd integration plugin                                        |
+| [`e2e`](./e2e/README.md)                                         | Docker test lab for exercising the full stack                     |
 
 ## Getting Started
 

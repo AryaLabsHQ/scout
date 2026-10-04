@@ -75,7 +75,7 @@ describe("parseSystemctlListUnits", () => {
 
   it("maps unit, description, loadState, activeState, subState correctly", () => {
     const result = parseSystemctlListUnits(SYSTEMCTL_LIST_UNITS_JSON)
-    const nginx = result.find(s => s.unit === "nginx.service")
+    const nginx = result.find((s) => s.unit === "nginx.service")
     expect(nginx).toBeDefined()
     expect(nginx!.description).toBe("A high performance web server")
     expect(nginx!.loadState).toBe("loaded")
@@ -94,20 +94,20 @@ describe("parseSystemctlListUnits", () => {
 
   it("maps inactive state correctly", () => {
     const result = parseSystemctlListUnits(SYSTEMCTL_LIST_UNITS_JSON)
-    const ssh = result.find(s => s.unit === "ssh.service")
+    const ssh = result.find((s) => s.unit === "ssh.service")
     expect(ssh!.activeState).toBe("inactive")
     expect(ssh!.subState).toBe("dead")
   })
 
   it("maps failed state correctly", () => {
     const result = parseSystemctlListUnits(SYSTEMCTL_LIST_UNITS_JSON)
-    const failed = result.find(s => s.unit === "failed.service")
+    const failed = result.find((s) => s.unit === "failed.service")
     expect(failed!.activeState).toBe("failed")
   })
 
   it("maps not-found load state correctly", () => {
     const result = parseSystemctlListUnits(SYSTEMCTL_LIST_UNITS_JSON)
-    const missing = result.find(s => s.unit === "missing.service")
+    const missing = result.find((s) => s.unit === "missing.service")
     expect(missing!.loadState).toBe("not-found")
   })
 

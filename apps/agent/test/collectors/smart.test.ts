@@ -46,9 +46,7 @@ const SMARTCTL_FAILED_JSON = JSON.stringify({
   temperature: { current: 50 },
   power_on_time: { hours: 30000 },
   ata_smart_attributes: {
-    table: [
-      { id: 5, name: "Reallocated_Sector_Ct", raw: { value: 247 } },
-    ],
+    table: [{ id: 5, name: "Reallocated_Sector_Ct", raw: { value: 247 } }],
   },
 })
 

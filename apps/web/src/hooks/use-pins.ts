@@ -38,7 +38,11 @@ const subscribe = (listener: () => void) => {
 }
 
 export function usePins(systemId: string) {
-  const pins = useSyncExternalStore(subscribe, () => read(systemId), () => EMPTY)
+  const pins = useSyncExternalStore(
+    subscribe,
+    () => read(systemId),
+    () => EMPTY,
+  )
   const toggle = useCallback(
     (id: string) => {
       const current = read(systemId)

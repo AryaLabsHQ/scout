@@ -105,7 +105,12 @@ function HealthStrip({ systemId, cells }: { systemId: string; cells: ReadonlyArr
               </div>
               <div className="mt-0.5 truncate text-xs text-subtle">{cell.sub}</div>
             </div>
-            <Sparkline values={cell.series} max={cell.max} tone={cell.tone ?? "neutral"} className="hidden sm:block" />
+            <Sparkline
+              values={cell.series}
+              max={cell.max}
+              tone={cell.tone ?? "neutral"}
+              className="hidden sm:block"
+            />
           </div>
         </Link>
       ))}
@@ -160,7 +165,15 @@ function healthCells(
 
 // ── Services ─────────────────────────────────────────────────────────────────
 
-function ServicesSection({ systemId, hostname, system }: { systemId: string; hostname: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+function ServicesSection({
+  systemId,
+  hostname,
+  system,
+}: {
+  systemId: string
+  hostname: string
+  system: Parameters<typeof pluginUnavailable>[0]
+}) {
   const entities = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID)
   const units = { loading: entities.loading, items: entities.items.filter(isServiceEntity) }
   const { pins, isPinned, toggle } = usePins(systemId)
@@ -180,52 +193,80 @@ function ServicesSection({ systemId, hostname, system }: { systemId: string; hos
           {units.items.length > 0 ? (
             <span>
               systemd · <span className="tabular">{active}</span> active ·{" "}
-              <span className={failed.length > 0 ? "text-err tabular" : "tabular"}>{failed.length}</span> failed
+              <span className={failed.length > 0 ? "text-err tabular" : "tabular"}>{failed.length}</span>{" "}
+              failed
             </span>
           ) : null}
-          <Link to="/systems/$systemId/services" params={{ systemId }} className="text-muted-foreground hover:text-foreground">
+          <Link
+            to="/systems/$systemId/services"
+            params={{ systemId }}
+            className="text-muted-foreground hover:text-foreground"
+          >
             View all →
           </Link>
         </>
       }
     >
-      {unavailable ?? (units.loading ? (
-        <EmptyRow>Loading units…</EmptyRow>
-      ) : (
-        <>
-          <GroupLabel aside={<span className="tabular">{failed.length}</span>}>FAILED</GroupLabel>
-          {failed.length > 0 ? (
-            <UnitsTable systemId={systemId} units={failed} isPinned={isPinned} onTogglePin={toggle} onAction={run} />
-          ) : (
-            <EmptyRow>
-              <span className="flex items-center gap-2">
-                <StatusDot tone="ok" /> No failed units
-              </span>
-            </EmptyRow>
-          )}
-          <GroupLabel
-            aside={
-              <Link to="/systems/$systemId/services" params={{ systemId }} className="hover:text-foreground">
-                ☆ Pin from Services
-              </Link>
-            }
-          >
-            PINNED IN THIS BROWSER
-          </GroupLabel>
-          {pinned.length > 0 ? (
-            <UnitsTable systemId={systemId} units={pinned} isPinned={isPinned} onTogglePin={toggle} onAction={run} />
-          ) : (
-            <EmptyRow>Nothing pinned yet. Use ☆ on any unit in Services to keep it here.</EmptyRow>
-          )}
-        </>
-      ))}
+      {unavailable ??
+        (units.loading ? (
+          <EmptyRow>Loading units…</EmptyRow>
+        ) : (
+          <>
+            <GroupLabel aside={<span className="tabular">{failed.length}</span>}>FAILED</GroupLabel>
+            {failed.length > 0 ? (
+              <UnitsTable
+                systemId={systemId}
+                units={failed}
+                isPinned={isPinned}
+                onTogglePin={toggle}
+                onAction={run}
+              />
+            ) : (
+              <EmptyRow>
+                <span className="flex items-center gap-2">
+                  <StatusDot tone="ok" /> No failed units
+                </span>
+              </EmptyRow>
+            )}
+            <GroupLabel
+              aside={
+                <Link
+                  to="/systems/$systemId/services"
+                  params={{ systemId }}
+                  className="hover:text-foreground"
+                >
+                  ☆ Pin from Services
+                </Link>
+              }
+            >
+              PINNED IN THIS BROWSER
+            </GroupLabel>
+            {pinned.length > 0 ? (
+              <UnitsTable
+                systemId={systemId}
+                units={pinned}
+                isPinned={isPinned}
+                onTogglePin={toggle}
+                onAction={run}
+              />
+            ) : (
+              <EmptyRow>Nothing pinned yet. Use ☆ on any unit in Services to keep it here.</EmptyRow>
+            )}
+          </>
+        ))}
     </Section>
   )
 }
 
 // ── Cluster ──────────────────────────────────────────────────────────────────
 
-function ClusterSection({ systemId, system }: { systemId: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+function ClusterSection({
+  systemId,
+  system,
+}: {
+  systemId: string
+  system: Parameters<typeof pluginUnavailable>[0]
+}) {
   const entities = usePluginEntities(systemId, K8S_PLUGIN_ID)
   const events = usePluginEvents(systemId, K8S_PLUGIN_ID, 1)
   const unavailable = pluginUnavailable(system, K8S_PLUGIN_ID, "Kubernetes")
@@ -237,8 +278,16 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
       title="Cluster"
       aside={
         <>
-          {namespaces.length > 0 ? <span>k8s · {namespaces.length} namespace{namespaces.length === 1 ? "" : "s"}</span> : null}
-          <Link to="/systems/$systemId/cluster" params={{ systemId }} className="text-muted-foreground hover:text-foreground">
+          {namespaces.length > 0 ? (
+            <span>
+              k8s · {namespaces.length} namespace{namespaces.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          <Link
+            to="/systems/$systemId/cluster"
+            params={{ systemId }}
+            className="text-muted-foreground hover:text-foreground"
+          >
             View all →
           </Link>
         </>
@@ -267,7 +316,8 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
                       </Link>
                     </td>
                     <td className="truncate px-4 py-2.5 text-muted-foreground">
-                      {namespace.workloads.map((workload) => workload.name).join(", ") || `${namespace.pods} pods`}
+                      {namespace.workloads.map((workload) => workload.name).join(", ") ||
+                        `${namespace.pods} pods`}
                     </td>
                     <td className="w-20 px-4 py-2.5 text-right font-mono tabular text-muted-foreground">
                       {namespace.workloads.length > 0
@@ -278,18 +328,26 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
                 ))}
               </tbody>
             </table>
-            <GroupLabel aside={<span className="tabular">{warnings.length}</span>}>WARNING EVENTS · 1H</GroupLabel>
+            <GroupLabel aside={<span className="tabular">{warnings.length}</span>}>
+              WARNING EVENTS · 1H
+            </GroupLabel>
             {warnings.length === 0 ? (
               <EmptyRow>No warning events</EmptyRow>
             ) : (
               <ul>
                 {warnings.slice(0, 4).map((event) => (
-                  <li key={`${event.eventId}:${event.entity?.id ?? ""}:${event.ts}`} className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0">
+                  <li
+                    key={`${event.eventId}:${event.entity?.id ?? ""}:${event.ts}`}
+                    className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0"
+                  >
                     <StatusDot tone="warn" className="mt-1.5" />
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      <span className="font-mono text-foreground">{event.entity?.id ?? event.eventId}</span> {event.message}
+                      <span className="font-mono text-foreground">{event.entity?.id ?? event.eventId}</span>{" "}
+                      {event.message}
                     </span>
-                    <span className="shrink-0 text-subtle"><TimeAgo at={event.ts} /></span>
+                    <span className="shrink-0 text-subtle">
+                      <TimeAgo at={event.ts} />
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -303,7 +361,13 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
 // ── Ingress ──────────────────────────────────────────────────────────────────
 
 /** cloudflared tunnels and Caddy from the edge plugin; renders nothing until the plugin reports. */
-function IngressSection({ systemId, system }: { systemId: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+function IngressSection({
+  systemId,
+  system,
+}: {
+  systemId: string
+  system: Parameters<typeof pluginUnavailable>[0]
+}) {
   const entities = usePluginEntities(systemId, EDGE_PLUGIN_ID)
   const capability = pluginCapability(system, EDGE_PLUGIN_ID)
   // Tunnels first, then proxies; each kind in name order.
@@ -329,7 +393,10 @@ function IngressSection({ systemId, system }: { systemId: string; system: Parame
       <table className="w-full table-fixed text-left text-[13px]">
         <tbody>
           {rows.map((entity) => (
-            <tr key={`${entity.ref.kind}/${entity.ref.id}`} className="border-t border-border first:border-t-0">
+            <tr
+              key={`${entity.ref.kind}/${entity.ref.id}`}
+              className="border-t border-border first:border-t-0"
+            >
               <td className="w-[34%] truncate px-4 py-2.5">
                 <span className="flex items-center gap-2.5">
                   <StatusDot tone={edgeTone(entity)} label={entity.status} />
@@ -453,7 +520,9 @@ function ActivitySection({
             <td className="truncate px-4 py-2.5 text-muted-foreground">
               {alert.severity} · {alert.state}
             </td>
-            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={alert.triggeredAt} /></td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle">
+              <TimeAgo at={alert.triggeredAt} />
+            </td>
             <td className="w-36 px-4 py-1.5 text-right">
               {alert.state === "active" ? (
                 <Button size="sm" variant="outline" onClick={() => void acknowledge(alert)}>
@@ -465,7 +534,9 @@ function ActivitySection({
         ),
       })),
     ...sessions
-      .filter((session) => session.status === "waiting_for_user" && session.selectedNodeIds.includes(systemId))
+      .filter(
+        (session) => session.status === "waiting_for_user" && session.selectedNodeIds.includes(systemId),
+      )
       .map((session) => ({
         at: session.updatedAt,
         key: `session:${session.id}`,
@@ -480,9 +551,16 @@ function ActivitySection({
               </span>
             </td>
             <td className="truncate px-4 py-2.5 text-muted-foreground">waiting for your decision</td>
-            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={session.updatedAt} /></td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle">
+              <TimeAgo at={session.updatedAt} />
+            </td>
             <td className="w-36 px-4 py-1.5 text-right">
-              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/operator/$sessionId" params={{ sessionId: session.id }} />}>
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={<Link to="/operator/$sessionId" params={{ sessionId: session.id }} />}
+              >
                 Review
               </Button>
             </td>
@@ -503,7 +581,9 @@ function ActivitySection({
               </span>
             </td>
             <td className="truncate px-4 py-2.5 text-muted-foreground">{event.message ?? event.eventId}</td>
-            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={event.ts} /></td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle">
+              <TimeAgo at={event.ts} />
+            </td>
             <td className="w-36" />
           </>
         ),
@@ -533,7 +613,12 @@ function ActivitySection({
         <table className="w-full table-fixed text-left text-[13px]">
           <tbody>
             {items.slice(0, 10).map((item) => (
-              <tr key={item.key} className={["border-t border-border first:border-t-0", item.dim ? "opacity-50" : ""].join(" ")}>
+              <tr
+                key={item.key}
+                className={["border-t border-border first:border-t-0", item.dim ? "opacity-50" : ""].join(
+                  " ",
+                )}
+              >
                 {item.node}
               </tr>
             ))}
@@ -571,7 +656,10 @@ function MachineOverviewPage() {
   if (!system) {
     return (
       <Page>
-        <PageHeader title="Machine not found" meta={<span>No machine with id {systemId} has reported to this hub.</span>} />
+        <PageHeader
+          title="Machine not found"
+          meta={<span>No machine with id {systemId} has reported to this hub.</span>}
+        />
       </Page>
     )
   }
@@ -580,7 +668,9 @@ function MachineOverviewPage() {
   const otherPlugins = getAvailablePluginCapabilities(system).filter(
     (capability) => capability.pluginId !== SYSTEMD_PLUGIN_ID && capability.pluginId !== K8S_PLUGIN_ID,
   )
-  const terminalCount = terminals.filter((terminal) => terminal.kind === "interactive" && terminal.agentId === systemId).length
+  const terminalCount = terminals.filter(
+    (terminal) => terminal.kind === "interactive" && terminal.agentId === systemId,
+  ).length
 
   return (
     <Page>
@@ -615,11 +705,16 @@ function MachineOverviewPage() {
             ) : null}
             {latest ? (
               <span className="font-mono tabular">
-                load {latest.loadAvg1m.toFixed(2)} / {latest.loadAvg5m.toFixed(2)} / {latest.loadAvg15m.toFixed(2)}
+                load {latest.loadAvg1m.toFixed(2)} / {latest.loadAvg5m.toFixed(2)} /{" "}
+                {latest.loadAvg15m.toFixed(2)}
               </span>
             ) : null}
             {system.tailscaleIp ? <span className="font-mono">{system.tailscaleIp}</span> : null}
-            {latest ? <span className="text-subtle">updated <TimeAgo at={latest.timestamp} /></span> : null}
+            {latest ? (
+              <span className="text-subtle">
+                updated <TimeAgo at={latest.timestamp} />
+              </span>
+            ) : null}
             {otherPlugins.map((capability) => (
               <Link
                 key={capability.pluginId}

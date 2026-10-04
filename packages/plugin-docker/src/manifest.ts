@@ -14,12 +14,7 @@ export const manifest = {
   displayName: "Docker",
   version: "0.0.1",
   description: "Inspect Docker daemons, containers, images, networks, and volumes from Scout.",
-  permissions: [
-    "node:docker-socket",
-    "node:stream-logs",
-    "node:network-egress",
-    "node:read-files",
-  ],
+  permissions: ["node:docker-socket", "node:stream-logs", "node:network-egress", "node:read-files"],
   capabilities: DOCKER_CAPABILITIES,
   entityKinds: DOCKER_ENTITY_KIND_DEFINITIONS,
   metrics: DOCKER_METRIC_DEFINITIONS,

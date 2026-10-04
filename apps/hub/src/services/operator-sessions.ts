@@ -51,7 +51,11 @@ const terminalOf = (details: unknown): OperatorTerminalOutput | undefined => {
   if (typeof nodeId !== "string" || typeof terminalSessionId !== "string" || !Array.isArray(base64Chunks)) {
     return undefined
   }
-  return { nodeId, terminalSessionId, base64Chunks: base64Chunks.filter((chunk) => typeof chunk === "string") }
+  return {
+    nodeId,
+    terminalSessionId,
+    base64Chunks: base64Chunks.filter((chunk) => typeof chunk === "string"),
+  }
 }
 
 const toApprovalRequest = (sessionId: string, record: OperatorApprovalRecord): OperatorApprovalRequest => ({
@@ -128,7 +132,9 @@ export const projectSession = (
   let lastAnswer: AssistantMessage | undefined
   const pushAssistant = (message: AssistantMessage, entryId: string | undefined) => {
     const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("")
-    const thinking = message.content.flatMap((block) => (block.type === "thinking" ? [block.thinking] : [])).join("")
+    const thinking = message.content
+      .flatMap((block) => (block.type === "thinking" ? [block.thinking] : []))
+      .join("")
     const errorMessage =
       message.stopReason === "error" || message.stopReason === "aborted"
         ? (message.errorMessage ?? message.stopReason)
@@ -151,7 +157,11 @@ export const projectSession = (
       const slot = slots.get(block.id)
       const approvalId = approvalByCall.get(block.id)
       const output =
-        result !== undefined ? textOf(result.message.content) : slot?.output !== undefined ? slot.output : undefined
+        result !== undefined
+          ? textOf(result.message.content)
+          : slot?.output !== undefined
+            ? slot.output
+            : undefined
       const terminal = terminalOf(result?.message.details ?? slot?.details)
       timeline.push({
         kind: "tool",
@@ -179,7 +189,12 @@ export const projectSession = (
   for (const entry of view.entries) {
     const message = entry.model?.[0]
     if (entry.kind === "pi.user" && message?.role === "user") {
-      timeline.push({ kind: "user", entryId: String(entry.id), text: textOf(message.content), createdAt: message.timestamp })
+      timeline.push({
+        kind: "user",
+        entryId: String(entry.id),
+        text: textOf(message.content),
+        createdAt: message.timestamp,
+      })
     } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
       lastAnswer = message
       pushAssistant(message, String(entry.id))
@@ -209,14 +224,19 @@ const WATCH_COALESCE_MS = 50
 export interface OperatorSessionsShape {
   readonly list: () => Effect.Effect<ReadonlyArray<OperatorSessionSummary>, ManagementError>
   readonly get: (sessionId: string) => Effect.Effect<OperatorSessionDetail | null, ManagementError>
-  readonly create: (params: OperatorSessionCreateParams) => Effect.Effect<OperatorSessionDetail, ManagementError>
+  readonly create: (
+    params: OperatorSessionCreateParams,
+  ) => Effect.Effect<OperatorSessionDetail, ManagementError>
   readonly fork: (
     sessionId: string,
     entryId: string,
     title?: string,
   ) => Effect.Effect<OperatorSessionDetail, ManagementError>
   readonly setTitle: (sessionId: string, title: string) => Effect.Effect<void, ManagementError>
-  readonly setApprovalMode: (sessionId: string, mode: OperatorApprovalMode) => Effect.Effect<void, ManagementError>
+  readonly setApprovalMode: (
+    sessionId: string,
+    mode: OperatorApprovalMode,
+  ) => Effect.Effect<void, ManagementError>
   readonly setPlanMode: (sessionId: string, mode: OperatorPlanMode) => Effect.Effect<void, ManagementError>
   readonly setSkills: (
     sessionId: string,
@@ -225,7 +245,11 @@ export interface OperatorSessionsShape {
   readonly archive: (sessionId: string) => Effect.Effect<void, ManagementError>
   readonly delete: (sessionId: string) => Effect.Effect<void, ManagementError>
   /** Durably admit a prompt; a busy session queues it as a follow-up. Does not wait for the answer. */
-  readonly prompt: (sessionId: string, text: string, requestId?: string) => Effect.Effect<void, ManagementError>
+  readonly prompt: (
+    sessionId: string,
+    text: string,
+    requestId?: string,
+  ) => Effect.Effect<void, ManagementError>
   /** Abort the running answer and every tool call it owns; pending approvals become canceled. */
   readonly abort: (sessionId: string) => Effect.Effect<void, ManagementError>
   readonly resolveApproval: (params: {
@@ -257,9 +281,9 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
         })),
       )
 
-      const readIndex = durable("operator-read", (context) => harness.snapshot(OperatorSessionsDoc, context)).pipe(
-        Effect.map((index) => index?.sessions ?? {}),
-      )
+      const readIndex = durable("operator-read", (context) =>
+        harness.snapshot(OperatorSessionsDoc, context),
+      ).pipe(Effect.map((index) => index?.sessions ?? {}))
 
       const requireSession = (sessionId: string) =>
         Effect.gen(function* () {
@@ -291,7 +315,9 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
         view: ConversationView,
         approvals: Approvals | undefined,
       ) =>
-        available.pipe(Effect.map((state) => ({ ...projectSession(sessionId, meta, view, approvals), ...state })))
+        available.pipe(
+          Effect.map((state) => ({ ...projectSession(sessionId, meta, view, approvals), ...state })),
+        )
 
       const readView = (conversation: Conversation) =>
         durable("operator-read", async (context) => {
@@ -317,7 +343,9 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
 
       const requireDetail = (sessionId: string) =>
         get(sessionId).pipe(
-          Effect.flatMap((detail) => (detail === null ? Effect.fail(notFound(sessionId)) : Effect.succeed(detail))),
+          Effect.flatMap((detail) =>
+            detail === null ? Effect.fail(notFound(sessionId)) : Effect.succeed(detail),
+          ),
         )
 
       /**
@@ -358,7 +386,8 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             return yield* Effect.fail(
               new ManagementError({
                 code: "operator-model-missing",
-                message: "No operator model provider is configured (set a provider API key or SCOUT_OPERATOR_MODEL_PROVIDER)",
+                message:
+                  "No operator model provider is configured (set a provider API key or SCOUT_OPERATOR_MODEL_PROVIDER)",
               }),
             )
           }
@@ -399,7 +428,9 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           const { meta, conversation } = yield* requireSession(sessionId)
           const at = Number(entryId)
           if (!Number.isSafeInteger(at)) {
-            return yield* Effect.fail(new ManagementError({ code: "entry-not-found", message: `Entry ${entryId} not found` }))
+            return yield* Effect.fail(
+              new ManagementError({ code: "entry-not-found", message: `Entry ${entryId} not found` }),
+            )
           }
           const now = Date.now()
           const forked = yield* durable("operator-fork", (context) =>
@@ -487,7 +518,12 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           const { conversation } = yield* requireSession(sessionId)
           yield* durable("operator-prompt", (context) =>
             conversation.submit(
-              { type: "input", content: text, whenBusy: "followUp", ...(requestId === undefined ? {} : { requestId }) },
+              {
+                type: "input",
+                content: text,
+                whenBusy: "followUp",
+                ...(requestId === undefined ? {} : { requestId }),
+              },
               context,
             ),
           )
@@ -501,7 +537,10 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             harness.commit(async (tx) => {
               const record = (await tx.doc(OperatorApprovalsDoc, conversation.id)).requests[params.approvalId]
               if (record === undefined) {
-                throw new ManagementError({ code: "approval-not-found", message: `Approval ${params.approvalId} not found` })
+                throw new ManagementError({
+                  code: "approval-not-found",
+                  message: `Approval ${params.approvalId} not found`,
+                })
               }
               if (record.status !== "pending") {
                 throw new ManagementError({
@@ -547,7 +586,10 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
                       return
                     }
                     const approvals = sources.approvals?.value ?? undefined
-                    Queue.offerUnsafe(queue, { ...projectSession(sessionId, meta, sources.view.value, approvals), ...state })
+                    Queue.offerUnsafe(queue, {
+                      ...projectSession(sessionId, meta, sources.view.value, approvals),
+                      ...state,
+                    })
                   }
                   const schedule = () => {
                     timer ??= setTimeout(publish, WATCH_COALESCE_MS)

@@ -6,7 +6,11 @@ import { formatTimeAgo, formatTimeUntil } from "@/lib/format"
  */
 export function TimeAgo({ at, prefix = "" }: { at: number; prefix?: string }) {
   return (
-    <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()} suppressHydrationWarning>
+    <time
+      dateTime={new Date(at).toISOString()}
+      title={new Date(at).toLocaleString()}
+      suppressHydrationWarning
+    >
       {prefix}
       {formatTimeAgo(at)}
     </time>
@@ -16,7 +20,11 @@ export function TimeAgo({ at, prefix = "" }: { at: number; prefix?: string }) {
 /** "in 19h" for a future timestamp, with the same hydration tolerance as TimeAgo. */
 export function TimeUntil({ at, prefix = "" }: { at: number; prefix?: string }) {
   return (
-    <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()} suppressHydrationWarning>
+    <time
+      dateTime={new Date(at).toISOString()}
+      title={new Date(at).toLocaleString()}
+      suppressHydrationWarning
+    >
       {prefix}
       {formatTimeUntil(at)}
     </time>

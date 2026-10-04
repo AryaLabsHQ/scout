@@ -13,13 +13,16 @@ import type { StatusTone } from "@/components/status-dot"
 export type { SystemdScope, SystemdTimerState, SystemdUnitState }
 
 const asString = (value: unknown, fallback = ""): string => (typeof value === "string" ? value : fallback)
-const asNumber = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null)
-const asNullableString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null)
+const asNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null
+const asNullableString = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null
 const stateRecord = (entity: EntitySnapshot): Record<string, unknown> =>
   (typeof entity.state === "object" && entity.state !== null ? entity.state : {}) as Record<string, unknown>
 
 /** The manager that owns a service or timer entity, from its kind. */
-export const entityScope = (entity: EntitySnapshot): SystemdScope => systemdScopeOfKind(entity.ref.kind) ?? "system"
+export const entityScope = (entity: EntitySnapshot): SystemdScope =>
+  systemdScopeOfKind(entity.ref.kind) ?? "system"
 
 export const isServiceEntity = (entity: EntitySnapshot): boolean =>
   entity.ref.kind === SYSTEMD_SERVICE_KINDS.system || entity.ref.kind === SYSTEMD_SERVICE_KINDS.user
@@ -110,10 +113,12 @@ export const shortUnitName = (id: string): string => id.replace(/\.(service|time
  * user units existed still match; user units carry a `user:` prefix because
  * both managers can own a unit with the same name.
  */
-export const pinKey = (scope: SystemdScope, unitId: string): string => (scope === "user" ? `user:${unitId}` : unitId)
+export const pinKey = (scope: SystemdScope, unitId: string): string =>
+  scope === "user" ? `user:${unitId}` : unitId
 
 /** The `systemctl` prefix for a scope, for confirm dialogs and hints. */
-export const systemctlFor = (scope: SystemdScope): string => (scope === "user" ? "systemctl --user" : "systemctl")
+export const systemctlFor = (scope: SystemdScope): string =>
+  scope === "user" ? "systemctl --user" : "systemctl"
 
 /** Failed units first, then by name. */
 export const byFailedThenName = (a: EntitySnapshot, b: EntitySnapshot): number =>

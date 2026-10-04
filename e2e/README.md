@@ -35,12 +35,12 @@ runs the Scout agent from the mounted source tree at `/opt/scout`.
 
 Each node exercises a different subset of the agent's collectors.
 
-| Node            | Capabilities                                  | What it tests                          |
-| --------------- | --------------------------------------------- | -------------------------------------- |
-| `node-server`   | system, network, process, smart, systemd      | Typical app server. systemd management |
-| `node-k3s`      | + k8s (single-node cluster)                   | K8s collector, scale/restart actions   |
-| `node-docker`   | + docker (Docker-in-Docker)                   | Docker collector + management          |
-| `node-minimal`  | system, network (most capabilities absent)    | Capability auto-discovery fallback     |
+| Node           | Capabilities                               | What it tests                          |
+| -------------- | ------------------------------------------ | -------------------------------------- |
+| `node-server`  | system, network, process, smart, systemd   | Typical app server. systemd management |
+| `node-k3s`     | + k8s (single-node cluster)                | K8s collector, scale/restart actions   |
+| `node-docker`  | + docker (Docker-in-Docker)                | Docker collector + management          |
+| `node-minimal` | system, network (most capabilities absent) | Capability auto-discovery fallback     |
 
 ## Usage
 
@@ -159,7 +159,7 @@ so the host can read/write agent state without going through `docker exec`.
 ```
 
 `run-agent.sh` runs inside each container and uses `exec bun` so its shell
-PID becomes bun's PID, which is written to the pidfile *before* exec. This
+PID becomes bun's PID, which is written to the pidfile _before_ exec. This
 gives precise process targeting for stop/restart without pattern-matching.
 
 `.scout/` is gitignored.

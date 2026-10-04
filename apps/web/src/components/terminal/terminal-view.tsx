@@ -10,21 +10,9 @@ export interface TerminalViewProps {
   onReady?: () => void
 }
 
-export function TerminalView({
-  agentId,
-  mode,
-  className,
-}: TerminalViewProps) {
+export function TerminalView({ agentId, mode, className }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   useTerminal({ containerRef, agentId, mode })
 
-  return (
-    <div
-      ref={containerRef}
-      className={cn(
-        "h-full w-full overflow-hidden bg-[#0d0d0d]",
-        className,
-      )}
-    />
-  )
+  return <div ref={containerRef} className={cn("h-full w-full overflow-hidden bg-[#0d0d0d]", className)} />
 }

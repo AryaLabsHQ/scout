@@ -42,8 +42,7 @@ const makeDeps = (
 
     return result instanceof Error ? Effect.fail(result) : Effect.succeed(result)
   },
-  followLogs: () =>
-    streams?.logs ?? Stream.fail(new Error("unexpected followLogs call")),
+  followLogs: () => streams?.logs ?? Stream.fail(new Error("unexpected followLogs call")),
 })
 
 describe("docker plugin", () => {
@@ -59,10 +58,7 @@ describe("docker plugin", () => {
       ]),
     )
     expect(decoded.actions.map((action) => action.id)).toEqual(
-      expect.arrayContaining([
-        DOCKER_ACTION_IDS.startContainer,
-        DOCKER_ACTION_IDS.stopContainer,
-      ]),
+      expect.arrayContaining([DOCKER_ACTION_IDS.startContainer, DOCKER_ACTION_IDS.stopContainer]),
     )
   })
 
@@ -85,9 +81,7 @@ describe("docker plugin", () => {
       }),
     )
 
-    await expect(
-      Effect.runPromise(plugin.detect({ nodeId: "node-1", now: 1 })),
-    ).resolves.toEqual({
+    await expect(Effect.runPromise(plugin.detect({ nodeId: "node-1", now: 1 }))).resolves.toEqual({
       pluginId: DOCKER_PLUGIN_ID,
       version: manifest.version,
       status: "available",
@@ -102,9 +96,7 @@ describe("docker plugin", () => {
       }),
     )
 
-    await expect(
-      Effect.runPromise(plugin.detect({ nodeId: "node-1", now: 1 })),
-    ).resolves.toMatchObject({
+    await expect(Effect.runPromise(plugin.detect({ nodeId: "node-1", now: 1 }))).resolves.toMatchObject({
       pluginId: DOCKER_PLUGIN_ID,
       status: "unsupported",
       reason: "docker CLI not found on node",
@@ -393,9 +385,7 @@ describe("docker plugin", () => {
       }),
     )
 
-    const result = await Effect.runPromise(
-      plugin.collect!({ nodeId: "node-1", now: 42 }),
-    )
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 42 }))
 
     expect(result.entities).toHaveLength(9)
 
@@ -574,9 +564,9 @@ describe("docker plugin", () => {
       }),
     )
 
-    await expect(
-      Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 42 })),
-    ).resolves.toEqual({ entities: [] })
+    await expect(Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 42 }))).resolves.toEqual({
+      entities: [],
+    })
   })
 
   it("exports JSON-rendered screens for the web", async () => {
@@ -658,21 +648,29 @@ describe("docker plugin", () => {
     } as const
 
     const started = await Effect.runPromise(
-      executePluginAction(pkg, { nodeId: "node-1", permissions: new Set(manifest.permissions) }, {
-        pluginId: DOCKER_PLUGIN_ID,
-        actionId: DOCKER_ACTION_IDS.startContainer,
-        target,
-        input: {},
-      }),
+      executePluginAction(
+        pkg,
+        { nodeId: "node-1", permissions: new Set(manifest.permissions) },
+        {
+          pluginId: DOCKER_PLUGIN_ID,
+          actionId: DOCKER_ACTION_IDS.startContainer,
+          target,
+          input: {},
+        },
+      ),
     )
 
     const inspected = await Effect.runPromise(
-      executePluginAction(pkg, { nodeId: "node-1", permissions: new Set(manifest.permissions) }, {
-        pluginId: DOCKER_PLUGIN_ID,
-        actionId: DOCKER_ACTION_IDS.inspectContainer,
-        target,
-        input: {},
-      }),
+      executePluginAction(
+        pkg,
+        { nodeId: "node-1", permissions: new Set(manifest.permissions) },
+        {
+          pluginId: DOCKER_PLUGIN_ID,
+          actionId: DOCKER_ACTION_IDS.inspectContainer,
+          target,
+          input: {},
+        },
+      ),
     )
 
     expect(started.output).toEqual({ stdout: "cont-web" })
@@ -692,9 +690,7 @@ describe("docker plugin", () => {
       makeDeps(
         {},
         {
-          logs: Stream.fromIterable([
-            { lines: ["line one", "line two"], ts: 1 },
-          ]),
+          logs: Stream.fromIterable([{ lines: ["line one", "line two"], ts: 1 }]),
         },
       ),
     )
@@ -711,19 +707,27 @@ describe("docker plugin", () => {
     } as const
 
     const logStream = await Effect.runPromise(
-      openPluginStream(pkg, { nodeId: "node-1", permissions: new Set(manifest.permissions) }, {
-        pluginId: DOCKER_PLUGIN_ID,
-        streamId: "container.logs",
-        target,
-        input: { tail: 50 },
-      }),
+      openPluginStream(
+        pkg,
+        { nodeId: "node-1", permissions: new Set(manifest.permissions) },
+        {
+          pluginId: DOCKER_PLUGIN_ID,
+          streamId: "container.logs",
+          target,
+          input: { tail: 50 },
+        },
+      ),
     )
 
     const logChunks: Array<unknown> = []
 
-    await Effect.runPromise(Stream.runForEach(logStream, (chunk) => Effect.sync(() => {
-      logChunks.push(chunk)
-    })))
+    await Effect.runPromise(
+      Stream.runForEach(logStream, (chunk) =>
+        Effect.sync(() => {
+          logChunks.push(chunk)
+        }),
+      ),
+    )
 
     expect(logChunks).toEqual([{ lines: ["line one", "line two"], ts: 1 }])
   })

@@ -30,9 +30,7 @@ const TestAppLayer = Layer.mergeAll(
   MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
   AgentRegistry.layer.pipe(Layer.provide(TestDatabaseLayer)),
   Retention.layer.pipe(Layer.provide(TestDatabaseLayer)),
-  AlertEngine.layer.pipe(
-    Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer)),
-  ),
+  AlertEngine.layer.pipe(Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer))),
   PluginRegistry.layer,
 )
 
@@ -52,9 +50,7 @@ const DEFAULT_CAPABILITIES: AgentCapabilities = {
 // registry.register() boundary.
 const MOCK_HUB_AGENT_CLIENT = {} as HubAgentClient
 
-const HttpInfraLayer = BunHttpServer.layerTest.pipe(
-  Layer.provideMerge(TestAppLayer),
-)
+const HttpInfraLayer = BunHttpServer.layerTest.pipe(Layer.provideMerge(TestAppLayer))
 
 function makeAgentInfo(id: string): AgentInfo {
   return {
@@ -118,12 +114,8 @@ describe("GET /health", () => {
       yield* AppRoutes.pipe(HttpRouter.serve, Layer.build)
 
       const ingestion = yield* MetricsIngestion
-      yield* ingestion.ingest(
-        makeCoreMetricsPayload("health-sys-1", { timestamp: Date.now() }),
-      )
-      yield* ingestion.ingest(
-        makeCoreMetricsPayload("health-sys-2", { timestamp: Date.now() }),
-      )
+      yield* ingestion.ingest(makeCoreMetricsPayload("health-sys-1", { timestamp: Date.now() }))
+      yield* ingestion.ingest(makeCoreMetricsPayload("health-sys-2", { timestamp: Date.now() }))
 
       const response = yield* HttpClient.get("/health")
       const body = (yield* response.json) as Record<string, unknown>

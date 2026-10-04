@@ -21,13 +21,7 @@ import { TopBar } from "@/components/shell/top-bar"
 import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { OperatorShell } from "@/components/operator/operator-shell"
 
 import appCss from "@/styles.css?url"
@@ -99,16 +93,10 @@ function OperatorDrawer() {
         if (!open) closeDrawer()
       }}
     >
-      <SheetContent
-        side="right"
-        showCloseButton
-        className="w-full max-w-none p-0 sm:max-w-xl"
-      >
+      <SheetContent side="right" showCloseButton className="w-full max-w-none p-0 sm:max-w-xl">
         <SheetHeader className="sr-only">
           <SheetTitle>Operator Drawer</SheetTitle>
-          <SheetDescription>
-            Session list and operator workbench drawer.
-          </SheetDescription>
+          <SheetDescription>Session list and operator workbench drawer.</SheetDescription>
         </SheetHeader>
         <OperatorShell variant="drawer" className="h-full" />
       </SheetContent>

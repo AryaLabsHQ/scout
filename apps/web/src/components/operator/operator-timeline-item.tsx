@@ -10,24 +10,12 @@ import {
   HelpCircleIcon,
   Shield01Icon,
 } from "@hugeicons/core-free-icons"
-import type {
-  OperatorApprovalRequest,
-  OperatorTerminalOutput,
-  OperatorTimelineItem,
-} from "@scout/shared"
+import type { OperatorApprovalRequest, OperatorTerminalOutput, OperatorTimelineItem } from "@scout/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { formatTimeAgo } from "@/lib/format"
 
@@ -187,10 +175,17 @@ function UserMessageCard({
         <span>·</span>
         <Timestamp at={item.createdAt} className="text-xs text-subtle" />
         <div className="ml-auto">
-          <HoverActions forkEntryId={item.entryId} content={item.text} isForking={isForking} onFork={onFork} />
+          <HoverActions
+            forkEntryId={item.entryId}
+            content={item.text}
+            isForking={isForking}
+            onFork={onFork}
+          />
         </div>
       </div>
-      <p className="whitespace-pre-wrap border-l-2 border-border-strong pl-3 text-sm text-foreground">{item.text}</p>
+      <p className="whitespace-pre-wrap border-l-2 border-border-strong pl-3 text-sm text-foreground">
+        {item.text}
+      </p>
     </div>
   )
 }
@@ -297,7 +292,13 @@ function ToolCallCard({
     <div className="space-y-2">
       <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border border-border">
         <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-raised">
-          <span className={cn("inline-block size-2 shrink-0 rounded-full", TONE_BG[tone], isActive && !awaitingApproval && "animate-pulse")} />
+          <span
+            className={cn(
+              "inline-block size-2 shrink-0 rounded-full",
+              TONE_BG[tone],
+              isActive && !awaitingApproval && "animate-pulse",
+            )}
+          />
           <span className="font-mono">{item.name}</span>
           {label ? <span className="truncate text-muted-foreground">{label}</span> : null}
           {item.nodeIds.length > 0 ? (
@@ -307,7 +308,11 @@ function ToolCallCard({
             {statusLabel}
             <span>·</span>
             <Timestamp at={item.createdAt} className="text-xs text-subtle" />
-            <HugeiconsIcon icon={ArrowDown01Icon} size={14} className={cn("transition-transform", open && "rotate-180")} />
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={14}
+              className={cn("transition-transform", open && "rotate-180")}
+            />
           </span>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -383,7 +388,8 @@ export function OperatorApprovalCard({
   const nodes = approval.affectedNodeIds.join(", ")
 
   if (approval.status !== "pending") {
-    const verb = approval.status === "approved" ? "Approved" : approval.status === "rejected" ? "Rejected" : "Canceled"
+    const verb =
+      approval.status === "approved" ? "Approved" : approval.status === "rejected" ? "Rejected" : "Canceled"
     return (
       <div className="flex flex-wrap items-center gap-2 pl-1 text-xs text-subtle">
         <HugeiconsIcon icon={Shield01Icon} size={13} />
@@ -502,7 +508,9 @@ function ClarificationCard({
           <Textarea
             value={freeText}
             disabled={isResolvingApproval}
-            placeholder={question && question.options.length > 0 ? "Or type your own answer..." : "Type your answer..."}
+            placeholder={
+              question && question.options.length > 0 ? "Or type your own answer..." : "Type your answer..."
+            }
             onChange={(event) => setFreeText(event.target.value)}
             className="min-h-12"
           />

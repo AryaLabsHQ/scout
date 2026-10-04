@@ -13,7 +13,12 @@ const USER_SCOPE_NOTE =
   "This is a user unit: the agent changes it through its own user manager (systemctl --user), which needs no polkit grant."
 
 const errorMessage = (error: unknown): string => {
-  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
     return error.message
   }
   return String(error)
@@ -68,7 +73,11 @@ export function useUnitAction(systemId: string, hostname: string) {
     if (!confirmed) return
     try {
       const result = await runAction({
-        payload: { agentId: systemId, pluginId: SYSTEMD_PLUGIN_ID, actionId: SYSTEMD_ACTION_IDS.daemonReload },
+        payload: {
+          agentId: systemId,
+          pluginId: SYSTEMD_PLUGIN_ID,
+          actionId: SYSTEMD_ACTION_IDS.daemonReload,
+        },
       })
       if (result.success) toast.success(result.summary ?? "systemd reloaded")
       else toast.error(result.summary ?? "daemon-reload failed")

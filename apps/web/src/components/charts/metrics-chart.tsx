@@ -39,13 +39,7 @@ function formatTooltipValue(value: unknown, unit: Unit): string {
   return String(n)
 }
 
-export function MetricsChart({
-  data,
-  dataKeys,
-  unit = "%",
-  height = 200,
-  type = "area",
-}: MetricsChartProps) {
+export function MetricsChart({ data, dataKeys, unit = "%", height = 200, type = "area" }: MetricsChartProps) {
   const gradientIds = dataKeys.map((dk) => `grad-${dk.key}-${dk.color.replace("#", "")}`)
 
   const yFormatter = (v: number) => formatYAxis(v, unit)
@@ -99,7 +93,9 @@ export function MetricsChart({
               color: "var(--popover-foreground)",
             }}
           />
-          {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />}
+          {dataKeys.length > 1 && (
+            <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />
+          )}
           {dataKeys.map((dk) => (
             <Line
               key={dk.key}
@@ -140,7 +136,9 @@ export function MetricsChart({
             color: "var(--popover-foreground)",
           }}
         />
-        {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />}
+        {dataKeys.length > 1 && (
+          <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />
+        )}
         {dataKeys.map((dk, i) => (
           <Area
             key={dk.key}

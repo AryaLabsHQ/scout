@@ -14,7 +14,10 @@ export const defaultSessionTitle = (selectedCount: number): string =>
     : "Operator session"
 
 /** Human labels and status-dot tones for session states; never show the raw enum. */
-export const SESSION_STATUS: Record<OperatorSessionStatus, { readonly label: string; readonly tone: "ok" | "warn" | "err" | "off" }> = {
+export const SESSION_STATUS: Record<
+  OperatorSessionStatus,
+  { readonly label: string; readonly tone: "ok" | "warn" | "err" | "off" }
+> = {
   idle: { label: "Idle", tone: "off" },
   running: { label: "Working", tone: "ok" },
   waiting_for_user: { label: "Awaiting your decision", tone: "warn" },

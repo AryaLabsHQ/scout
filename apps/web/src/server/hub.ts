@@ -6,8 +6,7 @@ import { getCookie, getRequestHeader } from "@tanstack/react-start/server"
  * never see it — they reach the hub same-origin through the reverse proxy.
  */
 export const HUB_URL =
-  (typeof process !== "undefined" && process.env["SCOUT_HUB_URL"]) ||
-  "http://127.0.0.1:3001"
+  (typeof process !== "undefined" && process.env["SCOUT_HUB_URL"]) || "http://127.0.0.1:3001"
 
 const ACCESS_JWT_HEADER = "cf-access-jwt-assertion"
 const ACCESS_JWT_COOKIE = "CF_Authorization"

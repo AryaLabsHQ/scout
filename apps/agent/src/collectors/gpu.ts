@@ -31,11 +31,17 @@ export function parseNvidiaSmiOutput(csv: string): GpuMetrics[] {
     const trimmed = line.trim()
     if (!trimmed) continue
 
-    const parts = trimmed.split(",").map(p => p.trim())
+    const parts = trimmed.split(",").map((p) => p.trim())
     if (parts.length < 7) continue
 
     const [name, indexStr, usageStr, memUsedStr, memTotalStr, tempStr, powerStr] = parts as [
-      string, string, string, string, string, string, string
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
     ]
 
     const index = Number(indexStr)
@@ -48,9 +54,12 @@ export function parseNvidiaSmiOutput(csv: string): GpuMetrics[] {
     // Skip malformed lines
     if (
       !name ||
-      isNaN(index) || isNaN(usage) ||
-      isNaN(memUsedMB) || isNaN(memTotalMB) ||
-      isNaN(temperature) || isNaN(powerWatts)
+      isNaN(index) ||
+      isNaN(usage) ||
+      isNaN(memUsedMB) ||
+      isNaN(memTotalMB) ||
+      isNaN(temperature) ||
+      isNaN(powerWatts)
     ) {
       continue
     }
@@ -82,9 +91,7 @@ export const gpuCollector: CollectorPlugin = {
       return proc.exitCode === 0
     },
     catch: () => new Error("which nvidia-smi failed"),
-  }).pipe(
-    Effect.orElseSucceed(() => false),
-  ),
+  }).pipe(Effect.orElseSucceed(() => false)),
   collect: Effect.gen(function* () {
     const output = yield* runCommand("nvidia-smi", [
       "--query-gpu=name,index,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",

@@ -24,7 +24,7 @@ describe("parsePsOutput", () => {
 
   it("parses pid correctly", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const pids = result.map(p => p.pid)
+    const pids = result.map((p) => p.pid)
     expect(pids).toContain(1)
     expect(pids).toContain(456)
     expect(pids).toContain(2001)
@@ -32,38 +32,38 @@ describe("parsePsOutput", () => {
 
   it("parses user correctly", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const nginx = result.find(p => p.pid === 456)
+    const nginx = result.find((p) => p.pid === 456)
     expect(nginx?.user).toBe("www-data")
   })
 
   it("parses cpuPercent correctly", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const python = result.find(p => p.pid === 2001)
+    const python = result.find((p) => p.pid === 2001)
     expect(python?.cpuPercent).toBe(15.2)
   })
 
   it("parses memPercent correctly", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const postgres = result.find(p => p.pid === 789)
+    const postgres = result.find((p) => p.pid === 789)
     expect(postgres?.memPercent).toBe(3.4)
   })
 
   it("converts RSS kB to bytes", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
     // nginx: RSS = 98304 kB → 98304 * 1024 bytes
-    const nginx = result.find(p => p.pid === 456)
+    const nginx = result.find((p) => p.pid === 456)
     expect(nginx?.memBytes).toBe(98304 * 1024)
   })
 
   it("parses command name (first token)", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const nginx = result.find(p => p.pid === 456)
+    const nginx = result.find((p) => p.pid === 456)
     expect(nginx?.name).toBe("/usr/sbin/nginx")
   })
 
   it("handles kernel threads (RSS = 0)", () => {
     const result = parsePsOutput(PS_AUX_OUTPUT)
-    const kthread = result.find(p => p.pid === 2)
+    const kthread = result.find((p) => p.pid === 2)
     expect(kthread).toBeDefined()
     expect(kthread?.memBytes).toBe(0)
   })

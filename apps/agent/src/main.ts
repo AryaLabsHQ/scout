@@ -23,9 +23,8 @@ const LogLevelLayer = Layer.unwrap(
   }),
 )
 
-const JsonLogLayer = process.env["NODE_ENV"] === "production"
-  ? Logger.layer([Logger.consoleJson])
-  : Layer.empty
+const JsonLogLayer =
+  process.env["NODE_ENV"] === "production" ? Logger.layer([Logger.consoleJson]) : Layer.empty
 
 const LoggingLayer = Layer.merge(LogLevelLayer, JsonLogLayer)
 
@@ -50,9 +49,7 @@ const program = Effect.gen(function* () {
   const reporter = yield* Reporter
   yield* reporter.run.pipe(Effect.forkDetach)
 
-  yield* Effect.logInfo("Agent running").pipe(
-    Effect.annotateLogs({ hostname: config.hostname }),
-  )
+  yield* Effect.logInfo("Agent running").pipe(Effect.annotateLogs({ hostname: config.hostname }))
 
   yield* Effect.never
 })
@@ -60,17 +57,11 @@ const program = Effect.gen(function* () {
 // ── Layer stack ───────────────────────────────────────────────────────────────
 
 const PluginRegistryLayer = AgentPluginRegistry.layer
-const PluginHostLayer = AgentPluginHost.layer.pipe(
-  Layer.provide(PluginRegistryLayer),
-)
-const CollectorRegistryLayer = CollectorRegistry.layer.pipe(
-  Layer.provide(PluginHostLayer),
-)
+const PluginHostLayer = AgentPluginHost.layer.pipe(Layer.provide(PluginRegistryLayer))
+const CollectorRegistryLayer = CollectorRegistry.layer.pipe(Layer.provide(PluginHostLayer))
 
 // HubAgentHandlersLive needs no services from the app layer itself
-const HandlersLayer = HubAgentHandlersLive.pipe(
-  Layer.provide(PluginHostLayer),
-)
+const HandlersLayer = HubAgentHandlersLive.pipe(Layer.provide(PluginHostLayer))
 
 // HubConnectionLayer needs: AgentConfig, CollectorRegistry, PluginHost, HubAgentRpcs handlers
 const ConnectionLayer = HubConnectionLayer.pipe(
@@ -100,6 +91,4 @@ const MainProgram = program.pipe(
   Effect.provide(LoggingLayer),
 ) as Effect.Effect<void, unknown, never>
 
-BunRuntime.runMain(
-  MainProgram,
-)
+BunRuntime.runMain(MainProgram)

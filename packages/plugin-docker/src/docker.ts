@@ -34,14 +34,8 @@ export interface CommandResult {
 }
 
 export interface DockerDependencies {
-  readonly exec: (
-    command: string,
-    args: ReadonlyArray<string>,
-  ) => Effect.Effect<CommandResult, Error>
-  readonly followLogs: (
-    containerId: string,
-    tail: number,
-  ) => Stream.Stream<LogChunk, Error>
+  readonly exec: (command: string, args: ReadonlyArray<string>) => Effect.Effect<CommandResult, Error>
+  readonly followLogs: (containerId: string, tail: number) => Stream.Stream<LogChunk, Error>
 }
 
 interface DockerInfo {
@@ -198,8 +192,7 @@ const makeDefaultDependencies = (): DockerDependencies => ({
           exitCode,
         }
       },
-      catch: (error) =>
-        error instanceof Error ? error : new Error(String(error)),
+      catch: (error) => (error instanceof Error ? error : new Error(String(error))),
     }),
   followLogs: (containerId, tail) =>
     followProcessLines("docker", [
@@ -246,9 +239,7 @@ export const parseDockerIdList = (output: string): ReadonlyArray<string> => {
   return ids
 }
 
-export const parseDockerStatsLines = (
-  output: string,
-): ReadonlyArray<DockerContainerStats> =>
+export const parseDockerStatsLines = (output: string): ReadonlyArray<DockerContainerStats> =>
   output
     .split("\n")
     .map((line) => line.trim())
@@ -275,23 +266,15 @@ const dockerEntityRef = (
   id,
 })
 
-const normalizeLabels = (
-  labels: Record<string, string> | null | undefined,
-): Record<string, string> => {
+const normalizeLabels = (labels: Record<string, string> | null | undefined): Record<string, string> => {
   if (labels === null || labels === undefined) return {}
 
-  const entries = Object.entries(labels).filter(
-    ([key, value]) => key.length > 0 && typeof value === "string",
-  )
+  const entries = Object.entries(labels).filter(([key, value]) => key.length > 0 && typeof value === "string")
 
   return entries.length > 0 ? Object.fromEntries(entries) : {}
 }
 
-const trimCommandFailure = (
-  command: string,
-  args: ReadonlyArray<string>,
-  result: CommandResult,
-): string => {
+const trimCommandFailure = (command: string, args: ReadonlyArray<string>, result: CommandResult): string => {
   const detail = result.stderr.trim() || result.stdout.trim() || "unknown error"
   return `${command} ${args.join(" ")} exited with ${result.exitCode}: ${detail}`
 }
@@ -304,11 +287,7 @@ const runDocker = (
   args: ReadonlyArray<string>,
 ): Effect.Effect<CommandResult, Error> => deps.exec("docker", args)
 
-const failExecution = (
-  code: string,
-  message: string,
-  opts?: { actionId?: string; streamId?: string },
-) =>
+const failExecution = (code: string, message: string, opts?: { actionId?: string; streamId?: string }) =>
   new PluginExecutionError({
     code,
     message,
@@ -376,16 +355,11 @@ const runChecked = (
           ),
     ),
     Effect.mapError((error) =>
-      error instanceof PluginExecutionError
-        ? error
-        : failExecution("command-error", String(error), opts),
+      error instanceof PluginExecutionError ? error : failExecution("command-error", String(error), opts),
     ),
   )
 
-const containerUptimeSeconds = (
-  container: DockerContainerInspect,
-  now: number,
-): number => {
+const containerUptimeSeconds = (container: DockerContainerInspect, now: number): number => {
   const startedAt = parseTimestampMs(container.State?.StartedAt)
   const createdAt = parseTimestampMs(container.Created)
   const basis = startedAt ?? createdAt
@@ -393,9 +367,7 @@ const containerUptimeSeconds = (
   return Math.max(0, Math.floor((now - basis) / 1000))
 }
 
-const getDockerInfo = (
-  deps: DockerDependencies,
-): Effect.Effect<DockerInfo, Error> =>
+const getDockerInfo = (deps: DockerDependencies): Effect.Effect<DockerInfo, Error> =>
   runDocker(deps, ["info", "--format", "{{json .}}"]).pipe(
     Effect.flatMap((result) =>
       result.exitCode === 0
@@ -447,8 +419,7 @@ const emptyInventory = (): PluginCollectionResult => ({
 
 const daemonStatus = (): string => "running"
 
-const containerStatus = (container: DockerContainerInspect): string =>
-  container.State?.Status ?? "unknown"
+const containerStatus = (container: DockerContainerInspect): string => container.State?.Status ?? "unknown"
 
 const volumeStatus = (volume: DockerVolumeInspect): string =>
   (volume.UsageData?.RefCount ?? 0) > 0 ? "in-use" : "available"
@@ -472,13 +443,7 @@ const getTargetId = (
 ): Effect.Effect<string, PluginExecutionError> => {
   const entity = target.entity
   if (entity?.kind !== kind || entity.id.length === 0) {
-    return Effect.fail(
-      failExecution(
-        "invalid-target",
-        `Docker operation requires a ${kind} target`,
-        opts,
-      ),
-    )
+    return Effect.fail(failExecution("invalid-target", `Docker operation requires a ${kind} target`, opts))
   }
   return Effect.succeed(entity.id)
 }
@@ -704,15 +669,13 @@ const collectInventory = (
         startedAt: container.State?.StartedAt,
         finishedAt: container.State?.FinishedAt,
         healthStatus: container.State?.Health?.Status,
-        networks: Object.entries(container.NetworkSettings?.Networks ?? {}).map(
-          ([name, network]) => ({
-            name,
-            networkId: network.NetworkID,
-            ipAddress: network.IPAddress,
-            gateway: network.Gateway,
-            aliases: network.Aliases ?? [],
-          }),
-        ),
+        networks: Object.entries(container.NetworkSettings?.Networks ?? {}).map(([name, network]) => ({
+          name,
+          networkId: network.NetworkID,
+          ipAddress: network.IPAddress,
+          gateway: network.Gateway,
+          aliases: network.Aliases ?? [],
+        })),
       },
       relationships: dedupeRelationships([
         relationship("managed-by", daemonRef),
@@ -726,7 +689,12 @@ const collectInventory = (
         ),
         ...Object.values(container.NetworkSettings?.Networks ?? {}).flatMap((network) =>
           network.NetworkID !== undefined && networkRefs.has(network.NetworkID)
-            ? [relationship("attached-to-network", dockerEntityRef(DOCKER_ENTITY_KINDS.network, nodeId, network.NetworkID))]
+            ? [
+                relationship(
+                  "attached-to-network",
+                  dockerEntityRef(DOCKER_ENTITY_KINDS.network, nodeId, network.NetworkID),
+                ),
+              ]
             : [],
         ),
       ]),
@@ -863,9 +831,7 @@ export const createDockerAgentPlugin = (
         onFailure: (error: Error) =>
           Effect.succeed(
             unsupportedCapability(
-              isMissingDockerCommand(error)
-                ? "docker CLI not found on node"
-                : String(error.message || error),
+              isMissingDockerCommand(error) ? "docker CLI not found on node" : String(error.message || error),
             ),
           ),
         onSuccess: (versionResult) => {
@@ -944,10 +910,7 @@ export const createDockerAgentPlugin = (
                   volumes,
                   networks,
                   new Map(
-                    stats
-                      .flatMap((entry) =>
-                        entry.ID !== undefined ? [[entry.ID, entry] as const] : [],
-                      ),
+                    stats.flatMap((entry) => (entry.ID !== undefined ? [[entry.ID, entry] as const] : [])),
                   ),
                 ),
               ),

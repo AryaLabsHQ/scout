@@ -26,11 +26,7 @@ import {
   type PluginCapability,
   type PluginCollectionResult,
 } from "@scout/plugin-sdk"
-import {
-  HubClient,
-  type HubConnectionTiming,
-  makeHubConnectionLayer,
-} from "../../src/rpc/connection.js"
+import { HubClient, type HubConnectionTiming, makeHubConnectionLayer } from "../../src/rpc/connection.js"
 import { CollectorRegistry } from "../../src/services/collector-registry.js"
 import { AgentPluginHost } from "../../src/services/plugin-host.js"
 
@@ -242,9 +238,9 @@ describe("HubConnectionLayer", () => {
       const port = hub.port
 
       const agentScope = yield* Scope.make()
-      yield* Layer.build(
-        agentLayer(port, { retryBase: "100 millis", retryCap: "5 seconds" }),
-      ).pipe(Scope.provide(agentScope))
+      yield* Layer.build(agentLayer(port, { retryBase: "100 millis", retryCap: "5 seconds" })).pipe(
+        Scope.provide(agentScope),
+      )
       yield* waitUntil("first registration", () => state.connects.length === 1, 3_000)
 
       const reconnects: Array<number> = []
@@ -335,9 +331,7 @@ describe("HubConnectionLayer", () => {
       const program = Effect.gen(function* () {
         const hub = yield* startHub(state, 0)
         const agentScope = yield* Scope.make()
-        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(
-          Scope.provide(agentScope),
-        )
+        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(Scope.provide(agentScope))
         yield* waitUntil("registration", () => state.connects.length === 1, 3_000)
 
         // Taking one batch cancels the stream, as a closed browser view does.
@@ -361,9 +355,7 @@ describe("HubConnectionLayer", () => {
       const program = Effect.gen(function* () {
         const hub = yield* startHub(state, 0)
         const agentScope = yield* Scope.make()
-        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(
-          Scope.provide(agentScope),
-        )
+        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(Scope.provide(agentScope))
         yield* waitUntil("registration", () => state.connects.length === 1, 3_000)
 
         let pid: number | undefined
@@ -391,19 +383,16 @@ describe("HubConnectionLayer", () => {
       const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
       const stuckStream: OpenLogStream = () =>
         Effect.succeed(
-          Stream.concat(
-            Stream.succeed<LogChunk>({ lines: ["stuck"], ts: 0 }),
-            Stream.never,
-          ).pipe(Stream.ensuring(Effect.never)),
+          Stream.concat(Stream.succeed<LogChunk>({ lines: ["stuck"], ts: 0 }), Stream.never).pipe(
+            Stream.ensuring(Effect.never),
+          ),
         )
 
       const program = Effect.gen(function* () {
         const first = yield* startHub(state, 0)
         const port = first.port
         const agentScope = yield* Scope.make()
-        yield* Layer.build(agentLayer(port, undefined, stuckStream)).pipe(
-          Scope.provide(agentScope),
-        )
+        yield* Layer.build(agentLayer(port, undefined, stuckStream)).pipe(Scope.provide(agentScope))
         yield* waitUntil("first registration", () => state.connects.length === 1, 3_000)
 
         let received = false
@@ -418,11 +407,7 @@ describe("HubConnectionLayer", () => {
         yield* Fiber.interrupt(reader)
         const second = yield* startHub(state, port)
         // Bounded by the 1s teardown timeout plus a retry.
-        yield* waitUntil(
-          "registration with the restarted hub",
-          () => state.connects.length === 2,
-          4_000,
-        )
+        yield* waitUntil("registration with the restarted hub", () => state.connects.length === 2, 4_000)
 
         yield* Scope.close(agentScope, Exit.void)
         yield* Scope.close(second.scope, Exit.void)

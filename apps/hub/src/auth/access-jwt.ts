@@ -106,9 +106,7 @@ const importJwks = (document: unknown): Effect.Effect<ReadonlyMap<string, Crypto
     return imported
   })
 
-export const makeAccessKeyStore = (
-  options: AccessKeyStoreOptions,
-): Effect.Effect<AccessKeyStore> =>
+export const makeAccessKeyStore = (options: AccessKeyStoreOptions): Effect.Effect<AccessKeyStore> =>
   Effect.gen(function* () {
     const maxAge = Duration.toMillis(Duration.fromInputUnsafe(options.maxAge ?? "1 hour"))
     const cooldown = Duration.toMillis(Duration.fromInputUnsafe(options.unknownKidCooldown ?? "30 seconds"))
@@ -133,7 +131,9 @@ export const makeAccessKeyStore = (
 
     const get = (kid: string): Effect.Effect<CryptoKey, AccessJwtError> =>
       Effect.gen(function* () {
-        const fresh = yield* refreshIf((current, now) => current === null || now - current.fetchedAt >= maxAge)
+        const fresh = yield* refreshIf(
+          (current, now) => current === null || now - current.fetchedAt >= maxAge,
+        )
         const known = fresh?.keys.get(kid)
         if (known !== undefined) return known
 
@@ -223,7 +223,10 @@ export const makeAccessJwtVerifier = (options: AccessJwtVerifierOptions): Access
         return yield* reject("malformed", "Access JWT is not valid base64url JSON")
       }
       if (header["alg"] !== "RS256") {
-        return yield* reject("unsupported-algorithm", `Access JWT alg must be RS256 (got ${String(header["alg"])})`)
+        return yield* reject(
+          "unsupported-algorithm",
+          `Access JWT alg must be RS256 (got ${String(header["alg"])})`,
+        )
       }
       const kid = nonEmptyString(header["kid"])
       if (kid === null) return yield* reject("malformed", "Access JWT header has no kid")
@@ -237,12 +240,16 @@ export const makeAccessJwtVerifier = (options: AccessJwtVerifierOptions): Access
             signature,
             textEncoder.encode(`${headerSegment}.${payloadSegment}`),
           ),
-        catch: () => new AccessJwtError({ reason: "bad-signature", message: "Access JWT signature check failed" }),
+        catch: () =>
+          new AccessJwtError({ reason: "bad-signature", message: "Access JWT signature check failed" }),
       })
       if (!valid) return yield* reject("bad-signature", "Access JWT signature is invalid")
 
       if (claims.iss !== options.issuer) {
-        return yield* reject("wrong-issuer", `Access JWT issuer ${String(claims.iss)} is not ${options.issuer}`)
+        return yield* reject(
+          "wrong-issuer",
+          `Access JWT issuer ${String(claims.iss)} is not ${options.issuer}`,
+        )
       }
       const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
       if (!audiences.includes(options.audience)) {
@@ -253,7 +260,10 @@ export const makeAccessJwtVerifier = (options: AccessJwtVerifierOptions): Access
       if (typeof claims.exp !== "number" || claims.exp + skewSeconds <= nowSeconds) {
         return yield* reject("expired", "Access JWT is expired")
       }
-      if (claims.nbf !== undefined && (typeof claims.nbf !== "number" || claims.nbf - skewSeconds > nowSeconds)) {
+      if (
+        claims.nbf !== undefined &&
+        (typeof claims.nbf !== "number" || claims.nbf - skewSeconds > nowSeconds)
+      ) {
         return yield* reject("not-yet-valid", "Access JWT is not valid yet")
       }
 

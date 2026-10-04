@@ -43,17 +43,19 @@ export const DEFAULT_HOST = "127.0.0.1"
 export const DEFAULT_PORT = 3001
 
 export const isLoopbackHost = (host: string): boolean => {
-  const normalized = host.trim().toLowerCase().replace(/^\[(.*)\]$/, "$1")
-  return (
-    normalized === "localhost" ||
-    normalized === "::1" ||
-    /^127(\.\d{1,3}){3}$/.test(normalized)
-  )
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1")
+  return normalized === "localhost" || normalized === "::1" || /^127(\.\d{1,3}){3}$/.test(normalized)
 }
 
 /** Accept `team.cloudflareaccess.com` or `https://team.cloudflareaccess.com/`. */
 const normalizeTeamDomain = (raw: string): string =>
-  raw.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "")
+  raw
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "")
 
 const optionalString = (name: string) =>
   Config.option(Config.String(name)).pipe(
@@ -73,7 +75,9 @@ const load: Effect.Effect<HubConfigShape, HubConfigError> = Effect.gen(function*
     audience: optionalString("SCOUT_ACCESS_AUD"),
     certsUrl: optionalString("SCOUT_ACCESS_CERTS_URL"),
   }).pipe(
-    Effect.mapError((error) => new HubConfigError({ message: `Invalid hub configuration: ${error.message}` })),
+    Effect.mapError(
+      (error) => new HubConfigError({ message: `Invalid hub configuration: ${error.message}` }),
+    ),
   )
 
   const host = Option.getOrElse(raw.host, () => DEFAULT_HOST)

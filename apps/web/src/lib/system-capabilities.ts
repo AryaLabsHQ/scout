@@ -11,7 +11,5 @@ export function getAvailablePluginCapabilities(system: System) {
 }
 
 export function hasAvailablePluginCapability(system: System, pluginId: string) {
-  return getAvailablePluginCapabilities(system).some(
-    (capability) => capability.pluginId === pluginId,
-  )
+  return getAvailablePluginCapabilities(system).some((capability) => capability.pluginId === pluginId)
 }

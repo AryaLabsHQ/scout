@@ -53,7 +53,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
-      <AlertDialog open={options !== null} onOpenChange={(open) => { if (!open) settle(false) }}>
+      <AlertDialog
+        open={options !== null}
+        onOpenChange={(open) => {
+          if (!open) settle(false)
+        }}
+      >
         <AlertDialogContent className="data-[size=default]:sm:max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-base font-semibold">{options?.title}</AlertDialogTitle>

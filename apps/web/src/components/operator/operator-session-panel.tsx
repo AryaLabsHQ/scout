@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useHotkeys } from "react-hotkeys-hook"
 import { Link } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  ArrowDown01Icon,
-  MoreHorizontalCircle01Icon,
-  SidebarRight01Icon,
-} from "@hugeicons/core-free-icons"
+import { ArrowDown01Icon, MoreHorizontalCircle01Icon, SidebarRight01Icon } from "@hugeicons/core-free-icons"
 import { Effect, Stream } from "effect"
 import { usePanelRef } from "react-resizable-panels"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
@@ -32,11 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { OperatorShellVariant } from "./operator-utils"
 import { SESSION_LIST_REACTIVITY_KEY, SESSION_STATUS, isOperatorSessionBusy } from "./operator-utils"
@@ -59,8 +51,7 @@ export function OperatorSessionPanel({
   onSelectSession: (sessionId: string) => void
 }) {
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
-  const systems: ReadonlyArray<System> =
-    systemsResult._tag === "Success" ? systemsResult.value : []
+  const systems: ReadonlyArray<System> = systemsResult._tag === "Success" ? systemsResult.value : []
 
   const detailResult = useAtomValue(HubClient.query("operator.sessions.get", { sessionId }))
   const promptMutation = useAtomSet(HubClient.mutation("operator.prompt"), {
@@ -121,11 +112,7 @@ export function OperatorSessionPanel({
   const [isAtBottom, setIsAtBottom] = useState(true)
 
   const detail = useMemo<OperatorSessionDetail | null>(() => {
-    if (
-      optimisticSession &&
-      optimisticSession.session.id === sessionId &&
-      detailResult._tag !== "Success"
-    ) {
+    if (optimisticSession && optimisticSession.session.id === sessionId && detailResult._tag !== "Success") {
       return optimisticSession
     }
     return detailResult._tag === "Success" ? detailResult.value : null
@@ -204,9 +191,7 @@ export function OperatorSessionPanel({
   )
 
   const firstPendingMutationApprovalId = useMemo(
-    () =>
-      resolvedDetail?.approvals.find((a) => a.status === "pending" && a.kind === "mutation")?.id ??
-      null,
+    () => resolvedDetail?.approvals.find((a) => a.status === "pending" && a.kind === "mutation")?.id ?? null,
     [resolvedDetail?.approvals],
   )
 
@@ -307,43 +292,49 @@ export function OperatorSessionPanel({
     }
   }, [abortSession, sessionId])
 
-  const handleResolveApproval = useCallback(async (
-    approvalId: string,
-    decision: "approved" | "rejected",
-    answer?: string,
-  ) => {
-    setResolvingApprovalId(approvalId)
-    try {
-      await resolveApproval({
-        payload: answer === undefined
-          ? { sessionId, approvalId, decision }
-          : { sessionId, approvalId, decision, answer },
+  const handleResolveApproval = useCallback(
+    async (approvalId: string, decision: "approved" | "rejected", answer?: string) => {
+      setResolvingApprovalId(approvalId)
+      try {
+        await resolveApproval({
+          payload:
+            answer === undefined
+              ? { sessionId, approvalId, decision }
+              : { sessionId, approvalId, decision, answer },
+          reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
+        })
+      } finally {
+        setResolvingApprovalId(null)
+      }
+    },
+    [resolveApproval, sessionId],
+  )
+
+  const handleApprovalModeChange = useCallback(
+    async (mode: OperatorApprovalMode) => {
+      await setApprovalMode({
+        payload: { sessionId, approvalMode: mode },
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
       })
-    } finally {
-      setResolvingApprovalId(null)
-    }
-  }, [resolveApproval, sessionId])
+      setLiveDetail((current) =>
+        current ? { ...current, session: { ...current.session, approvalMode: mode } } : current,
+      )
+    },
+    [setApprovalMode, sessionId],
+  )
 
-  const handleApprovalModeChange = useCallback(async (mode: OperatorApprovalMode) => {
-    await setApprovalMode({
-      payload: { sessionId, approvalMode: mode },
-      reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
-    })
-    setLiveDetail((current) =>
-      current ? { ...current, session: { ...current.session, approvalMode: mode } } : current,
-    )
-  }, [setApprovalMode, sessionId])
-
-  const handlePlanModeChange = useCallback(async (mode: OperatorPlanMode) => {
-    await setPlanMode({
-      payload: { sessionId, planMode: mode },
-      reactivityKeys: [`operator:session:${sessionId}`],
-    })
-    setLiveDetail((current) =>
-      current ? { ...current, session: { ...current.session, planMode: mode } } : current,
-    )
-  }, [setPlanMode, sessionId])
+  const handlePlanModeChange = useCallback(
+    async (mode: OperatorPlanMode) => {
+      await setPlanMode({
+        payload: { sessionId, planMode: mode },
+        reactivityKeys: [`operator:session:${sessionId}`],
+      })
+      setLiveDetail((current) =>
+        current ? { ...current, session: { ...current.session, planMode: mode } } : current,
+      )
+    },
+    [setPlanMode, sessionId],
+  )
 
   const handleFork = async (entryId: string) => {
     setForkingEntryId(entryId)
@@ -380,29 +371,58 @@ export function OperatorSessionPanel({
 
   // ── Keyboard shortcuts (react-hotkeys-hook) ────────────────────────────────
 
-  useHotkeys("/", () => {
-    document.querySelector<HTMLElement>(".operator-editor .ProseMirror")?.focus()
-  }, { preventDefault: true })
+  useHotkeys(
+    "/",
+    () => {
+      document.querySelector<HTMLElement>(".operator-editor .ProseMirror")?.focus()
+    },
+    { preventDefault: true },
+  )
 
-  useHotkeys("mod+shift+p", () => {
-    void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail?.session.planMode, handlePlanModeChange])
+  useHotkeys(
+    "mod+shift+p",
+    () => {
+      void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
+    },
+    { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true },
+    [resolvedDetail?.session.planMode, handlePlanModeChange],
+  )
 
-  useHotkeys("mod+shift+a", () => {
-    if (resolvedDetail) void handleApprovalModeChange(nextApprovalMode(resolvedDetail.session.approvalMode))
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true }, [resolvedDetail, handleApprovalModeChange])
+  useHotkeys(
+    "mod+shift+a",
+    () => {
+      if (resolvedDetail) void handleApprovalModeChange(nextApprovalMode(resolvedDetail.session.approvalMode))
+    },
+    { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true },
+    [resolvedDetail, handleApprovalModeChange],
+  )
 
-  useHotkeys("mod+.", () => {
-    if (firstPendingMutationApprovalId) void handleResolveApproval(firstPendingMutationApprovalId, "approved")
-  }, { preventDefault: true, enableOnFormTags: true, enableOnContentEditable: true, enabled: !!firstPendingMutationApprovalId }, [firstPendingMutationApprovalId, handleResolveApproval])
+  useHotkeys(
+    "mod+.",
+    () => {
+      if (firstPendingMutationApprovalId)
+        void handleResolveApproval(firstPendingMutationApprovalId, "approved")
+    },
+    {
+      preventDefault: true,
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+      enabled: !!firstPendingMutationApprovalId,
+    },
+    [firstPendingMutationApprovalId, handleResolveApproval],
+  )
 
   // Command palette custom event listeners
   useEffect(() => {
-    const onTogglePlan = () => void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
+    const onTogglePlan = () =>
+      void handlePlanModeChange(resolvedDetail?.session.planMode === "plan_first" ? "off" : "plan_first")
     const onCycleApproval = () => {
       if (resolvedDetail) void handleApprovalModeChange(nextApprovalMode(resolvedDetail.session.approvalMode))
     }
-    const onApprovePending = () => { if (firstPendingMutationApprovalId) void handleResolveApproval(firstPendingMutationApprovalId, "approved") }
+    const onApprovePending = () => {
+      if (firstPendingMutationApprovalId)
+        void handleResolveApproval(firstPendingMutationApprovalId, "approved")
+    }
 
     window.addEventListener("scout:operator:toggle-plan-mode", onTogglePlan)
     window.addEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
@@ -412,7 +432,13 @@ export function OperatorSessionPanel({
       window.removeEventListener("scout:operator:cycle-approval-mode", onCycleApproval)
       window.removeEventListener("scout:operator:approve-pending", onApprovePending)
     }
-  }, [resolvedDetail, firstPendingMutationApprovalId, handleApprovalModeChange, handlePlanModeChange, handleResolveApproval])
+  }, [
+    resolvedDetail,
+    firstPendingMutationApprovalId,
+    handleApprovalModeChange,
+    handlePlanModeChange,
+    handleResolveApproval,
+  ])
 
   if (detailResult._tag === "Initial" && !detail) {
     return (
@@ -469,22 +495,22 @@ export function OperatorSessionPanel({
         pendingApprovals={pendingApprovals}
         variant={variant}
         onOpenSkillsDialog={openSkillsDialog}
-        onToggleMeta={variant === "page" ? () => {
-          const panel = metaPanelRef.current
-          if (!panel) return
-          if (panel.isCollapsed()) {
-            panel.expand()
-          } else {
-            panel.collapse()
-          }
-        } : undefined}
+        onToggleMeta={
+          variant === "page"
+            ? () => {
+                const panel = metaPanelRef.current
+                if (!panel) return
+                if (panel.isCollapsed()) {
+                  panel.expand()
+                } else {
+                  panel.collapse()
+                }
+              }
+            : undefined
+        }
       />
 
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="min-h-0 flex-1"
-        id="operator-session"
-      >
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" id="operator-session">
         <ResizablePanel id="operator-timeline" minSize="300px" defaultSize="70%">
           <div className="flex h-full min-h-0 flex-col">
             <div
@@ -498,7 +524,8 @@ export function OperatorSessionPanel({
                     <div>
                       <p className="text-sm font-medium">New session</p>
                       <p className="mt-1 text-[13px] text-muted-foreground">
-                        Ask about your machines, or start from a suggestion. Changes always wait for your approval.
+                        Ask about your machines, or start from a suggestion. Changes always wait for your
+                        approval.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -679,12 +706,7 @@ function SessionHeader({
 
         <div className="flex shrink-0 items-center gap-1">
           {onToggleMeta ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={onToggleMeta}
-              className="text-muted-foreground"
-            >
+            <Button size="icon-sm" variant="ghost" onClick={onToggleMeta} className="text-muted-foreground">
               <HugeiconsIcon icon={SidebarRight01Icon} size={16} />
               <span className="sr-only">Toggle metadata panel</span>
             </Button>
@@ -692,23 +714,17 @@ function SessionHeader({
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <Button size="icon-sm" variant="ghost" className="text-muted-foreground" />
-              }
+              render={<Button size="icon-sm" variant="ghost" className="text-muted-foreground" />}
             >
               <HugeiconsIcon icon={MoreHorizontalCircle01Icon} size={16} />
               <span className="sr-only">Session actions</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
-              <DropdownMenuItem onClick={onOpenSkillsDialog}>
-                Manage Skills
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenSkillsDialog}>Manage Skills</DropdownMenuItem>
               {variant === "drawer" ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem render={<Link to="/operator" />}>
-                    Open Workbench
-                  </DropdownMenuItem>
+                  <DropdownMenuItem render={<Link to="/operator" />}>Open Workbench</DropdownMenuItem>
                 </>
               ) : null}
             </DropdownMenuContent>

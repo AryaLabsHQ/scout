@@ -34,9 +34,7 @@ export function BottomNav() {
             to={item.to}
             className={cn(
               "flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors",
-              isActive
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+              isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <HugeiconsIcon

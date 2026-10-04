@@ -64,11 +64,15 @@ export interface NamespaceSummary {
 }
 
 /** One row per namespace: its workloads and how many pods are ready. */
-export function summarizeNamespaces(entities: ReadonlyArray<EntitySnapshot>): ReadonlyArray<NamespaceSummary> {
+export function summarizeNamespaces(
+  entities: ReadonlyArray<EntitySnapshot>,
+): ReadonlyArray<NamespaceSummary> {
   const workloads = workloadsOf(entities)
   const pods = entities.filter((entity) => entity.ref.kind === K8S_ENTITY_KINDS.pod)
   const names = new Set<string>([
-    ...entities.filter((entity) => entity.ref.kind === K8S_ENTITY_KINDS.namespace).map((entity) => entity.ref.id),
+    ...entities
+      .filter((entity) => entity.ref.kind === K8S_ENTITY_KINDS.namespace)
+      .map((entity) => entity.ref.id),
     ...workloads.map((workload) => workload.namespace),
     ...pods.map(namespaceOf),
   ])
@@ -77,16 +81,17 @@ export function summarizeNamespaces(entities: ReadonlyArray<EntitySnapshot>): Re
     .map((name) => {
       const own = workloads.filter((workload) => workload.namespace === name)
       const ownPods = pods.filter((pod) => namespaceOf(pod) === name)
-      const readyWorkloads = own.filter((workload) => workload.status === "ready" || workload.status === "scaled-to-zero").length
+      const readyWorkloads = own.filter(
+        (workload) => workload.status === "ready" || workload.status === "scaled-to-zero",
+      ).length
       const readyPods = ownPods.filter((pod) => pod.status === "ready" || pod.status === "succeeded").length
-      const tone: StatusTone =
-        own.some((workload) => workload.status === "unavailable")
-          ? "err"
-          : readyWorkloads < own.length || readyPods < ownPods.length
-            ? "warn"
-            : own.length + ownPods.length > 0
-              ? "ok"
-              : "off"
+      const tone: StatusTone = own.some((workload) => workload.status === "unavailable")
+        ? "err"
+        : readyWorkloads < own.length || readyPods < ownPods.length
+          ? "warn"
+          : own.length + ownPods.length > 0
+            ? "ok"
+            : "off"
       return { name, workloads: own, readyWorkloads, pods: ownPods.length, readyPods, tone }
     })
     .filter((summary) => summary.workloads.length > 0 || summary.pods > 0)

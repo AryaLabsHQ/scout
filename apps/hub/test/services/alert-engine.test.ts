@@ -60,9 +60,7 @@ type RuleSpec = {
 }
 
 function makeTestLayer(rules?: RuleSpec[]) {
-  const configLayer = ConfigProvider.layer(
-    ConfigProvider.fromUnknown({ SCOUT_DB_PATH: ":memory:" }),
-  )
+  const configLayer = ConfigProvider.layer(ConfigProvider.fromUnknown({ SCOUT_DB_PATH: ":memory:" }))
 
   const dbLayer = Database.layer.pipe(
     Layer.provide(configLayer),
@@ -88,15 +86,10 @@ function makeTestLayer(rules?: RuleSpec[]) {
     ),
   )
 
-  return AlertEngine.layer.pipe(
-    Layer.provide(Layer.merge(dbLayer, MetricsBroadcast.layer)),
-  )
+  return AlertEngine.layer.pipe(Layer.provide(Layer.merge(dbLayer, MetricsBroadcast.layer)))
 }
 
-function withEngine<A, E>(
-  eff: Effect.Effect<A, E, AlertEngine>,
-  rules?: RuleSpec[],
-) {
+function withEngine<A, E>(eff: Effect.Effect<A, E, AlertEngine>, rules?: RuleSpec[]) {
   return eff.pipe(Effect.provide(makeTestLayer(rules)))
 }
 

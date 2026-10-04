@@ -15,26 +15,13 @@ export const PluginPermissionSchema = Schema.Literals([
   "node:read-env",
 ])
 
-export const PluginCapabilityStatusSchema = Schema.Literals([
-  "available",
-  "degraded",
-  "unsupported",
-])
+export const PluginCapabilityStatusSchema = Schema.Literals(["available", "degraded", "unsupported"])
 
 export const MetricKindSchema = Schema.Literals(["gauge", "counter", "state"])
 
-export const StreamKindSchema = Schema.Literals([
-  "logs",
-  "session",
-  "events",
-  "custom",
-])
+export const StreamKindSchema = Schema.Literals(["logs", "session", "events", "custom"])
 
-export const PluginUiScreenKindSchema = Schema.Literals([
-  "overview",
-  "entity-list",
-  "entity-detail",
-])
+export const PluginUiScreenKindSchema = Schema.Literals(["overview", "entity-list", "entity-detail"])
 
 export const EventSeveritySchema = Schema.Literals(["info", "warning", "error"])
 
@@ -204,11 +191,7 @@ export const EventChunkSchema = Schema.Struct({
   event: EventRecordSchema,
 })
 
-export const StreamChunkSchema = Schema.Union([
-  LogChunkSchema,
-  SessionChunkSchema,
-  EventChunkSchema,
-])
+export const StreamChunkSchema = Schema.Union([LogChunkSchema, SessionChunkSchema, EventChunkSchema])
 
 export const PluginUiActionConfirmSchema = Schema.Struct({
   title: Schema.String,
@@ -263,13 +246,9 @@ export const PluginUiElementSchema = Schema.Struct({
   props: Schema.Record(Schema.String, Schema.Unknown),
   children: Schema.optionalKey(Schema.Array(Schema.String)),
   visible: Schema.optionalKey(Schema.Unknown),
-  on: Schema.optionalKey(
-    Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema),
-  ),
+  on: Schema.optionalKey(Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema)),
   repeat: Schema.optionalKey(PluginUiRepeatSchema),
-  watch: Schema.optionalKey(
-    Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema),
-  ),
+  watch: Schema.optionalKey(Schema.Record(Schema.String, PluginUiActionBindingOrBindingsSchema)),
 })
 
 export const PluginUiSpecSchema = Schema.Struct({
@@ -287,9 +266,7 @@ export const PluginUiScreenSchema = Schema.Struct({
   spec: PluginUiSpecSchema,
 })
 
-export class PluginExecutionError extends Schema.Error<PluginExecutionError>(
-  "PluginExecutionError",
-)({
+export class PluginExecutionError extends Schema.Error<PluginExecutionError>("PluginExecutionError")({
   code: Schema.String,
   message: Schema.String,
   pluginId: Schema.optionalKey(Schema.String),
@@ -297,9 +274,7 @@ export class PluginExecutionError extends Schema.Error<PluginExecutionError>(
   streamId: Schema.optionalKey(Schema.String),
 }) {}
 
-export class PluginLoadError extends Schema.Error<PluginLoadError>(
-  "PluginLoadError",
-)({
+export class PluginLoadError extends Schema.Error<PluginLoadError>("PluginLoadError")({
   code: Schema.String,
   message: Schema.String,
   pluginId: Schema.optionalKey(Schema.String),
@@ -347,8 +322,6 @@ export type PluginUiScreen = typeof PluginUiScreenSchema.Type
 export const decodePluginManifest = Schema.decodeUnknownEffect(PluginManifestSchema)
 export const decodeEntitySnapshot = Schema.decodeUnknownEffect(EntitySnapshotSchema)
 export const decodeMetricPoint = Schema.decodeUnknownEffect(MetricPointSchema)
-export const decodePluginCollectionResult = Schema.decodeUnknownEffect(
-  PluginCollectionResultSchema,
-)
+export const decodePluginCollectionResult = Schema.decodeUnknownEffect(PluginCollectionResultSchema)
 export const decodeActionRequest = Schema.decodeUnknownEffect(ActionRequestSchema)
 export const decodePluginUiScreen = Schema.decodeUnknownEffect(PluginUiScreenSchema)

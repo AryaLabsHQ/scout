@@ -25,12 +25,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import * as RpcServer from "effect/rpc/RpcServer"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
-import {
-  AgentConnectError,
-  AgentHubRpcs,
-  HubAgentRpcs,
-  makeDuplexRpcProtocols,
-} from "@scout/shared"
+import { AgentConnectError, AgentHubRpcs, HubAgentRpcs, makeDuplexRpcProtocols } from "@scout/shared"
 import type { AgentCapabilities, AgentInfo, System } from "@scout/shared"
 import type { PluginCapability } from "@scout/plugin-sdk"
 import { HubConfig } from "../config.js"
@@ -41,10 +36,7 @@ import { AgentHandlersLive } from "./agent-handlers.js"
 
 // ── RPC client type alias ─────────────────────────────────────────────────────
 
-export type HubAgentClient = RpcClient.RpcClient<
-  RpcGroup.Rpcs<typeof HubAgentRpcs>,
-  RpcClientError
->
+export type HubAgentClient = RpcClient.RpcClient<RpcGroup.Rpcs<typeof HubAgentRpcs>, RpcClientError>
 
 // ── Public connected-agent summary ────────────────────────────────────────────
 
@@ -104,181 +96,169 @@ export class AgentRegistry extends Context.Service<
     /** Look up the typed RPC client for a connected agent, or null. */
     readonly getClient: (agentId: string) => Effect.Effect<HubAgentClient | null>
   }
->()(
-  "@scout/AgentRegistry",
-  {
-    make: Effect.gen(function* () {
-      const db = yield* Database
-      // Grace fibers outlive the connection fiber that calls `unregister`, so
-      // they run in the registry's own scope rather than as its children.
-      const registryScope = yield* Effect.scope
-      const entries = yield* Ref.make(new Map<string, AgentEntry>())
-      const graceFibers = yield* Ref.make(new Map<string, Fiber.Fiber<void, never>>())
+>()("@scout/AgentRegistry", {
+  make: Effect.gen(function* () {
+    const db = yield* Database
+    // Grace fibers outlive the connection fiber that calls `unregister`, so
+    // they run in the registry's own scope rather than as its children.
+    const registryScope = yield* Effect.scope
+    const entries = yield* Ref.make(new Map<string, AgentEntry>())
+    const graceFibers = yield* Ref.make(new Map<string, Fiber.Fiber<void, never>>())
 
-      const register = (
-        info: AgentInfo,
-        capabilities: AgentCapabilities,
-        pluginCapabilities: ReadonlyArray<PluginCapability>,
-        client: HubAgentClient,
-      ): Effect.Effect<System> =>
-        Effect.gen(function* () {
-          // Interrupt any pending grace fiber for this agent (fast reconnect)
-          const pending = yield* Ref.modify(graceFibers, (m) => {
-            const fiber = m.get(info.systemId) ?? null
-            const next = new Map(m)
-            next.delete(info.systemId)
-            return [fiber, next] as const
-          })
-          if (pending !== null) {
-            yield* Fiber.interrupt(pending).pipe(Effect.asVoid)
-          }
+    const register = (
+      info: AgentInfo,
+      capabilities: AgentCapabilities,
+      pluginCapabilities: ReadonlyArray<PluginCapability>,
+      client: HubAgentClient,
+    ): Effect.Effect<System> =>
+      Effect.gen(function* () {
+        // Interrupt any pending grace fiber for this agent (fast reconnect)
+        const pending = yield* Ref.modify(graceFibers, (m) => {
+          const fiber = m.get(info.systemId) ?? null
+          const next = new Map(m)
+          next.delete(info.systemId)
+          return [fiber, next] as const
+        })
+        if (pending !== null) {
+          yield* Fiber.interrupt(pending).pipe(Effect.asVoid)
+        }
 
-          const now = Date.now()
-          const entry: AgentEntry = {
-            agentId: info.systemId,
-            info,
-            connectedAt: now,
-            client,
-          }
-          yield* Ref.update(entries, (m) => new Map(m).set(info.systemId, entry))
+        const now = Date.now()
+        const entry: AgentEntry = {
+          agentId: info.systemId,
+          info,
+          connectedAt: now,
+          client,
+        }
+        yield* Ref.update(entries, (m) => new Map(m).set(info.systemId, entry))
 
-          // DB upsert: mark online, persist capabilities, update lastSeen
-          const system = yield* Effect.sync(() => {
-            const nowDate = new Date(now)
-            db.insert(schema.systems)
-              .values({
-                id: info.systemId,
+        // DB upsert: mark online, persist capabilities, update lastSeen
+        const system = yield* Effect.sync(() => {
+          const nowDate = new Date(now)
+          db.insert(schema.systems)
+            .values({
+              id: info.systemId,
+              hostname: info.hostname,
+              status: "online",
+              capabilities: capabilities as unknown,
+              pluginCapabilities: pluginCapabilities as unknown,
+              lastSeen: nowDate,
+              createdAt: nowDate,
+            })
+            .onConflictDoUpdate({
+              target: schema.systems.id,
+              set: {
                 hostname: info.hostname,
                 status: "online",
                 capabilities: capabilities as unknown,
                 pluginCapabilities: pluginCapabilities as unknown,
                 lastSeen: nowDate,
-                createdAt: nowDate,
-              })
-              .onConflictDoUpdate({
-                target: schema.systems.id,
-                set: {
-                  hostname: info.hostname,
-                  status: "online",
-                  capabilities: capabilities as unknown,
-                  pluginCapabilities: pluginCapabilities as unknown,
-                  lastSeen: nowDate,
-                },
-              })
-              .run()
-
-            const rows = db
-              .select()
-              .from(schema.systems)
-              .where(eq(schema.systems.id, info.systemId))
-              .all()
-            const row = rows[0]!
-            return {
-              id: row.id,
-              hostname: row.hostname,
-              tailscaleIp: row.tailscaleIp,
-              status: row.status,
-              capabilities: (row.capabilities as System["capabilities"]) ?? {
-                system: false,
-                network: false,
-                process: false,
-                temperature: false,
-                gpu: false,
-                smart: false,
               },
-              pluginCapabilities:
-                (row.pluginCapabilities as System["pluginCapabilities"]) ?? [],
-              lastSeen: row.lastSeen?.getTime() ?? now,
-              createdAt: row.createdAt.getTime(),
-            } satisfies System
-          })
+            })
+            .run()
 
-          return system
+          const rows = db.select().from(schema.systems).where(eq(schema.systems.id, info.systemId)).all()
+          const row = rows[0]!
+          return {
+            id: row.id,
+            hostname: row.hostname,
+            tailscaleIp: row.tailscaleIp,
+            status: row.status,
+            capabilities: (row.capabilities as System["capabilities"]) ?? {
+              system: false,
+              network: false,
+              process: false,
+              temperature: false,
+              gpu: false,
+              smart: false,
+            },
+            pluginCapabilities: (row.pluginCapabilities as System["pluginCapabilities"]) ?? [],
+            lastSeen: row.lastSeen?.getTime() ?? now,
+            createdAt: row.createdAt.getTime(),
+          } satisfies System
         })
 
-      const unregister = (agentId: string, client: HubAgentClient): Effect.Effect<void> =>
-        Effect.gen(function* () {
-          // Pop the entry first so listConnected immediately reflects the
-          // disconnect. The grace fiber will mark the DB row offline if the
-          // agent doesn't reconnect within 5 s. A superseded connection
-          // closing after its replacement registered leaves the entry alone.
-          const existed = yield* Ref.modify(entries, (m) => {
-            if (m.get(agentId)?.client !== client) return [false, m] as const
-            const next = new Map(m)
-            next.delete(agentId)
-            return [true, next] as const
-          })
+        return system
+      })
 
-          if (!existed) return
+    const unregister = (agentId: string, client: HubAgentClient): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        // Pop the entry first so listConnected immediately reflects the
+        // disconnect. The grace fiber will mark the DB row offline if the
+        // agent doesn't reconnect within 5 s. A superseded connection
+        // closing after its replacement registered leaves the entry alone.
+        const existed = yield* Ref.modify(entries, (m) => {
+          if (m.get(agentId)?.client !== client) return [false, m] as const
+          const next = new Map(m)
+          next.delete(agentId)
+          return [true, next] as const
+        })
 
-          const graceFiber = yield* Effect.forkIn(
-            Effect.gen(function* () {
-              yield* Effect.sleep("5 seconds")
-              const stillGone = yield* Ref.get(entries).pipe(
-                Effect.map((m) => !m.has(agentId)),
-              )
-              if (stillGone) {
-                yield* Effect.sync(() => {
-                  db.update(schema.systems)
-                    .set({ status: "offline" })
-                    .where(eq(schema.systems.id, agentId))
-                    .run()
-                })
-              }
-              yield* Ref.update(graceFibers, (m) => {
-                const next = new Map(m)
-                next.delete(agentId)
-                return next
+        if (!existed) return
+
+        const graceFiber = yield* Effect.forkIn(
+          Effect.gen(function* () {
+            yield* Effect.sleep("5 seconds")
+            const stillGone = yield* Ref.get(entries).pipe(Effect.map((m) => !m.has(agentId)))
+            if (stillGone) {
+              yield* Effect.sync(() => {
+                db.update(schema.systems)
+                  .set({ status: "offline" })
+                  .where(eq(schema.systems.id, agentId))
+                  .run()
               })
+            }
+            yield* Ref.update(graceFibers, (m) => {
+              const next = new Map(m)
+              next.delete(agentId)
+              return next
+            })
+          }),
+          registryScope,
+        )
+
+        yield* Ref.update(graceFibers, (m) => new Map(m).set(agentId, graceFiber))
+      })
+
+    const listConnected = (): Effect.Effect<ReadonlyArray<ConnectedAgent>> =>
+      Ref.get(entries).pipe(
+        Effect.map((m) =>
+          Array.from(m.values()).map(
+            (e): ConnectedAgent => ({
+              agentId: e.agentId,
+              info: e.info,
+              connectedAt: e.connectedAt,
             }),
-            registryScope,
-          )
+          ),
+        ),
+      )
 
-          yield* Ref.update(graceFibers, (m) =>
-            new Map(m).set(agentId, graceFiber),
-          )
-        })
-
-      const listConnected = (): Effect.Effect<ReadonlyArray<ConnectedAgent>> =>
-        Ref.get(entries).pipe(
-          Effect.map((m) =>
-            Array.from(m.values()).map(
-              (e): ConnectedAgent => ({
+    const getConnected = (agentId: string): Effect.Effect<ConnectedAgent | null> =>
+      Ref.get(entries).pipe(
+        Effect.map((m) => {
+          const e = m.get(agentId)
+          return e
+            ? {
                 agentId: e.agentId,
                 info: e.info,
                 connectedAt: e.connectedAt,
-              }),
-            ),
-          ),
-        )
+              }
+            : null
+        }),
+      )
 
-      const getConnected = (agentId: string): Effect.Effect<ConnectedAgent | null> =>
-        Ref.get(entries).pipe(
-          Effect.map((m) => {
-            const e = m.get(agentId)
-            return e
-              ? {
-                  agentId: e.agentId,
-                  info: e.info,
-                  connectedAt: e.connectedAt,
-                }
-              : null
-          }),
-        )
+    const getClient = (agentId: string): Effect.Effect<HubAgentClient | null> =>
+      Ref.get(entries).pipe(Effect.map((m) => m.get(agentId)?.client ?? null))
 
-      const getClient = (agentId: string): Effect.Effect<HubAgentClient | null> =>
-        Ref.get(entries).pipe(Effect.map((m) => m.get(agentId)?.client ?? null))
-
-      return {
-        register,
-        unregister,
-        listConnected,
-        getConnected,
-        getClient,
-      }
-    }),
-  },
-) {
+    return {
+      register,
+      unregister,
+      listConnected,
+      getConnected,
+      getClient,
+    }
+  }),
+}) {
   static readonly layer = Layer.effect(this, this.make)
 }
 
@@ -364,13 +344,10 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
 
   yield* Effect.scoped(
     Effect.gen(function* () {
-      const { serverProtocol, clientProtocol, closed } =
-        yield* makeDuplexRpcProtocols(socket)
+      const { serverProtocol, clientProtocol, closed } = yield* makeDuplexRpcProtocols(socket)
 
       // Build the hub→agent typed RPC client on this socket
-      const hubAgentClient = yield* RpcClient.make(HubAgentRpcs).pipe(
-        Effect.provide(clientProtocol),
-      )
+      const hubAgentClient = yield* RpcClient.make(HubAgentRpcs).pipe(Effect.provide(clientProtocol))
 
       // Per-connection RegisterAgent closure: captures hubAgentClient so
       // agent.connect's handler can register it in one shot.

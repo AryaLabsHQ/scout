@@ -198,7 +198,12 @@ export const parseCaddySites = (body: string): ReadonlyArray<EdgeSite> => {
   const config = JSON.parse(body) as {
     readonly apps?: {
       readonly http?: {
-        readonly servers?: Readonly<Record<string, { readonly listen?: ReadonlyArray<string>; readonly routes?: ReadonlyArray<CaddyRoute> }>>
+        readonly servers?: Readonly<
+          Record<
+            string,
+            { readonly listen?: ReadonlyArray<string>; readonly routes?: ReadonlyArray<CaddyRoute> }
+          >
+        >
       }
     }
   } | null
@@ -221,13 +226,15 @@ export const parseCaddySites = (body: string): ReadonlyArray<EdgeSite> => {
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 const getOk = (deps: EdgeDependencies, url: string): Effect.Effect<string, Error> =>
-  deps.get(url).pipe(
-    Effect.flatMap((response) =>
-      response.status >= 200 && response.status < 300
-        ? Effect.succeed(response.body)
-        : Effect.fail(new Error(`GET ${url} returned HTTP ${response.status}`)),
-    ),
-  )
+  deps
+    .get(url)
+    .pipe(
+      Effect.flatMap((response) =>
+        response.status >= 200 && response.status < 300
+          ? Effect.succeed(response.body)
+          : Effect.fail(new Error(`GET ${url} returned HTTP ${response.status}`)),
+      ),
+    )
 
 export const readTunnel = (deps: EdgeDependencies, endpoint: EdgeEndpoint): Effect.Effect<EdgeTunnelState> =>
   Effect.all(
@@ -242,7 +249,11 @@ export const readTunnel = (deps: EdgeDependencies, endpoint: EdgeEndpoint): Effe
       const readyResponse = Result.isSuccess(ready) ? ready.success : null
       const parsed = Result.isSuccess(metrics) ? parseCloudflaredMetrics(metrics.success) : null
       const reachable = readyResponse !== null || parsed !== null
-      const failure = Result.isFailure(ready) ? ready.failure : Result.isFailure(metrics) ? metrics.failure : null
+      const failure = Result.isFailure(ready)
+        ? ready.failure
+        : Result.isFailure(metrics)
+          ? metrics.failure
+          : null
       return {
         name: endpoint.name,
         endpoint: endpoint.url,
@@ -259,36 +270,52 @@ export const readTunnel = (deps: EdgeDependencies, endpoint: EdgeEndpoint): Effe
     }),
   )
 
-const parseWith = <A>(parse: (body: string) => A) => (body: string) =>
-  Effect.try({ try: () => parse(body), catch: (error) => new Error(`Unexpected Caddy response: ${errorText(error)}`) })
+const parseWith =
+  <A>(parse: (body: string) => A) =>
+  (body: string) =>
+    Effect.try({
+      try: () => parse(body),
+      catch: (error) => new Error(`Unexpected Caddy response: ${errorText(error)}`),
+    })
 
 export const readProxy = (deps: EdgeDependencies, endpoint: EdgeEndpoint): Effect.Effect<EdgeProxyState> =>
   Effect.all(
     [
-      Effect.result(getOk(deps, `${endpoint.url}/reverse_proxy/upstreams`).pipe(Effect.flatMap(parseWith(parseCaddyUpstreams)))),
+      Effect.result(
+        getOk(deps, `${endpoint.url}/reverse_proxy/upstreams`).pipe(
+          Effect.flatMap(parseWith(parseCaddyUpstreams)),
+        ),
+      ),
       Effect.result(getOk(deps, `${endpoint.url}/config/`).pipe(Effect.flatMap(parseWith(parseCaddySites)))),
     ],
     { concurrency: "unbounded" },
   ).pipe(
-    Effect.map(([upstreams, sites]): EdgeProxyState => ({
-      name: endpoint.name,
-      endpoint: endpoint.url,
-      reachable: Result.isSuccess(upstreams),
-      // Upstreams decide reachability; a config that cannot be read is still
-      // an error, so the site list is never silently empty.
-      error: Result.isFailure(upstreams)
-        ? errorText(upstreams.failure)
-        : Result.isFailure(sites)
-          ? errorText(sites.failure)
-          : null,
-      upstreams: Result.isSuccess(upstreams) ? upstreams.success : [],
-      sites: Result.isSuccess(sites) ? sites.success : [],
-    })),
+    Effect.map(
+      ([upstreams, sites]): EdgeProxyState => ({
+        name: endpoint.name,
+        endpoint: endpoint.url,
+        reachable: Result.isSuccess(upstreams),
+        // Upstreams decide reachability; a config that cannot be read is still
+        // an error, so the site list is never silently empty.
+        error: Result.isFailure(upstreams)
+          ? errorText(upstreams.failure)
+          : Result.isFailure(sites)
+            ? errorText(sites.failure)
+            : null,
+        upstreams: Result.isSuccess(upstreams) ? upstreams.success : [],
+        sites: Result.isSuccess(sites) ? sites.success : [],
+      }),
+    ),
   )
 
 // ── Collection ───────────────────────────────────────────────────────────────
 
-const entityRef = (nodeId: string, kind: string, id: string) => ({ pluginId: EDGE_PLUGIN_ID, kind, nodeId, id })
+const entityRef = (nodeId: string, kind: string, id: string) => ({
+  pluginId: EDGE_PLUGIN_ID,
+  kind,
+  nodeId,
+  id,
+})
 
 export const tunnelStatus = (state: EdgeTunnelState): string =>
   !state.reachable ? EDGE_STATUS.unreachable : state.ready ? EDGE_STATUS.ready : EDGE_STATUS.notReady
@@ -332,7 +359,10 @@ export const buildCollection = (
         value === null ? [] : [{ pluginId: EDGE_PLUGIN_ID, metricId, ts, entity, value, unit: "count" }]
       return [
         // An unreachable connector has no ready connections.
-        ...point(EDGE_METRIC_IDS.tunnelReadyConnections, state.reachable ? (state.readyConnections ?? state.haConnections) : 0),
+        ...point(
+          EDGE_METRIC_IDS.tunnelReadyConnections,
+          state.reachable ? (state.readyConnections ?? state.haConnections) : 0,
+        ),
         ...point(EDGE_METRIC_IDS.tunnelRequests, state.totalRequests),
         ...point(EDGE_METRIC_IDS.tunnelRequestErrors, state.requestErrors),
       ]
@@ -383,11 +413,19 @@ export const createEdgeAgentPlugin = (
     const config = readEdgeConfig(deps.env())
     return Effect.all(
       [
-        Effect.forEach(config.cloudflared, (endpoint) => readTunnel(deps, endpoint), { concurrency: "unbounded" }).pipe(
-          Effect.map((states) => states.filter((state, index) => state.reachable || config.cloudflared[index]!.explicit)),
+        Effect.forEach(config.cloudflared, (endpoint) => readTunnel(deps, endpoint), {
+          concurrency: "unbounded",
+        }).pipe(
+          Effect.map((states) =>
+            states.filter((state, index) => state.reachable || config.cloudflared[index]!.explicit),
+          ),
         ),
-        Effect.forEach(config.caddy, (endpoint) => readProxy(deps, endpoint), { concurrency: "unbounded" }).pipe(
-          Effect.map((states) => states.filter((state, index) => state.reachable || config.caddy[index]!.explicit)),
+        Effect.forEach(config.caddy, (endpoint) => readProxy(deps, endpoint), {
+          concurrency: "unbounded",
+        }).pipe(
+          Effect.map((states) =>
+            states.filter((state, index) => state.reachable || config.caddy[index]!.explicit),
+          ),
         ),
       ],
       { concurrency: "unbounded" },

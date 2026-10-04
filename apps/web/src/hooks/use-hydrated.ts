@@ -8,5 +8,9 @@ const noop = () => () => {}
  * session list) so the hydrated markup matches the server's.
  */
 export function useHydrated(): boolean {
-  return useSyncExternalStore(noop, () => true, () => false)
+  return useSyncExternalStore(
+    noop,
+    () => true,
+    () => false,
+  )
 }

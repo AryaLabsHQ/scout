@@ -19,8 +19,7 @@ export interface FollowProcessLinesOptions {
   readonly bufferBatches?: number
 }
 
-const hasExited = (proc: ChildProcess): boolean =>
-  proc.exitCode !== null || proc.signalCode !== null
+const hasExited = (proc: ChildProcess): boolean => proc.exitCode !== null || proc.signalCode !== null
 
 const awaitExit = (proc: ChildProcess): Effect.Effect<void> =>
   Effect.callback<void>((resume) => {
@@ -72,60 +71,61 @@ export const followProcessLines = (
   const killTimeout = options.killTimeout ?? "2 seconds"
   const bufferBatches = options.bufferBatches ?? 16
 
-  return Stream.callback<ProcessLineBatch, Error>((queue) =>
-    Effect.gen(function* () {
-      const proc = yield* Effect.acquireRelease(
-        Effect.try({
-          try: () => spawn(command, [...args], { stdio: ["ignore", "pipe", "ignore"] }),
-          catch: (error) => new Error(`Failed to spawn ${command}: ${String(error)}`),
-        }),
-        (child) => terminate(child, killTimeout),
-      )
+  return Stream.callback<ProcessLineBatch, Error>(
+    (queue) =>
+      Effect.gen(function* () {
+        const proc = yield* Effect.acquireRelease(
+          Effect.try({
+            try: () => spawn(command, [...args], { stdio: ["ignore", "pipe", "ignore"] }),
+            catch: (error) => new Error(`Failed to spawn ${command}: ${String(error)}`),
+          }),
+          (child) => terminate(child, killTimeout),
+        )
 
-      const stdout = proc.stdout!
-      const decoder = new TextDecoder()
-      let buffer = ""
-      let pendingOffer: Fiber.Fiber<unknown> | undefined
+        const stdout = proc.stdout!
+        const decoder = new TextDecoder()
+        let buffer = ""
+        let pendingOffer: Fiber.Fiber<unknown> | undefined
 
-      const toBatches = (lines: Array<string>): Array<ProcessLineBatch> => {
-        const batches: Array<ProcessLineBatch> = []
-        for (let start = 0; start < lines.length; start += maxBatchLines) {
-          batches.push({ lines: lines.slice(start, start + maxBatchLines), ts: Date.now() })
+        const toBatches = (lines: Array<string>): Array<ProcessLineBatch> => {
+          const batches: Array<ProcessLineBatch> = []
+          for (let start = 0; start < lines.length; start += maxBatchLines) {
+            batches.push({ lines: lines.slice(start, start + maxBatchLines), ts: Date.now() })
+          }
+          return batches
         }
-        return batches
-      }
 
-      stdout.on("data", (chunk: Buffer) => {
-        buffer += decoder.decode(chunk, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        const batches = toBatches(lines.filter((line) => line.length > 0))
-        if (batches.length === 0) return
-        // Hold further chunks until the consumer has room, which also keeps
-        // batches in order: only one offer is ever outstanding.
-        stdout.pause()
-        pendingOffer = Effect.runFork(
-          Queue.offerAll(queue, batches).pipe(Effect.ensuring(Effect.sync(() => stdout.resume()))),
-        )
-      })
-      proc.once("error", (error) => {
-        Queue.failCauseUnsafe(queue, Cause.fail(new Error(`${command} failed: ${error.message}`)))
-      })
-      // "close" fires once stdout has ended, so the trailing partial line is
-      // complete. The queue ends only after the last chunk's offer lands.
-      proc.once("close", () => {
-        buffer += decoder.decode()
-        const tail = buffer.length > 0 ? toBatches([buffer]) : []
-        buffer = ""
-        const previous = pendingOffer
-        Effect.runFork(
-          (previous === undefined ? Effect.void : Fiber.await(previous)).pipe(
-            Effect.andThen(Queue.offerAll(queue, tail)),
-            Effect.andThen(Queue.end(queue)),
-          ),
-        )
-      })
-    }),
+        stdout.on("data", (chunk: Buffer) => {
+          buffer += decoder.decode(chunk, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+          const batches = toBatches(lines.filter((line) => line.length > 0))
+          if (batches.length === 0) return
+          // Hold further chunks until the consumer has room, which also keeps
+          // batches in order: only one offer is ever outstanding.
+          stdout.pause()
+          pendingOffer = Effect.runFork(
+            Queue.offerAll(queue, batches).pipe(Effect.ensuring(Effect.sync(() => stdout.resume()))),
+          )
+        })
+        proc.once("error", (error) => {
+          Queue.failCauseUnsafe(queue, Cause.fail(new Error(`${command} failed: ${error.message}`)))
+        })
+        // "close" fires once stdout has ended, so the trailing partial line is
+        // complete. The queue ends only after the last chunk's offer lands.
+        proc.once("close", () => {
+          buffer += decoder.decode()
+          const tail = buffer.length > 0 ? toBatches([buffer]) : []
+          buffer = ""
+          const previous = pendingOffer
+          Effect.runFork(
+            (previous === undefined ? Effect.void : Fiber.await(previous)).pipe(
+              Effect.andThen(Queue.offerAll(queue, tail)),
+              Effect.andThen(Queue.end(queue)),
+            ),
+          )
+        })
+      }),
     { bufferSize: bufferBatches },
   )
 }

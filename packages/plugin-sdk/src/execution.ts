@@ -56,11 +56,7 @@ const ensurePermissions = (
   for (const permission of required) {
     if (!granted.has(permission)) {
       return Effect.fail(
-        failExecution(
-          "permission-denied",
-          `Missing required plugin permission: ${permission}`,
-          opts,
-        ),
+        failExecution("permission-denied", `Missing required plugin permission: ${permission}`, opts),
       )
     }
   }
@@ -80,8 +76,7 @@ const findActionHandler = <E, R>(
   actionId: string,
 ): ScoutActionHandler<unknown, unknown, E, R> | null =>
   plugin.agent?.actions?.find(
-    (candidate: ScoutActionHandler<unknown, unknown, E, R>) =>
-      candidate.definition.id === actionId,
+    (candidate: ScoutActionHandler<unknown, unknown, E, R>) => candidate.definition.id === actionId,
   ) ?? null
 
 const findStreamHandler = <E, R>(
@@ -89,8 +84,7 @@ const findStreamHandler = <E, R>(
   streamId: string,
 ): ScoutStreamHandler<unknown, unknown, E, R> | null =>
   plugin.agent?.streams?.find(
-    (candidate: ScoutStreamHandler<unknown, unknown, E, R>) =>
-      candidate.definition.id === streamId,
+    (candidate: ScoutStreamHandler<unknown, unknown, E, R>) => candidate.definition.id === streamId,
   ) ?? null
 
 export const executePluginAction = <E, R>(
@@ -137,9 +131,7 @@ export const executePluginAction = <E, R>(
       actionId: request.actionId,
     })
 
-    const input = yield* Schema.decodeUnknownEffect(handler.inputSchema)(
-      request.input ?? {},
-    ).pipe(
+    const input = yield* Schema.decodeUnknownEffect(handler.inputSchema)(request.input ?? {}).pipe(
       Effect.mapError((error) =>
         failExecution("invalid-action-input", String(error), {
           pluginId: plugin.manifest.id,
@@ -157,9 +149,7 @@ export const executePluginAction = <E, R>(
       ),
     )
 
-    const output = yield* Schema.decodeUnknownEffect(handler.outputSchema)(
-      rawOutput,
-    ).pipe(
+    const output = yield* Schema.decodeUnknownEffect(handler.outputSchema)(rawOutput).pipe(
       Effect.mapError((error) =>
         failExecution("invalid-action-output", String(error), {
           pluginId: plugin.manifest.id,
@@ -225,9 +215,7 @@ export const openPluginStream = <E, R>(
       streamId: request.streamId,
     })
 
-    const input = yield* Schema.decodeUnknownEffect(handler.inputSchema)(
-      request.input ?? {},
-    ).pipe(
+    const input = yield* Schema.decodeUnknownEffect(handler.inputSchema)(request.input ?? {}).pipe(
       Effect.mapError((error) =>
         failExecution("invalid-stream-input", String(error), {
           pluginId: plugin.manifest.id,

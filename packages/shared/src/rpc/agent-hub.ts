@@ -3,10 +3,7 @@ import * as Rpc from "effect/rpc/Rpc"
 import * as RpcGroup from "effect/rpc/RpcGroup"
 import { AgentCapabilitiesSchema } from "../schemas/system.js"
 import { CoreMetricsPayloadSchema } from "../schemas/system-metrics.js"
-import {
-  PluginCapabilitySchema,
-  PluginCollectionResultSchema,
-} from "@scout/plugin-sdk/schemas"
+import { PluginCapabilitySchema, PluginCollectionResultSchema } from "@scout/plugin-sdk/schemas"
 
 /**
  * AgentHubRpcs — the RPC group that the **agent** calls on the **hub**.
@@ -33,9 +30,7 @@ export const AgentPluginCollectionPayload = Schema.Struct({
   collection: PluginCollectionResultSchema,
 })
 
-export class AgentConnectError extends Schema.Error<AgentConnectError>(
-  "AgentConnectError",
-)({
+export class AgentConnectError extends Schema.Error<AgentConnectError>("AgentConnectError")({
   _tag: Schema.tag("AgentConnectError"),
   reason: Schema.Literals(["invalid-token", "internal"]),
   message: Schema.String,

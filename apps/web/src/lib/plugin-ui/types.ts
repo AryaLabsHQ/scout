@@ -55,9 +55,7 @@ export interface PluginUiActionBinding {
     | { readonly navigate: string }
     | { readonly set: Record<string, unknown> }
     | { readonly action: string }
-  readonly onError?:
-    | { readonly set: Record<string, unknown> }
-    | { readonly action: string }
+  readonly onError?: { readonly set: Record<string, unknown> } | { readonly action: string }
   readonly preventDefault?: boolean
 }
 

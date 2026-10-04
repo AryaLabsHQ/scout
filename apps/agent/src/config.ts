@@ -21,17 +21,11 @@ export class AgentConfig {
     if (token.length === 0) {
       return yield* Effect.fail(new Error("SCOUT_TOKEN must not be blank"))
     }
-    const hostname = yield* Config.withDefault(
-      Config.String("SCOUT_HOSTNAME"),
-      os.hostname(),
-    )
+    const hostname = yield* Config.withDefault(Config.String("SCOUT_HOSTNAME"), os.hostname())
     const interval = yield* Config.withDefault(Config.Number("SCOUT_INTERVAL"), 15)
     const disableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_DISABLE"), "")
     const enableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_ENABLE"), "")
-    const pluginDir = yield* Config.withDefault(
-      Config.String("SCOUT_PLUGIN_DIR"),
-      DEFAULT_PLUGIN_DIR,
-    )
+    const pluginDir = yield* Config.withDefault(Config.String("SCOUT_PLUGIN_DIR"), DEFAULT_PLUGIN_DIR)
 
     return new AgentConfig(
       hubUrl,

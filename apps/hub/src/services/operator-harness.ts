@@ -14,7 +14,11 @@ import { OperatorExtensions } from "./operator-extensions.js"
 import { OperatorModelRegistry } from "./operator-model-registry.js"
 import { OperatorSkills } from "./operator-skills.js"
 import { openBunSqliteStorage } from "./operator-storage.js"
-import { makeOperatorExtensions, type OperatorExtensionSet, type PluginInventoryManifest } from "./operator-tools.js"
+import {
+  makeOperatorExtensions,
+  type OperatorExtensionSet,
+  type PluginInventoryManifest,
+} from "./operator-tools.js"
 import { PluginRegistry } from "./plugin-registry.js"
 
 /**
@@ -95,7 +99,9 @@ export const openOperatorHarness = (storage: () => Promise<Storage>) =>
               await tx.doc(OperatorApprovalsDoc, conversation.id)
             },
             onReport: (error) => {
-              Effect.runFork(Effect.logWarning("OperatorHarness: extension failure", { error: String(error) }))
+              Effect.runFork(
+                Effect.logWarning("OperatorHarness: extension failure", { error: String(error) }),
+              )
             },
           },
           context,

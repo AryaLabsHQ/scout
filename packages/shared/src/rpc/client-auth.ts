@@ -6,9 +6,7 @@ import { Unauthorized, type Identity } from "../schemas/auth.js"
  * The verified identity of the browser request an RPC handler is serving.
  * Provided by `ClientAuthMiddleware` on the hub.
  */
-export class CurrentIdentity extends Context.Service<CurrentIdentity, Identity>()(
-  "@scout/CurrentIdentity",
-) {}
+export class CurrentIdentity extends Context.Service<CurrentIdentity, Identity>()("@scout/CurrentIdentity") {}
 
 /**
  * Server-side authentication for `ClientHubRpcs`.

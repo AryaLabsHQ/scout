@@ -50,11 +50,15 @@ function FleetRow({ system, activeAlerts }: { system: System; activeAlerts: numb
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <span className="w-10 font-mono text-[13px] tabular">{latest ? `${latest.cpuPercent.toFixed(0)}%` : "—"}</span>
+          <span className="w-10 font-mono text-[13px] tabular">
+            {latest ? `${latest.cpuPercent.toFixed(0)}%` : "—"}
+          </span>
           <Sparkline values={samples.map((sample) => sample.cpuPercent)} max={100} width={80} height={20} />
         </div>
       </td>
-      <td className="px-4 py-3 font-mono text-[13px] tabular">{latest ? `${latest.memoryPercent.toFixed(0)}%` : "—"}</td>
+      <td className="px-4 py-3 font-mono text-[13px] tabular">
+        {latest ? `${latest.memoryPercent.toFixed(0)}%` : "—"}
+      </td>
       <td className="px-4 py-3 font-mono text-[13px] tabular">
         {latest?.diskPercent != null ? `${latest.diskPercent.toFixed(0)}%` : "—"}
       </td>
@@ -83,7 +87,11 @@ function FleetPage() {
     <Page>
       <PageHeader
         title="Machines"
-        meta={<span>{systems.length} machines · {online} online</span>}
+        meta={
+          <span>
+            {systems.length} machines · {online} online
+          </span>
+        }
       />
       <Section className="mt-6">
         {systems.length === 0 ? (
@@ -107,7 +115,9 @@ function FleetPage() {
                 <FleetRow
                   key={system.id}
                   system={system}
-                  activeAlerts={alerts.filter((alert) => alert.systemId === system.id && alert.state === "active").length}
+                  activeAlerts={
+                    alerts.filter((alert) => alert.systemId === system.id && alert.state === "active").length
+                  }
                 />
               ))}
             </tbody>

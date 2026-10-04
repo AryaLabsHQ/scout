@@ -4,7 +4,11 @@ import { EmptyRow } from "./section"
 
 /** The last non-empty line of a failure reason: tools print the actual error last. */
 const lastLine = (reason: string): string => {
-  const line = reason.split("\n").filter((part) => part.trim().length > 0).at(-1) ?? reason
+  const line =
+    reason
+      .split("\n")
+      .filter((part) => part.trim().length > 0)
+      .at(-1) ?? reason
   return line.length > 220 ? `${line.slice(0, 217)}…` : line
 }
 

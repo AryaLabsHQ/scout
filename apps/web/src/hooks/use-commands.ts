@@ -19,12 +19,7 @@ import { useTerminalPanel } from "@/providers/terminal-provider"
 
 // ── Command type ──────────────────────────────────────────────────────────────
 
-export type CommandGroup =
-  | "Navigation"
-  | "Operator"
-  | "Terminal"
-  | "System"
-  | "Alerts"
+export type CommandGroup = "Navigation" | "Operator" | "Terminal" | "System" | "Alerts"
 
 export interface Command {
   /** Stable unique id across renders */
@@ -58,17 +53,11 @@ export function useCommands(): Command[] {
     [systemsResult],
   )
   const { openDrawer, toggleDrawer } = useOperator()
-  const {
-    sessions,
-    activeTab,
-    isOpen,
-    openSession,
-    closeSession,
-    setActiveTab,
-    togglePanel,
-  } = useTerminalPanel()
+  const { sessions, activeTab, isOpen, openSession, closeSession, setActiveTab, togglePanel } =
+    useTerminalPanel()
 
-  return useMemo<Command[]>(() => { // eslint-disable-line react-hooks/exhaustive-deps
+  return useMemo<Command[]>(() => {
+    // eslint-disable-line react-hooks/exhaustive-deps
     const commands: Command[] = []
 
     // ── Navigation: static routes ─────────────────────────────────────────────
@@ -235,9 +224,7 @@ export function useCommands(): Command[] {
             perform: () => {
               // Dispatch a custom event that the tab component listens for.
               // This keeps the command decoupled from React refs.
-              window.dispatchEvent(
-                new CustomEvent("scout:rename-active-tab", { detail: active.id }),
-              )
+              window.dispatchEvent(new CustomEvent("scout:rename-active-tab", { detail: active.id }))
               if (!isOpen) togglePanel()
             },
           })

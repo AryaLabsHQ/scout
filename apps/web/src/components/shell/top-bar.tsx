@@ -31,7 +31,11 @@ const navLinkClass = (active: boolean) =>
 
 function Count({ value, tone }: { value: number; tone: "err" | "warn" }) {
   if (value === 0) return null
-  return <span className={cn("font-mono text-[11px] tabular", tone === "err" ? "text-err" : "text-warn")}>{value}</span>
+  return (
+    <span className={cn("font-mono text-[11px] tabular", tone === "err" ? "text-err" : "text-warn")}>
+      {value}
+    </span>
+  )
 }
 
 function MachineSwitcher({ systems, current }: { systems: ReadonlyArray<System>; current: System | null }) {
@@ -65,7 +69,9 @@ function MachineSwitcher({ systems, current }: { systems: ReadonlyArray<System>;
             >
               <StatusDot tone={system.status === "online" ? "ok" : "off"} />
               <span className="truncate">{system.hostname}</span>
-              {system.id === current?.id ? <span className="ml-auto text-xs text-subtle">current</span> : null}
+              {system.id === current?.id ? (
+                <span className="ml-auto text-xs text-subtle">current</span>
+              ) : null}
             </DropdownMenuItem>
           ))}
         </DropdownMenuGroup>
@@ -113,13 +119,25 @@ export function TopBar() {
       <nav className="ml-2 hidden items-center gap-0.5 md:flex" aria-label="Main">
         {current ? (
           <>
-            <Link to="/systems/$systemId" params={{ systemId: current.id }} className={navLinkClass(isOverview)}>
+            <Link
+              to="/systems/$systemId"
+              params={{ systemId: current.id }}
+              className={navLinkClass(isOverview)}
+            >
               Overview
             </Link>
-            <Link to="/systems/$systemId/services" params={{ systemId: current.id }} className={navLinkClass(isServices)}>
+            <Link
+              to="/systems/$systemId/services"
+              params={{ systemId: current.id }}
+              className={navLinkClass(isServices)}
+            >
               Services
             </Link>
-            <Link to="/systems/$systemId/cluster" params={{ systemId: current.id }} className={navLinkClass(isCluster)}>
+            <Link
+              to="/systems/$systemId/cluster"
+              params={{ systemId: current.id }}
+              className={navLinkClass(isCluster)}
+            >
               Cluster
             </Link>
           </>

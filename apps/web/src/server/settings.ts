@@ -14,13 +14,11 @@ export interface HubHealth {
   activeAlerts: number
 }
 
-export const fetchHealth = createServerFn({ method: "GET" }).handler(
-  async (): Promise<HubHealth | null> => {
-    const res = await hubFetch("/health")
-    if (!res.ok) return null
-    return res.json() as Promise<HubHealth>
-  },
-)
+export const fetchHealth = createServerFn({ method: "GET" }).handler(async (): Promise<HubHealth | null> => {
+  const res = await hubFetch("/health")
+  if (!res.ok) return null
+  return res.json() as Promise<HubHealth>
+})
 
 // ── Alert Rules (read-only SSR loader; updates go via HubClient RPC) ──────────
 
