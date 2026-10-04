@@ -20,7 +20,8 @@ export const scriptedFauxProvider = (): Provider => {
   const respond: FauxResponseFactory = (context) => {
     // Keep exactly one factory queued so the script never runs out.
     faux.appendResponses([respond])
-    const last = context.messages.at(-1)
+    // Positional system messages (prompt/tool changes) may follow the input; skip them.
+    const last = context.messages.findLast((message) => message.role !== "system")
     if (last?.role === "toolResult") {
       const text = last.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
       return fauxAssistantMessage(`Tool ${last.toolName} returned:\n${text}`)
