@@ -83,7 +83,7 @@ const USER_SHOW = [
 /** A fake systemctl for both managers; `--user` selects the user manager's answers. */
 const fakeSystemctl = (
   calls: string[],
-  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail"; userShow?: "fail" } = {},
+  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail"; userShow?: "fail"; lastUs?: number } = {},
 ): Exec =>
   (command, args) => {
     calls.push(`${command} ${args.join(" ")}`)
@@ -116,7 +116,7 @@ const fakeSystemctl = (
         JSON.stringify(
           user
             ? []
-            : [{ next: 1791170638736488, left: 1, last: 1791084864354113, passed: 1, unit: "restic-backup.timer", activates: "restic-backup.service" }],
+            : [{ next: 1791170638736488, left: 1, last: opts.lastUs ?? 1791084864354113, passed: 1, unit: "restic-backup.timer", activates: "restic-backup.service" }],
         ),
       )
     }
@@ -298,6 +298,29 @@ describe("systemd collection", () => {
       ts: 2,
       state: { pid: 812 },
     })
+  })
+
+  it("reports a timer's last run as unknown when reused details predate its latest trigger", async () => {
+    let next: Exec = fakeSystemctl([])
+    const plugin = createSystemdAgentPlugin(makeDeps((command, args) => next(command, args)))
+    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+
+    // A day later the timer fired again, but the detail read fails.
+    next = fakeSystemctl([], { show: "fail", lastUs: 1791171264354113 })
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)!
+    expect(timer.state).toMatchObject({ lastTriggerAt: 1791171264354, lastResult: null, lastExitStatus: null, lastExitAt: null })
+    expect(timer.status).toBe("active")
+  })
+
+  it("keeps a reused timer result that still describes the latest run", async () => {
+    let next: Exec = fakeSystemctl([])
+    const plugin = createSystemdAgentPlugin(makeDeps((command, args) => next(command, args)))
+    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+    next = fakeSystemctl([], { show: "fail" })
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)!
+    expect(timer.state).toMatchObject({ lastResult: "exit-code", lastExitStatus: 3 })
   })
 
   it("fails the collection when a manager's first detail read fails", async () => {

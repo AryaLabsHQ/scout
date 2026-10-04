@@ -512,6 +512,8 @@ export interface ScopeSnapshot {
   readonly timers: ReadonlyArray<SystemdUnitMetrics>
   readonly schedule: ReadonlyArray<SystemctlTimer>
   readonly details: ReadonlyMap<string, Record<string, string>>
+  /** False when `details` is a previous read reused after this one failed. */
+  readonly detailsFresh: boolean
 }
 
 const microsToMillis = (micros: number | null): number | null =>
@@ -559,7 +561,20 @@ const timerEntity = (nodeId: string, ts: number, snapshot: ScopeSnapshot, timer:
   const fields = snapshot.details.get(timer.unit)
   const activates = schedule?.activates || fields?.["Unit"] || ""
   const activatedFields = activates.length > 0 ? snapshot.details.get(activates) : undefined
-  const activated = activatedFields === undefined ? null : serviceDetails(activatedFields)
+  const cached = activatedFields === undefined ? null : serviceDetails(activatedFields)
+  const lastTriggerAt = schedule
+    ? microsToMillis(schedule.lastUs)
+    : parseSystemdTimestamp(fields?.["LastTriggerUSec"])
+  // Reused details can predate the timer's latest trigger; their result then
+  // belongs to an earlier run, so the last run reads as unknown rather than
+  // pairing the new trigger with an old outcome.
+  const activated =
+    !snapshot.detailsFresh &&
+    cached?.execMainExitAt != null &&
+    lastTriggerAt !== null &&
+    cached.execMainExitAt < lastTriggerAt
+      ? null
+      : cached
   const state: SystemdTimerState = {
     scope: snapshot.scope,
     description: timer.description,
@@ -572,9 +587,7 @@ const timerEntity = (nodeId: string, ts: number, snapshot: ScopeSnapshot, timer:
     nextRunAt: schedule
       ? microsToMillis(schedule.nextUs)
       : parseSystemdTimestamp(fields?.["NextElapseUSecRealtime"]),
-    lastTriggerAt: schedule
-      ? microsToMillis(schedule.lastUs)
-      : parseSystemdTimestamp(fields?.["LastTriggerUSec"]),
+    lastTriggerAt,
     activatesState: stringField(activatedFields?.["ActiveState"]),
     lastResult: activated?.result ?? null,
     lastExitStatus: activated?.execMainStatus ?? null,
@@ -706,15 +719,18 @@ export const createSystemdAgentPlugin = (
    * fails the collection.
    */
   const showUnits = (scope: SystemdScope, units: ReadonlyArray<string>) => {
-    if (units.length === 0) return Effect.succeed(new Map<string, Record<string, string>>())
+    if (units.length === 0) {
+      return Effect.succeed({ details: new Map<string, Record<string, string>>() as ReadonlyMap<string, Record<string, string>>, fresh: true })
+    }
     const args = [...scopeArgs(scope), "show", `--property=${SHOW_PROPERTIES.join(",")}`, ...units]
     return runSystemctl(deps, [...args, "--timestamp=us+utc"]).pipe(
       Effect.catch(() => runSystemctl(deps, args)),
       Effect.map(parseSystemctlShowBatch),
       Effect.tap((details) => Effect.sync(() => lastDetails.set(scope, details))),
+      Effect.map((details) => ({ details, fresh: true })),
       Effect.catch((error) => {
         const previous = lastDetails.get(scope)
-        return previous === undefined ? Effect.fail(error) : Effect.succeed(previous)
+        return previous === undefined ? Effect.fail(error) : Effect.succeed({ details: previous, fresh: false })
       }),
     )
   }
@@ -725,6 +741,7 @@ export const createSystemdAgentPlugin = (
     timers: [],
     schedule: [],
     details: new Map(),
+    detailsFresh: true,
   })
 
   /**
@@ -764,7 +781,7 @@ export const createSystemdAgentPlugin = (
             // A timer's service may not be loaded, so list-units can miss it.
             ...schedule.map((entry) => entry.activates).filter((unit) => unit.length > 0),
           ]),
-        ]).pipe(Effect.map((details) => ({ scope, services, timers, schedule, details }))),
+        ]).pipe(Effect.map(({ details, fresh }) => ({ scope, services, timers, schedule, details, detailsFresh: fresh }))),
       ),
     )
 
