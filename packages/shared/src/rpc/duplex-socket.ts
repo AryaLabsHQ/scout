@@ -32,7 +32,7 @@
  * `effect/rpc/RpcMessage.ts`.
  */
 
-import { Effect, Layer, Option, Queue } from "effect"
+import { Deferred, Effect, Layer, Option, Queue } from "effect"
 import { constVoid } from "effect/Function"
 import type * as Scope from "effect/Scope"
 import type * as Socket from "effect/socket/Socket"
@@ -72,7 +72,8 @@ const isFromClientEncoded = (
 /**
  * Build an `RpcServer.Protocol` and an `RpcClient.Protocol` that share
  * one underlying WebSocket. Returns them as Layers that can be provided
- * to `RpcServer.layer(...)` and `RpcClient.make(...)` independently.
+ * to `RpcServer.layer(...)` and `RpcClient.make(...)` independently, plus a
+ * `closed` effect that completes when the socket stops reading.
  *
  * The caller is responsible for providing a `Socket.Socket` scoped to
  * the lifetime of the desired RPC session, plus an `RpcSerialization`
@@ -87,6 +88,8 @@ export const makeDuplexRpcProtocols = (
   {
     readonly serverProtocol: Layer.Layer<RpcServer.Protocol>
     readonly clientProtocol: Layer.Layer<RpcClient.Protocol>
+    /** Completes when the underlying socket stops reading (closed or failed). */
+    readonly closed: Effect.Effect<void>
   },
   never,
   RpcSerialization.RpcSerialization | Scope.Scope
@@ -144,6 +147,12 @@ export const makeDuplexRpcProtocols = (
       }
     }
 
+    // Completes once the reader loop stops: the socket failed to open, the
+    // peer closed it, or the scope closed. Socket writes suspend while
+    // disconnected, so callers must race their RPC session against this to
+    // notice a dead connection.
+    const closed = yield* Deferred.make<void>()
+
     // Fork the socket reader loop. Acquiring the reader establishes the
     // connection; each pulled frame is dispatched to either the server- or
     // client-side handler by _tag. The pull fails with a SocketError when
@@ -157,7 +166,11 @@ export const makeDuplexRpcProtocols = (
             yield* processFrame(frame)
           }
         }
-      }).pipe(Effect.scoped, Effect.ignore),
+      }).pipe(
+        Effect.scoped,
+        Effect.ignore,
+        Effect.ensuring(Deferred.succeed(closed, undefined)),
+      ),
     )
 
     // ── Outbound send functions ─────────────────────────────────────────
@@ -249,5 +262,6 @@ export const makeDuplexRpcProtocols = (
     return {
       serverProtocol: Layer.succeed(RpcServer.Protocol, serverProtocolService),
       clientProtocol: Layer.succeed(RpcClient.Protocol, clientProtocolService),
+      closed: Deferred.await(closed),
     } as const
   })

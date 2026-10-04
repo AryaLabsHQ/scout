@@ -106,6 +106,9 @@ export class AgentRegistry extends Context.Service<
   {
     make: Effect.gen(function* () {
       const db = yield* Database
+      // Grace fibers outlive the connection fiber that calls `unregister`, so
+      // they run in the registry's own scope rather than as its children.
+      const registryScope = yield* Effect.scope
       const entries = yield* Ref.make(new Map<string, AgentEntry>())
       const graceFibers = yield* Ref.make(new Map<string, Fiber.Fiber<void, never>>())
 
@@ -204,7 +207,7 @@ export class AgentRegistry extends Context.Service<
 
           if (!existed) return
 
-          const graceFiber = yield* Effect.forkChild(
+          const graceFiber = yield* Effect.forkIn(
             Effect.gen(function* () {
               yield* Effect.sleep("5 seconds")
               const stillGone = yield* Ref.get(entries).pipe(
@@ -224,6 +227,7 @@ export class AgentRegistry extends Context.Service<
                 return next
               })
             }),
+            registryScope,
           )
 
           yield* Ref.update(graceFibers, (m) =>
@@ -352,7 +356,7 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
 
   yield* Effect.scoped(
     Effect.gen(function* () {
-      const { serverProtocol, clientProtocol } =
+      const { serverProtocol, clientProtocol, closed } =
         yield* makeDuplexRpcProtocols(socket)
 
       // Build the hub→agent typed RPC client on this socket
@@ -387,6 +391,9 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         Effect.provide(Layer.fresh(AgentConnectHandlerLive)),
         Effect.provide(RegisterAgentLive),
         Effect.provide(serverProtocol),
+        // The session ends when the agent's socket closes, which runs the
+        // unregister finalizer below.
+        Effect.raceFirst(closed),
       )
     }).pipe(
       Effect.provide(RpcSerialization.layerNdjson),

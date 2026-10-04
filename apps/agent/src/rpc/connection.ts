@@ -13,7 +13,7 @@
  * on any socket error or disconnect.
  */
 
-import { Cause, Duration, Effect, Layer, Ref, Schedule } from "effect"
+import { Cause, Data, Duration, Effect, Layer, Ref, Schedule } from "effect"
 import * as Context from "effect/Context"
 import * as Socket from "effect/socket/Socket"
 import * as RpcClient from "effect/rpc/RpcClient"
@@ -46,6 +46,8 @@ export type HubAgentRpcClient = RpcClient.RpcClient<
 export class HubClient extends Context.Service<HubClient, HubAgentRpcClient>()(
   "@scout/HubClient",
 ) {}
+
+class HubSocketClosed extends Data.TaggedError("HubSocketClosed")<{}> {}
 
 // ── Backoff schedule ──────────────────────────────────────────────────────────
 
@@ -86,7 +88,14 @@ const makeConnectOnce = (
     yield* Effect.scoped(
       Effect.gen(function* () {
         // Build dual-direction protocols over the single socket
-        const { serverProtocol, clientProtocol } = yield* makeDuplexRpcProtocols(socket)
+        const { serverProtocol, clientProtocol, closed } =
+          yield* makeDuplexRpcProtocols(socket)
+
+        // Writes suspend while the socket is down, so end this attempt (and
+        // let the reconnect schedule retry) as soon as the socket stops.
+        const failOnClose = closed.pipe(
+          Effect.andThen(Effect.fail(new HubSocketClosed())),
+        )
 
         // ── RPC client (agent → hub) ──────────────────────────────────────────
         const agentHubClient = yield* RpcClient.make(AgentHubRpcs).pipe(
@@ -101,7 +110,7 @@ const makeConnectOnce = (
           platform: process.platform,
           capabilities,
           pluginCapabilities,
-        })
+        }).pipe(Effect.raceFirst(failOnClose))
 
         yield* Effect.logInfo("HubConnection: connected", {
           hostname: config.hostname,
@@ -122,6 +131,7 @@ const makeConnectOnce = (
             ),
           ),
           Effect.provide(serverProtocol),
+          Effect.raceFirst(failOnClose),
         )
       }).pipe(
         Effect.provide(RpcSerialization.layerNdjson),
@@ -156,7 +166,7 @@ export const HubConnectionLayer = Layer.effect(
 
     // Fork the reconnect loop as a detached fiber
     yield* makeConnectOnce(wsUrl, clientRef).pipe(
-      Effect.catchCause((cause) =>
+      Effect.tapCause((cause) =>
         Effect.logWarning(
           "HubConnection: attempt failed, will retry",
           { error: Cause.pretty(cause) },
