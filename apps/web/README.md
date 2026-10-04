@@ -12,13 +12,18 @@
 ## Configuration
 
 Common environment variable:
-- `SCOUT_HUB_URL`
+- `SCOUT_HUB_URL`: hub base URL for SSR and server functions (default `http://127.0.0.1:3001`),
+  also the Vite dev proxy target
 
-The hub RPC browser protocol is wired in [`src/rpc/protocol.ts`](./src/rpc/protocol.ts).
+The browser always connects to `/ws/rpc` on the page origin
+([`src/rpc/protocol.ts`](./src/rpc/protocol.ts)): a reverse proxy routes it to the hub in
+production and Vite proxies it in development. Server functions call the hub through
+[`src/server/hub.ts`](./src/server/hub.ts), which forwards the visitor's Cloudflare Access
+credential.
 
 ## Key Entry Points
 
-- [`src/routes/__root.tsx`](./src/routes/__root.tsx): app shell, root loader, and hub URL injection
+- [`src/routes/__root.tsx`](./src/routes/__root.tsx): app shell and root loader
 - [`src/providers/atom-provider.tsx`](./src/providers/atom-provider.tsx): Atom registry, runtime pinning, and SSR seeding
 - [`src/rpc/client.ts`](./src/rpc/client.ts): shared browser RPC client
 - [`src/server/`](./src/server): SSR/bootstrap fetch helpers

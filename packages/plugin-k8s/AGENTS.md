@@ -27,6 +27,7 @@ packages/plugin-k8s/src/
 - Export package entrypoints through `src/index.ts`.
 - Concentrate K8s behavior in `src/k8s.ts`; keep runtime adapters thin.
 - Add new cluster-facing action or stream names in `contracts.ts` before touching adapters or UI consumers.
+- `kubectl` inherits the agent's environment, so `KUBECONFIG` selects the cluster identity. A new kubectl verb or resource needs a matching rule in `deploy/agni/k8s/rbac.yaml`.
 
 ## ANTI-PATTERNS
 - Do not duplicate K8s action or entity ids outside `contracts.ts`.
