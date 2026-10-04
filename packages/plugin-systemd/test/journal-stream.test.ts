@@ -70,20 +70,17 @@ const isRunning = (pid: number): boolean => {
   }
 }
 
-/** Fails fast instead of hanging when a stream release never finishes. */
-const withDeadline = <A>(promise: Promise<A>, label: string, ms = 5_000): Promise<A> =>
-  Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} did not finish within ${ms}ms`)), ms),
-    ),
-  ])
+/**
+ * Interrupts the test effect after `ms`, so a failing run still closes the
+ * stream scope instead of leaving its child behind.
+ */
+const runWithDeadline = <A, E>(effect: Effect.Effect<A, E>, ms = 5_000): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.timeout(ms)))
 
 describe("systemd unit log stream", () => {
   it("kills and reaps journalctl when the consumer stops after the first batch", async () => {
-    const first = await withDeadline(
-      Effect.runPromise(openUnitLogs.pipe(Effect.flatMap((stream) => Stream.runHead(stream)))),
-      "closing the stream after its first batch",
+    const first = await runWithDeadline(
+      openUnitLogs.pipe(Effect.flatMap((stream) => Stream.runHead(stream))),
     )
 
     expect(first._tag).toBe("Some")
@@ -95,23 +92,20 @@ describe("systemd unit log stream", () => {
   })
 
   it("kills and reaps journalctl when the stream is interrupted while idle", async () => {
-    const pid = await withDeadline(
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const stream = yield* openUnitLogs
-          const first = yield* Deferred.make<StreamChunk>()
-          const fiber = yield* Stream.runForEach(stream, (chunk) =>
-            Deferred.succeed(first, chunk),
-          ).pipe(Effect.forkChild)
+    const pid = await runWithDeadline(
+      Effect.gen(function* () {
+        const stream = yield* openUnitLogs
+        const first = yield* Deferred.make<StreamChunk>()
+        const fiber = yield* Stream.runForEach(stream, (chunk) =>
+          Deferred.succeed(first, chunk),
+        ).pipe(Effect.forkChild)
 
-          const chunk = yield* Deferred.await(first)
-          // The child is now blocked on a quiet journal, like an idle unit.
-          yield* Effect.sleep("100 millis")
-          yield* Fiber.interrupt(fiber)
-          return pidOf(chunk)
-        }),
-      ),
-      "interrupting an idle stream",
+        const chunk = yield* Deferred.await(first)
+        // The child is now blocked on a quiet journal, like an idle unit.
+        yield* Effect.sleep("100 millis")
+        yield* Fiber.interrupt(fiber)
+        return pidOf(chunk)
+      }),
     )
 
     expect(isRunning(pid)).toBe(false)
