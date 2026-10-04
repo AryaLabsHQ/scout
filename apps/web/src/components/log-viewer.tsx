@@ -226,7 +226,12 @@ export function LogViewer({ onClose, params, title, className }: LogViewerProps)
     typeof params.input === "object" && params.input !== null && typeof (params.input as Record<string, unknown>)["tail"] === "number"
       ? Number((params.input as Record<string, unknown>)["tail"])
       : 200
-  const [tail, setTail] = useState(initialTail)
+  // A tail picked in the selector applies to the target it was picked for; a new
+  // target (or a new configured tail) starts from its own configured value.
+  const targetKey = `${params.agentId}:${params.pluginId}:${params.streamId}:${params.entity?.id ?? ""}:${initialTail}`
+  const [picked, setPicked] = useState<{ readonly target: string; readonly tail: number } | null>(null)
+  const tail = picked?.target === targetKey ? picked.tail : initialTail
+  const setTail = (next: number) => setPicked({ target: targetKey, tail: next })
   // Keyed on the params' content so an inline params object from the caller
   // does not restart the stream on every render; a new tail size does.
   const paramsKey = JSON.stringify(params)
