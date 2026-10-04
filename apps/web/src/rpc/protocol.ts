@@ -3,22 +3,15 @@ import { RpcClient, RpcSerialization } from "effect/rpc"
 import { BrowserSocket } from "@effect/platform-browser"
 
 /**
- * Resolve the hub WebSocket URL:
- * - Client-side: from `window.__SCOUT_HUB_URL__` (injected by TanStack Start SSR)
- *   or derived from `window.location` (same-origin ws)
- * - Server-side (SSR): placeholder — the client reconnects on hydration
+ * The browser always reaches the hub same-origin at `/ws/rpc`: in production
+ * the reverse proxy routes `/ws/*` to the hub (and Cloudflare Access attaches
+ * the identity), and in development Vite proxies `/ws/rpc` to `SCOUT_HUB_URL`.
+ * During SSR nothing connects; the URL is only a placeholder.
  */
 const resolveHubWsUrl = (): string => {
-  if (typeof window !== "undefined") {
-    const injected = (window as Window & { __SCOUT_HUB_URL__?: string }).__SCOUT_HUB_URL__
-    if (injected) {
-      return injected.replace(/^http/, "ws") + "/ws/rpc"
-    }
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
-    return `${proto}//${window.location.host}/ws/rpc`
-  }
-  // SSR placeholder — won't actually connect during server render
-  return "ws://localhost:3001/ws/rpc"
+  if (typeof window === "undefined") return "ws://127.0.0.1/ws/rpc"
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
+  return `${proto}//${window.location.host}/ws/rpc`
 }
 
 /**

@@ -5,10 +5,10 @@ import { HubProtocolLayer } from "./protocol.js"
 /**
  * HubClient — AtomRpc service for the browser → hub RPC connection.
  *
- * Auth: The hub's `/ws/rpc` endpoint accepts a `authorization: Bearer <token>`
- * header per request. For now we skip per-request token injection; the hub
- * relies on Tailscale network security for personal-use deployments. Phase I
- * will add header middleware if token-per-request is needed.
+ * Auth: the hub authenticates `/ws/rpc` with the Cloudflare Access JWT that
+ * Access attaches to the same-origin websocket upgrade (header or
+ * `CF_Authorization` cookie), so the client sends no credentials itself. RPCs
+ * can fail with `Unauthorized` once that JWT expires.
  *
  * Usage:
  *   // Read-only query:
