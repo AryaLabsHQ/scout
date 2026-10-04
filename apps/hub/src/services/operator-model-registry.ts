@@ -1,21 +1,24 @@
 import { Config, Effect, Layer } from "effect"
 import * as Context from "effect/Context"
-import {
-  getModels,
-  getProviders,
-  type Api,
-  type KnownProvider,
-  type Model,
-} from "@mariozechner/pi-ai"
-import { ManagementError, type OperatorModelDescriptor, type OperatorSessionSummary } from "@scout/shared"
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core"
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai"
+import type { Models } from "@earendil-works/pi-ai/models"
+import { builtinModels } from "@earendil-works/pi-ai/providers/all"
+import type { OperatorModelDescriptor } from "@scout/shared"
+import { scriptedFauxProvider } from "./operator-faux-provider.js"
 
-export interface OperatorResolvedModelConfig {
+export interface OperatorModelRef {
   readonly providerId: string
   readonly modelId: string
-  readonly model: Model<Api>
+}
+
+export interface OperatorModelSettings {
+  readonly models: Models
+  /** Chat models whose provider has credentials configured. */
+  readonly available: ReadonlyArray<OperatorModelDescriptor>
+  /** Model for new sessions; null when no provider is configured. */
+  readonly defaultModel: OperatorModelRef | null
+  readonly thinkingLevel: ModelThinkingLevel
   readonly systemPrompt: string
-  readonly thinkingLevel: ThinkingLevel
 }
 
 const DEFAULT_SYSTEM_PROMPT = [
@@ -24,171 +27,75 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Use tools conservatively and explain concrete findings.",
 ].join(" ")
 
-const parseThinkingLevel = (value: string): ThinkingLevel => {
-  switch (value) {
-    case "off":
-    case "minimal":
-    case "low":
-    case "medium":
-    case "high":
-    case "xhigh":
-      return value
-    default:
-      return "medium"
+const THINKING_LEVELS: ReadonlyArray<ModelThinkingLevel> = ["off", "minimal", "low", "medium", "high", "xhigh"]
+
+const parseThinkingLevel = (value: string): ModelThinkingLevel =>
+  THINKING_LEVELS.find((level) => level === value) ?? "medium"
+
+const describe = (model: Model<Api>): OperatorModelDescriptor => ({
+  providerId: model.provider,
+  modelId: model.id,
+  label: `${model.provider}/${model.id}`,
+  reasoning: Boolean(model.reasoning),
+})
+
+/** The configured model, else a reasoning model of a preferred configured provider, else any available. */
+export const selectDefaultModel = (
+  available: ReadonlyArray<OperatorModelDescriptor>,
+  configured: { readonly providerId: string; readonly modelId: string },
+): OperatorModelRef | null => {
+  const ofProvider = (providerId: string) => available.filter((model) => model.providerId === providerId)
+  if (configured.providerId.length > 0) {
+    const candidates = ofProvider(configured.providerId)
+    const match =
+      configured.modelId.length > 0
+        ? candidates.find((model) => model.modelId === configured.modelId)
+        : (candidates.find((model) => model.reasoning) ?? candidates[0])
+    return match === undefined ? null : { providerId: match.providerId, modelId: match.modelId }
   }
+  const preferred = [...ofProvider("anthropic"), ...ofProvider("openai"), ...available]
+  const match = preferred.find((model) => model.reasoning) ?? preferred[0]
+  return match === undefined ? null : { providerId: match.providerId, modelId: match.modelId }
 }
 
-const modelLabel = (providerId: string, model: Model<Api>): string =>
-  `${providerId}/${model.id}`
-
-const toManagementError = (code: string, message: string): ManagementError =>
-  new ManagementError({ code, message })
-
-const selectProvider = (configuredProviderId: string): KnownProvider | null => {
-  const providers = getProviders()
-  if (providers.length === 0) {
-    return null
-  }
-
-  if (configuredProviderId.length > 0 && providers.includes(configuredProviderId as KnownProvider)) {
-    return configuredProviderId as KnownProvider
-  }
-
-  const preferredProvider = providers.find(
-    (providerId) => providerId === "openai" || providerId === "anthropic",
-  )
-  return preferredProvider ?? providers[0] ?? null
-}
-
-const selectDefaultModel = (
-  providerId: KnownProvider,
-  configuredModelId: string,
-): Model<Api> | null => {
-  const models = getModels(providerId) as Array<Model<Api>>
-  if (models.length === 0) {
-    return null
-  }
-
-  if (configuredModelId.length > 0) {
-    return models.find((model) => model.id === configuredModelId) ?? null
-  }
-
-  return models.find((model) => model.reasoning) ?? models[0] ?? null
-}
-
-export class OperatorModelRegistry extends Context.Service<
-  OperatorModelRegistry,
-  {
-    readonly list: () => Effect.Effect<ReadonlyArray<OperatorModelDescriptor>>
-    readonly getDefault: Effect.Effect<OperatorResolvedModelConfig, ManagementError>
-    readonly resolveSession: (
-      session: Pick<OperatorSessionSummary, "modelProviderId" | "modelId">,
-    ) => Effect.Effect<OperatorResolvedModelConfig, ManagementError>
-  }
->()(
+/**
+ * pi-ai model access for the operator. Providers read their credentials from the environment
+ * (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY); `SCOUT_OPERATOR_MODEL_PROVIDER` / `SCOUT_OPERATOR_MODEL_ID`
+ * pick the default for new sessions. Provider `faux` registers a scripted local model for smoke tests.
+ */
+export class OperatorModelRegistry extends Context.Service<OperatorModelRegistry, OperatorModelSettings>()(
   "@scout/OperatorModelRegistry",
   {
     make: Effect.gen(function* () {
-      const configuredProviderId = yield* Config.withDefault(
-        Config.String("SCOUT_OPERATOR_MODEL_PROVIDER"),
-        "",
-      )
-      const configuredModelId = yield* Config.withDefault(
-        Config.String("SCOUT_OPERATOR_MODEL_ID"),
-        "",
-      )
-      const configuredSystemPrompt = yield* Config.withDefault(
+      const providerId = yield* Config.withDefault(Config.String("SCOUT_OPERATOR_MODEL_PROVIDER"), "")
+      const modelId = yield* Config.withDefault(Config.String("SCOUT_OPERATOR_MODEL_ID"), "")
+      const systemPrompt = yield* Config.withDefault(
         Config.String("SCOUT_OPERATOR_SYSTEM_PROMPT"),
         DEFAULT_SYSTEM_PROMPT,
       )
-      const configuredThinkingLevel = yield* Config.withDefault(
-        Config.String("SCOUT_OPERATOR_THINKING_LEVEL"),
-        "medium",
+      const thinkingLevel = parseThinkingLevel(
+        yield* Config.withDefault(Config.String("SCOUT_OPERATOR_THINKING_LEVEL"), "medium"),
       )
 
-      const descriptors: Array<OperatorModelDescriptor> = []
-      const resolvedModels = new Map<string, OperatorResolvedModelConfig>()
+      const models = builtinModels()
+      if (providerId === "faux") models.setProvider(scriptedFauxProvider())
+      const available = (yield* Effect.promise(() => models.getAvailable())).map(describe)
+      const defaultModel = selectDefaultModel(available, { providerId, modelId })
 
-      for (const providerId of getProviders()) {
-        const models = getModels(providerId) as Array<Model<Api>>
-        for (const model of models) {
-          descriptors.push({
-            providerId,
-            modelId: model.id,
-            label: modelLabel(providerId, model),
-            reasoning: Boolean(model.reasoning),
-          })
-          resolvedModels.set(`${providerId}:${model.id}`, {
-            providerId,
-            modelId: model.id,
-            model,
-            systemPrompt: configuredSystemPrompt,
-            thinkingLevel: parseThinkingLevel(configuredThinkingLevel),
-          })
-        }
-      }
-
-      const defaultProviderId = selectProvider(configuredProviderId)
-      if (defaultProviderId === null) {
-        return yield* Effect.fail(
-          toManagementError(
-            "operator-model-provider-missing",
-            "No pi-ai providers are available for the Scout operator runtime",
-          ),
-        )
-      }
-
-      const defaultModel = selectDefaultModel(defaultProviderId, configuredModelId)
       if (defaultModel === null) {
-        return yield* Effect.fail(
-          toManagementError(
-            "operator-model-missing",
-            configuredModelId.length > 0
-              ? `Operator model ${configuredProviderId}/${configuredModelId} is not available`
-              : `No operator models are available for provider ${defaultProviderId}`,
-          ),
+        yield* Effect.logWarning(
+          "OperatorModelRegistry: no configured model provider; operator sessions cannot be created",
+          { configuredProvider: providerId, configuredModel: modelId },
         )
+      } else {
+        yield* Effect.logInfo("OperatorModelRegistry: default operator model", {
+          ...defaultModel,
+          thinkingLevel,
+          availableModelCount: available.length,
+        })
       }
 
-      const defaultKey = `${defaultProviderId}:${defaultModel.id}`
-      const defaultResolved = resolvedModels.get(defaultKey)
-      if (!defaultResolved) {
-        return yield* Effect.fail(
-          toManagementError(
-            "operator-model-missing",
-            `Resolved operator model ${defaultKey} is unavailable`,
-          ),
-        )
-      }
-
-      const resolveSession = (
-        session: Pick<OperatorSessionSummary, "modelProviderId" | "modelId">,
-      ) =>
-        Effect.sync(() => resolvedModels.get(`${session.modelProviderId}:${session.modelId}`) ?? null).pipe(
-          Effect.flatMap((resolved) =>
-            resolved === null
-              ? Effect.fail(
-                  toManagementError(
-                    "operator-model-missing",
-                    `Operator session model ${session.modelProviderId}/${session.modelId} is unavailable`,
-                  ),
-                )
-              : Effect.succeed(resolved),
-          ),
-        )
-
-      yield* Effect.logInfo("OperatorModelRegistry: resolved default operator model", {
-        providerId: defaultResolved.providerId,
-        modelId: defaultResolved.modelId,
-        thinkingLevel: defaultResolved.thinkingLevel,
-        availableModelCount: descriptors.length,
-      })
-
-      return {
-        list: () => Effect.succeed(descriptors),
-        getDefault: Effect.succeed(defaultResolved),
-        resolveSession,
-      }
+      return { models, available, defaultModel, thinkingLevel, systemPrompt }
     }),
   },
 ) {

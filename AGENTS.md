@@ -55,8 +55,8 @@ Services are built with `Context.Service`, dependencies are composed with `Layer
 - Shared RPC directionality is explicit: browser→hub, agent→hub, and hub→agent each get their own file under `packages/shared/src/rpc`.
 - Plugin packages are split the same way everywhere: `contracts.ts` defines ids/schemas, `manifest.ts` exposes metadata, and `agent.ts` / `hub.ts` / `web.ts` bind runtime-specific behavior.
 - Hub HTTP endpoints in `apps/hub/src/routes.ts` serialize database state for bootstrap and diagnostics; interactive management flows belong in RPC layers instead of bespoke REST routes.
-- Operator sessions are event-sourced: append-only events + projected tables (entries, toolCalls, approvals, projections, planSnapshots). The hub streams transient events (streaming content, title/summary updates) via PubSub without DB persistence.
-- Operator tools run through pi-agent-core's `Agent` class with `beforeToolCall`/`afterToolCall` hooks for approval enforcement, plan mode blocking, and ask-user interception.
+- Operator sessions run on pi-durable (`@earendil-works/pi-durable`) over a separate SQLite file (`SCOUT_OPERATOR_DB_PATH`): transcripts, tool calls, and Scout documents (session metadata, approvals) commit durably and resume after a hub restart. The browser watches projected session snapshots (`operator.sessions.watch`).
+- Approvals and `ask_user` wait inside the tool's `execute()` on a durable approvals document; side-effecting tools claim a single execution with a task memo, so a restart never re-executes them. See `docs/operator/architecture.md`.
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -69,10 +69,10 @@ Services are built with `Context.Service`, dependencies are composed with `Layer
 | `HubAgentRpcs` / `AgentHubRpcs` | RPC groups | `packages/shared/src/rpc` | Duplex control channel between hub and agents |
 | `HubClient` | AtomRpc service | `apps/web/src/rpc/client.ts` | Browser RPC client consumed by route/page atoms |
 | `definePluginManifest` | SDK helper | `packages/plugin-sdk/src/runtime.ts` | Canonical plugin manifest typing helper |
-| `OperatorRuntime` | service | `apps/hub/src/services/operator-runtime.ts` | Pi-agent-core adapter, 8 tools, approval interception |
-| `OperatorSessionManager` | service | `apps/hub/src/services/operator-session-manager.ts` | Session lifecycle, branch/fork, skill attachment, prepareRuntime |
-| `OperatorSessions` | service | `apps/hub/src/services/operator-sessions.ts` | DB persistence, event sourcing, PubSub streaming |
-| `OperatorModelRegistry` | service | `apps/hub/src/services/operator-model-registry.ts` | Pi-ai model resolution, provider discovery |
+| `OperatorHarness` | service | `apps/hub/src/services/operator-harness.ts` | pi-durable Harness lifecycle (open/resume/close) and Scout extensions |
+| `OperatorSessions` | service | `apps/hub/src/services/operator-sessions.ts` | Session lifecycle, fork, approvals, abort, projection, watch stream |
+| `makeOperatorExtensions` | function | `apps/hub/src/services/operator-tools.ts` | 8 tools, durable approval gate, plan-mode extension |
+| `OperatorModelRegistry` | service | `apps/hub/src/services/operator-model-registry.ts` | pi-ai models with configured credentials, default model |
 | `OperatorPromptInput` | component | `apps/web/src/components/operator/operator-prompt-input.tsx` | Tiptap editor with @mentions, /commands, history |
 
 ## CONVENTIONS

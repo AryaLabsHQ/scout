@@ -177,7 +177,7 @@ function OperatorSessionSurface({
                     variant="outline"
                     className={cn(
                       "shrink-0 text-[10px] uppercase",
-                      session.status === "active" && "border-green-500/40 text-green-500",
+                      session.status === "running" && "border-green-500/40 text-green-500",
                       session.status === "waiting_for_user" && "border-yellow-500/40 text-yellow-500",
                     )}
                   >

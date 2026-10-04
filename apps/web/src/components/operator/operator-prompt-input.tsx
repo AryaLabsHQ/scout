@@ -7,13 +7,19 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert01Icon,
   ArrowUp01Icon,
-  Cancel01Icon,
   Edit02Icon,
   Image02Icon,
   Shield01Icon,
   ShieldCheck,
+  StopIcon,
 } from "@hugeicons/core-free-icons"
-import type { OperatorModelDescriptor, OperatorSkill, System } from "@scout/shared"
+import type {
+  OperatorApprovalMode,
+  OperatorModelDescriptor,
+  OperatorPlanMode,
+  OperatorSkill,
+  System,
+} from "@scout/shared"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -34,16 +40,32 @@ import "./tiptap/prompt-input.css"
 const HISTORY_KEY = "scout:operator:prompt-history"
 const MAX_HISTORY = 50
 
+const APPROVAL_MODE_OPTIONS: ReadonlyArray<{
+  value: OperatorApprovalMode
+  label: string
+  desc: string
+  icon: typeof Shield01Icon
+}> = [
+  { value: "confirm_each_mutation", label: "Confirm mutations", desc: "Approve every write action", icon: Shield01Icon },
+  { value: "auto_approve_reads", label: "Auto-approve reads", desc: "Only prompt for writes", icon: ShieldCheck },
+  { value: "auto_approve_all", label: "Auto-approve all", desc: "No approval required", icon: Alert01Icon },
+]
+
 interface OperatorPromptInputProps {
   draft: string
   setDraft: (v: string) => void
   isSubmitting: boolean
   onSubmit: () => void
-  onCancel?: () => void
-  approvalMode: string
-  onApprovalModeChange?: (mode: string) => void
-  planMode?: string
-  onPlanModeChange?: (mode: string) => void
+  /** The session has a running answer or pending approval; shows the Stop button. */
+  isBusy?: boolean
+  isAborting?: boolean
+  onAbort?: () => void
+  /** Prompts queued behind the running answer. */
+  queuedInputs?: number
+  approvalMode: OperatorApprovalMode
+  onApprovalModeChange?: (mode: OperatorApprovalMode) => void
+  planMode?: OperatorPlanMode
+  onPlanModeChange?: (mode: OperatorPlanMode) => void
   nodeCount: number
   systems: ReadonlyArray<System>
   skills: ReadonlyArray<OperatorSkill>
@@ -61,7 +83,10 @@ export function OperatorPromptInput({
   setDraft,
   isSubmitting,
   onSubmit,
-  onCancel,
+  isBusy = false,
+  isAborting = false,
+  onAbort,
+  queuedInputs = 0,
   approvalMode,
   onApprovalModeChange,
   planMode,
@@ -294,9 +319,9 @@ export function OperatorPromptInput({
     <div className={cn(
       "relative border-t border-border",
       approvalMode === "auto_approve_all" && "border-t-2 border-red-500/30",
-      isSubmitting && "border-t-0",
+      (isSubmitting || isBusy) && "border-t-0",
     )}>
-      {isSubmitting && (
+      {(isSubmitting || isBusy) && (
         <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-border">
           <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] bg-primary" />
         </div>
@@ -451,11 +476,7 @@ export function OperatorPromptInput({
                 )}
               </PopoverTrigger>
               <PopoverContent className="w-64 p-2" align="start">
-                {[
-                  { value: "confirm_each_mutation", label: "Confirm mutations", desc: "Approve every write action", icon: Shield01Icon },
-                  { value: "auto_approve_reads", label: "Auto-approve reads", desc: "Only prompt for writes", icon: ShieldCheck },
-                  { value: "auto_approve_all", label: "Auto-approve all", desc: "No approval required", icon: Alert01Icon },
-                ].map((mode) => (
+                {APPROVAL_MODE_OPTIONS.map((mode) => (
                   <button
                     key={mode.value}
                     type="button"
@@ -507,42 +528,45 @@ export function OperatorPromptInput({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {isSubmitting && onCancel ? (
+          {queuedInputs > 0 ? (
+            <Badge variant="outline" className="text-[10px]">
+              {queuedInputs} queued
+            </Badge>
+          ) : null}
+          {isBusy && onAbort ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     size="icon"
-                    variant="ghost"
-                    onClick={onCancel}
-                    className="size-7 text-muted-foreground"
+                    variant="outline"
+                    onClick={onAbort}
+                    disabled={isAborting}
+                    className="size-7"
                   />
                 }
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={14} />
+                <HugeiconsIcon icon={StopIcon} size={14} />
               </TooltipTrigger>
-              <TooltipContent>Cancel</TooltipContent>
+              <TooltipContent>Stop</TooltipContent>
             </Tooltip>
-          ) : (
-            <>
-              <Kbd className="text-[10px]">⏎</Kbd>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon"
-                      onClick={handleSubmit}
-                      disabled={!hasContent}
-                      className="size-7"
-                    />
-                  }
-                >
-                  <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
-                </TooltipTrigger>
-                <TooltipContent>Send (Enter)</TooltipContent>
-              </Tooltip>
-            </>
-          )}
+          ) : null}
+          <Kbd className="text-[10px]">⏎</Kbd>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  onClick={handleSubmit}
+                  disabled={!hasContent || isSubmitting}
+                  className="size-7"
+                />
+              }
+            >
+              <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
+            </TooltipTrigger>
+            <TooltipContent>{isBusy ? "Queue follow-up (Enter)" : "Send (Enter)"}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

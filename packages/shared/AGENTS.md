@@ -16,7 +16,7 @@ packages/shared/
 | Task | Location | Notes |
 |------|----------|-------|
 | Add or change shared models | `src/schemas` | Export new schemas from `src/schemas/index.ts` |
-| Operator session/event/tool schemas | `src/schemas/operator.ts` | Event-sourced session models, tool call shapes, approval payloads |
+| Operator session/tool schemas | `src/schemas/operator.ts` | Session summary/detail projections, timeline items, approval payloads |
 | Add or change RPC endpoints | `src/rpc` | Keep directionality split by caller/callee; operator.* RPCs live in `client-hub.ts` |
 | Find legacy TS-only shapes | `src/types` | `src/index.ts` documents which areas are still not schema-backed |
 

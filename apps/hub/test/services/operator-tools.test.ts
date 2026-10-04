@@ -5,9 +5,9 @@ import {
   formatPluginInventory,
   type PluginInventoryManifest,
   requiresOperatorApproval,
-} from "../../src/services/operator-runtime.js"
+} from "../../src/services/operator-tools.js"
 
-describe("OperatorRuntime helpers", () => {
+describe("operator tool helpers", () => {
   it("formatMetricsSnapshot summarizes host metrics compactly", () => {
     const text = formatMetricsSnapshot([
       {
@@ -148,7 +148,7 @@ describe("OperatorRuntime helpers", () => {
     ])
 
     expect(
-      requiresOperatorApproval("bash.run", {
+      requiresOperatorApproval("bash_run", {
         nodeId: "node-a",
         isMutation: true,
         label: "Restart nginx",
@@ -156,7 +156,7 @@ describe("OperatorRuntime helpers", () => {
     ).toEqual({ required: true, reason: "Restart nginx" })
 
     expect(
-      requiresOperatorApproval("plugin.runAction", {
+      requiresOperatorApproval("plugin_run_action", {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "inspect-container",
@@ -164,7 +164,7 @@ describe("OperatorRuntime helpers", () => {
     ).toBe(false)
 
     expect(
-      requiresOperatorApproval("plugin.runAction", {
+      requiresOperatorApproval("plugin_run_action", {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "restart-container",
@@ -172,7 +172,7 @@ describe("OperatorRuntime helpers", () => {
     ).toBe(true)
 
     expect(
-      requiresOperatorApproval("plugin.runAction", {
+      requiresOperatorApproval("plugin_run_action", {
         nodeId: "node-a",
         pluginId: "docker",
         actionId: "missing-action",
@@ -189,7 +189,7 @@ describe("OperatorRuntime helpers", () => {
 
     // auto_approve_all bypasses all approvals
     expect(
-      requiresOperatorApproval("bash.run", {
+      requiresOperatorApproval("bash_run", {
         nodeId: "node-a",
         isMutation: true,
         label: "Restart nginx",
@@ -198,7 +198,7 @@ describe("OperatorRuntime helpers", () => {
 
     // auto_approve_reads passes read-only bash but blocks mutations
     expect(
-      requiresOperatorApproval("bash.run", {
+      requiresOperatorApproval("bash_run", {
         nodeId: "node-a",
         isMutation: false,
         label: "Check status",
@@ -206,7 +206,7 @@ describe("OperatorRuntime helpers", () => {
     ).toBe(false)
 
     expect(
-      requiresOperatorApproval("bash.run", {
+      requiresOperatorApproval("bash_run", {
         nodeId: "node-a",
         isMutation: true,
         label: "Restart nginx",
@@ -214,7 +214,7 @@ describe("OperatorRuntime helpers", () => {
     ).toBe(true)
 
     expect(
-      requiresOperatorApproval("observe.systems", {}, manifests, pluginOperatorTools, "auto_approve_reads").required,
+      requiresOperatorApproval("observe_systems", {}, manifests, pluginOperatorTools, "auto_approve_reads").required,
     ).toBe(false)
   })
 })

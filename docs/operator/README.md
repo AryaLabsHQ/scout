@@ -4,7 +4,11 @@ The operator is an AI-powered assistant for system administration built into the
 
 ## What is the Operator
 
-The operator is a persistent chat interface backed by an LLM (via pi-agent-core) that has access to your monitored systems through Scout's existing hub-to-agent RPC infrastructure. Each conversation is a **session** with an explicit **node scope** that determines which systems the operator can interact with.
+The operator is a persistent chat interface backed by an LLM (via pi-durable, a durable agent harness) that has access to your monitored systems through Scout's existing hub-to-agent RPC infrastructure. Each conversation is a **session** with an explicit **node scope** that determines which systems the operator can interact with.
+
+Sessions are durable: the conversation, running tool calls, and pending approvals survive a hub restart, and the operator continues where it stopped.
+
+The operator is behind the same Cloudflare Access login as the rest of Scout. Every operator action is recorded in the hub's audit log with who did it, and approval cards show who approved or rejected each call.
 
 The operator runs entirely on the hub. When it needs to inspect or act on a node, it issues the same typed RPC calls that the dashboard uses. There is no separate agent sidecar or SSH connection.
 
@@ -35,23 +39,23 @@ The operator has access to 8 built-in tools, plus any tools contributed by insta
 
 | Tool | Description |
 |------|-------------|
-| `observe.systems` | List systems in the session scope with current status and plugin capability summary |
-| `observe.alerts` | List active or acknowledged alerts within the session scope |
-| `observe.metrics` | Inspect the latest host metrics (CPU, memory, disk, network, GPU, uptime) for scoped nodes |
-| `observe.plugins` | Discover plugin capabilities including available actions, streams, entity counts, and recent activity |
+| `observe_systems` | List systems in the session scope with current status and plugin capability summary |
+| `observe_alerts` | List active or acknowledged alerts within the session scope |
+| `observe_metrics` | Inspect the latest host metrics (CPU, memory, disk, network, GPU, uptime) for scoped nodes |
+| `observe_plugins` | Discover plugin capabilities including available actions, streams, entity counts, and recent activity |
 
 ### Action Tools
 
 | Tool | Description |
 |------|-------------|
-| `bash.run` | Execute a shell command on a scoped node over the Scout PTY transport. The `isMutation` flag controls whether the command is treated as read-only or mutating for approval purposes. |
-| `plugin.runAction` | Execute a plugin action (e.g., restart a Docker container, scale a Kubernetes deployment) through the hub-to-agent plugin management RPC |
-| `plugin.logs` | Read a bounded slice of plugin log output (e.g., systemd journal, container logs, pod logs) from a scoped node |
-| `ask_user` | Ask the operator user a clarifying question with structured options. Always triggers a clarification approval to pause execution until the user responds. |
+| `bash_run` | Execute a shell command on a scoped node over the Scout PTY transport. The `isMutation` flag controls whether the command is treated as read-only or mutating for approval purposes. |
+| `plugin_run_action` | Execute a plugin action (e.g., restart a Docker container, scale a Kubernetes deployment) through the hub-to-agent plugin management RPC |
+| `plugin_logs` | Read a bounded slice of plugin log output (e.g., systemd journal, container logs, pod logs) from a scoped node |
+| `ask_user` | Ask the user a clarifying question with structured options. The operator waits for your answer (pick options and/or type free text); the answer text goes back to the model. |
 
 ### Plugin-Contributed Tools
 
-Installed plugins can contribute additional operator tools. These appear alongside the built-in tools and follow the same approval rules. Use `observe.plugins` to discover what plugin capabilities are available.
+Installed plugins can contribute additional operator tools. These appear alongside the built-in tools and follow the same approval rules. Use `observe_plugins` to discover what plugin capabilities are available.
 
 ## Approval Modes
 
@@ -59,13 +63,15 @@ Every session has an approval mode that controls when the operator pauses for us
 
 | Mode | Behavior |
 |------|----------|
-| `confirm_each_mutation` | **(Default)** All mutating tools require approval. Read-only observe tools and `bash.run` with `isMutation: false` execute freely. |
-| `auto_approve_reads` | Observe tools, `ask_user`, `plugin.logs`, and non-mutating `bash.run` execute without approval. Only mutating `bash.run`, `plugin.runAction` (when the action requires confirmation), and mutating plugin tools require approval. |
+| `confirm_each_mutation` | **(Default)** All mutating tools require approval. Read-only observe tools and `bash_run` with `isMutation: false` execute freely. |
+| `auto_approve_reads` | Observe tools, `ask_user`, `plugin_logs`, and non-mutating `bash_run` execute without approval. Only mutating `bash_run`, `plugin_run_action` (when the action requires confirmation), and mutating plugin tools require approval. |
 | `auto_approve_all` | No approval is ever required. The operator executes all tools immediately. The prompt input border turns red as a visual warning when this mode is active. |
 
-When an approval is requested, the session status changes to `waiting_for_user` and the approval card appears inline in the chat. You can approve or reject it. The keyboard shortcut **Cmd+.** approves the first pending approval.
+When an approval is requested, the call waits: nothing executes until you decide. The session status changes to `waiting_for_user` and the approval card appears inline with the tool call. Approve to run it once; reject to tell the operator not to. A pending approval survives a hub restart. If the hub restarts while an approved call is executing, the call is reported as interrupted and is never run a second time. The keyboard shortcut **Cmd+.** approves the first pending mutation approval.
 
-The `ask_user` tool always triggers a clarification approval regardless of the approval mode. This is how the operator asks follow-up questions.
+The `ask_user` tool always waits for an answer regardless of the approval mode. This is how the operator asks follow-up questions.
+
+Press **Stop** while the operator is working to abort the run; pending approvals become canceled.
 
 ## Plan Mode
 
@@ -74,7 +80,7 @@ Each session can be toggled between **Build** and **Plan** mode:
 | Mode | Behavior |
 |------|----------|
 | **Build** (default) | The operator executes tools directly as needed |
-| **Plan** | The operator is instructed to observe and propose a step-by-step plan before taking any mutating action. Mutating tools (`bash.run` with `isMutation: true`, `plugin.runAction`, and mutating plugin tools) are blocked at the `beforeToolCall` hook level. The operator can still freely use observe tools to investigate. |
+| **Plan** | The operator is instructed to observe and propose a step-by-step plan before taking any mutating action. Mutating tools (`bash_run` with `isMutation: true`, `plugin_run_action`, and mutating plugin tools) are blocked before they run. The operator can still freely use observe tools to investigate. |
 
 Toggle plan mode with the **Plan/Build** button in the prompt input footer or with **Cmd+Shift+P**.
 
@@ -98,23 +104,22 @@ All shortcuts use `react-hotkeys-hook` and work from anywhere in the session pan
 
 ### Session List
 
-The operator workbench (`/operator`) shows all non-archived sessions ordered by last update time. Each card shows the session title, status, model, node scope, and summary.
+The operator workbench (`/operator`) shows all non-archived sessions ordered by last update time. Each card shows the session title, status, model, and node scope.
 
 ### Session Detail
 
 Click a session to open it. The detail view shows:
-- **Timeline**: A chronological stream of events -- user messages, assistant responses, tool executions, approvals, and streaming content
+- **Timeline**: user messages, assistant responses (streamed as they generate), and tool calls with their output and approvals
 - **Metadata sidebar** (workbench only): Session properties, node scope, attached skills, model info, and approval/plan mode controls
 
 ### Session Management
 
 | Action | How |
 |--------|-----|
-| **Rename** | Use the `operator.sessions.setTitle` RPC (or the client sets a fallback title from the first prompt; the server generates a better title asynchronously via a dedicated subagent) |
+| **Rename** | Use the `operator.sessions.setTitle` RPC. The client titles a new session from its first prompt. |
 | **Archive** | From the session menu or via RPC. Archived sessions are hidden from the list but retained in the database. |
-| **Delete** | From the session menu or via RPC. Permanently removes the session and all associated events, entries, tool calls, approvals, and projections (cascade delete). |
-| **Branch** | Right-click or use the menu on any event card to branch. Creates a new conversation fork at that point in the entry tree, reusing the same session. The branch resets the current leaf entry pointer. |
-| **Fork** | Similar to branch, but creates a new independent session that copies the entry history up to the fork point. The forked session appears in the session list as a new entry. |
+| **Delete** | From the session menu or via RPC. Stops the session and removes it from the list. Its transcript remains in the operator database file. |
+| **Fork** | From a user or assistant message. Creates a new session that sees the conversation up to and including that message, then continues independently. |
 
 ## Skills
 
@@ -148,7 +153,7 @@ Skills are discovered recursively from:
 
 ### Attaching Skills
 
-Open the "Manage Skills" dialog from the session menu to attach or detach skills. Attached skills are injected into the system prompt before each operator turn.
+Open the "Manage Skills" dialog from the session menu to attach or detach skills. Attached skills are part of the system prompt from the next model request.
 
 ## Rich Prompt Input
 
@@ -167,7 +172,7 @@ The prompt editor is a tiptap-based rich text input with several extensions:
 
 ### Suggestion Chips
 
-When a session is newly created and has no events, four suggestion chips are displayed:
+When a session is newly created and has no messages, four suggestion chips are displayed:
 - "Check the health of all nodes"
 - "Are there any active alerts?"
 - "What plugins are available?"
@@ -177,17 +182,11 @@ Clicking a chip fills the prompt editor with that text.
 
 ## Streaming and Real-Time Updates
 
-The operator streams results to the browser in real time. As the LLM generates its response, partial content appears with a typing animation. Tool executions show progress as they run -- for example, `bash.run` streams terminal output line by line, and `plugin.logs` streams log batches as they arrive.
-
-The event stream also carries session metadata updates:
-- **Title updates**: After the first prompt, a dedicated subagent generates a concise title. This replaces the placeholder title without requiring a page refresh.
-- **Summary updates**: After each turn, a dedicated subagent generates a 1-2 sentence summary that appears on the session card in the list view.
-
-Both title and summary generation happen asynchronously and do not block the main conversation.
+The operator streams results to the browser in real time. As the LLM generates its response, partial content appears as it is committed (at most every 100 ms). Tool executions show progress as they run -- for example, `bash_run` streams terminal output and `plugin_logs` streams log batches as they arrive.
 
 ## Terminal Projections
 
-When the operator runs `bash.run`, it opens a real PTY session on the target node through Scout's terminal infrastructure. The terminal output is:
+When the operator runs `bash_run`, it opens a real PTY session on the target node through Scout's terminal infrastructure. The terminal output is:
 
 1. Streamed inline in the chat as part of the tool execution card
 2. Projected into a terminal panel tab (accessible via the terminal panel at the bottom of the screen)
@@ -207,10 +206,10 @@ The node scope serves as a safety boundary. Even with `auto_approve_all` enabled
 
 ## Models
 
-The operator supports multiple LLM providers and models through the `OperatorModelRegistry`. Available providers and models depend on which API keys are configured in the environment.
+The operator supports the LLM providers built into pi-ai. Available models depend on which provider API keys are configured in the hub environment (for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). `SCOUT_OPERATOR_MODEL_PROVIDER` and `SCOUT_OPERATOR_MODEL_ID` choose the default model for new sessions. For local smoke tests without credentials, `SCOUT_OPERATOR_MODEL_PROVIDER=faux` selects a scripted model that echoes prompts and runs `/tool <name> <json-args>`.
 
 The model selector in the prompt input footer shows all available models with:
 - Provider and model ID (e.g., `anthropic/claude-sonnet-4-20250514`)
 - A "reasoning" badge for models that support extended thinking
 
-You can switch models mid-session. The new model takes effect on the next prompt turn.
+A session keeps the model it was created with.

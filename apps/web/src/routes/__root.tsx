@@ -331,7 +331,7 @@ function OperatorSidebarSection() {
                             <span
                               className={cn(
                                 "inline-block size-1.5 shrink-0 rounded-full",
-                                session.status === "active"
+                                session.status === "running"
                                   ? "bg-green-500"
                                   : session.status === "waiting_for_user"
                                     ? "bg-yellow-500"

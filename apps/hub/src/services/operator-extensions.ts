@@ -1,67 +1,12 @@
 import { Effect, Layer } from "effect"
 import * as Context from "effect/Context"
 import type {
-  OperatorAfterToolHookInput as PluginOperatorAfterToolHookInput,
-  OperatorPromptHookInput as PluginOperatorPromptHookInput,
-  OperatorSessionContext,
-  OperatorToolHookInput as PluginOperatorToolHookInput,
+  OperatorAfterToolHookInput,
+  OperatorPromptHookInput,
+  OperatorToolHookInput,
   ScoutOperatorHookSet,
 } from "@scout/plugin-sdk/operator"
-import type { OperatorSessionSummary } from "@scout/shared"
 import { PluginRegistry } from "./plugin-registry.js"
-
-export interface OperatorBeforePromptInput {
-  readonly session: OperatorSessionSummary
-  readonly attachedSkillContents: ReadonlyArray<string>
-}
-
-export interface OperatorBeforeToolCallInput {
-  readonly session: OperatorSessionSummary
-  readonly toolName: string
-  readonly args: unknown
-}
-
-export interface OperatorAfterToolCallInput extends OperatorBeforeToolCallInput {
-  readonly result: unknown
-  readonly isError: boolean
-}
-
-const toPluginSessionContext = (session: OperatorSessionSummary): OperatorSessionContext => ({
-  id: session.id,
-  title: session.title,
-  status: session.status,
-  selectedNodeIds: session.selectedNodeIds,
-  attachedSkillIds: session.attachedSkillIds,
-  approvalMode: session.approvalMode,
-  planMode: session.planMode,
-  modelProviderId: session.modelProviderId,
-  modelId: session.modelId,
-})
-
-const toPromptHookInput = (
-  input: OperatorBeforePromptInput,
-): PluginOperatorPromptHookInput => ({
-  session: toPluginSessionContext(input.session),
-  attachedSkillContents: input.attachedSkillContents,
-})
-
-const toBeforeToolHookInput = (
-  input: OperatorBeforeToolCallInput,
-): PluginOperatorToolHookInput => ({
-  session: toPluginSessionContext(input.session),
-  toolName: input.toolName,
-  args: input.args,
-})
-
-const toAfterToolHookInput = (
-  input: OperatorAfterToolCallInput,
-): PluginOperatorAfterToolHookInput => ({
-  session: toPluginSessionContext(input.session),
-  toolName: input.toolName,
-  args: input.args,
-  result: input.result,
-  isError: input.isError,
-})
 
 const summarizePluginSurface = (pluginIds: ReadonlyArray<string>): string | null =>
   pluginIds.length === 0
@@ -69,17 +14,15 @@ const summarizePluginSurface = (pluginIds: ReadonlyArray<string>): string | null
     : [
         "Scout plugin operator surfaces are available in this installation.",
         `Known plugin ids: ${pluginIds.join(", ")}.`,
-        "Use observe.plugins before plugin.runAction or plugin.logs so actions and streams stay bounded to installed capabilities.",
+        "Use observe_plugins before plugin_run_action or plugin_logs so actions and streams stay bounded to installed capabilities.",
       ].join("\n")
 
 export class OperatorExtensions extends Context.Service<
   OperatorExtensions,
   {
-    readonly beforePrompt: (
-      input: OperatorBeforePromptInput,
-    ) => Effect.Effect<ReadonlyArray<string>>
-    readonly beforeToolCall: (input: OperatorBeforeToolCallInput) => Effect.Effect<void>
-    readonly afterToolCall: (input: OperatorAfterToolCallInput) => Effect.Effect<void>
+    readonly beforePrompt: (input: OperatorPromptHookInput) => Effect.Effect<ReadonlyArray<string>>
+    readonly beforeToolCall: (input: OperatorToolHookInput) => Effect.Effect<void>
+    readonly afterToolCall: (input: OperatorAfterToolHookInput) => Effect.Effect<void>
   }
 >()(
   "@scout/OperatorExtensions",
@@ -92,24 +35,24 @@ export class OperatorExtensions extends Context.Service<
         plugin.operator?.hooks ? [plugin.operator.hooks] : [],
       )
 
-      const beforePrompt = (input: OperatorBeforePromptInput) =>
+      const beforePrompt = (input: OperatorPromptHookInput) =>
         Effect.all([
           Effect.succeed(summarizePluginSurface(pluginIds)),
           ...hookSets.map((hooks: ScoutOperatorHookSet) =>
-            hooks.beforePrompt?.(toPromptHookInput(input)) ?? Effect.succeed(null),
+            hooks.beforePrompt?.(input) ?? Effect.succeed(null),
           ),
         ]).pipe(
           Effect.map((sections) => sections.filter((section): section is string => section !== null)),
         )
 
-      const beforeToolCall = (input: OperatorBeforeToolCallInput) =>
+      const beforeToolCall = (input: OperatorToolHookInput) =>
         Effect.forEach(hookSets, (hooks) =>
-          hooks.beforeToolCall?.(toBeforeToolHookInput(input)) ?? Effect.void,
+          hooks.beforeToolCall?.(input) ?? Effect.void,
         ).pipe(Effect.asVoid)
 
-      const afterToolCall = (input: OperatorAfterToolCallInput) =>
+      const afterToolCall = (input: OperatorAfterToolHookInput) =>
         Effect.forEach(hookSets, (hooks) =>
-          hooks.afterToolCall?.(toAfterToolHookInput(input)) ?? Effect.void,
+          hooks.afterToolCall?.(input) ?? Effect.void,
         ).pipe(Effect.asVoid)
 
       return {

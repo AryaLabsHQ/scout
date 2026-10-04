@@ -76,7 +76,7 @@ Key responsibilities:
 - Metrics ingestion with tiered retention (1m / 10m / 20m / 120m / 480m over 30 days)
 - Alert evaluation engine with 3-strike debounce
 - Plugin registry and metadata serving
-- Operator session runtime (pi-agent-core integration)
+- Operator session runtime (pi-durable harness; see `docs/operator/architecture.md`)
 - Browser and agent WebSocket RPC servers
 
 The hub service graph is composed in `apps/hub/src/app.ts` through Effect Layer composition across four tiers:
@@ -86,7 +86,7 @@ The hub service graph is composed in `apps/hub/src/app.ts` through Effect Layer 
 | Layer 0: Infrastructure | Database, MetricsBroadcast |
 | Layer 1: Core | MetricsIngestion, Retention |
 | Layer 2: Alerting | AlertEngine (depends on Database + MetricsBroadcast) |
-| Layer 3: Platform | AgentRegistry, OperatorModelRegistry, OperatorSessions, PluginRegistry, OperatorSkills, OperatorResources, OperatorExtensions, OperatorSessionManager, OperatorRuntime |
+| Layer 3: Platform | AgentRegistry, OperatorModelRegistry, OperatorSessions, PluginRegistry, OperatorSkills, OperatorResources, OperatorExtensions, OperatorHarness |
 
 ### Agent (`apps/agent`)
 
@@ -126,7 +126,7 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 1. `AtomProvider` mounts and establishes a WebSocket to `/ws/rpc` on the page origin (the reverse proxy routes it to the hub; Vite proxies it in development)
 2. `HubClient` is an `AtomRpc.Service` backed by `BrowserSocket.layerWebSocket` + NDJSON serialization
 3. Components use `useAtomValue(HubClient.query(...))` for reads and `useAtomSet(HubClient.mutation(...))` for writes
-4. Stream subscriptions (metrics, alerts, system updates, operator events) use `HubClient.runtime.pull` with `Atom.pull`-style consumption
+4. Stream subscriptions (metrics, alerts, system updates, operator session snapshots) use `HubClient.runtime.pull` with `Atom.pull`-style consumption
 5. Cache invalidation is driven by `reactivityKeys` on mutations
 
 ### Agent Duplex Socket
@@ -165,9 +165,9 @@ All RPC methods are defined in `packages/shared/src/rpc/` and organized by commu
 | Operator | `operator.sessions.setSkills` | Mutation |
 | Operator | `operator.sessions.archive` | Mutation |
 | Operator | `operator.sessions.delete` | Mutation |
-| Operator | `operator.sessions.branch` | Mutation |
 | Operator | `operator.sessions.fork` | Mutation |
 | Operator | `operator.prompt` | Mutation |
+| Operator | `operator.sessions.abort` | Mutation |
 | Operator | `operator.approvals.resolve` | Mutation |
 | Operator | `operator.skills.list` | Query |
 | Operator | `operator.models.list` | Query |
@@ -178,7 +178,7 @@ All RPC methods are defined in `packages/shared/src/rpc/` and organized by commu
 | Streams | `metrics.subscribe` | Stream |
 | Streams | `alerts.subscribe` | Stream |
 | Streams | `systems.subscribe` | Stream |
-| Streams | `operator.events.subscribe` | Stream |
+| Streams | `operator.sessions.watch` | Stream |
 | Streams | `plugins.logs` | Stream |
 | Streams | `terminal.open` | Stream |
 
@@ -222,17 +222,9 @@ All state is stored in a single SQLite database (WAL mode) managed by Drizzle OR
 | `plugin_metric_points` | Plugin metric time-series with metric ID, entity reference, value, unit, and tags |
 | `plugin_events` | Plugin event log with severity (info/warning/error), entity reference, and JSON payload |
 
-### Operator Tables
+### Operator Storage
 
-| Table | Description |
-|-------|-------------|
-| `operator_sessions` | Operator session state including title, status, node scope, skill attachments, approval mode, plan mode, model selection, branch lineage, and event sequence counter |
-| `operator_session_events` | Append-only event log for each session with sequential ordering (the source of truth for session reconstruction) |
-| `operator_entries` | Projected conversation entries with parent chain for branch/fork tree traversal |
-| `operator_tool_calls` | Tool execution records with name, status, node scope, input/output, and timing |
-| `operator_approvals` | Approval requests with kind (mutation/clarification/scope_expansion/bypass_mode), status, reason, and affected nodes |
-| `operator_terminal_projections` | Terminal session mirrors created by `bash.run` tool executions, linking tool calls to PTY stream references |
-| `operator_plan_snapshots` | Plan mode snapshots with step-level status tracking |
+The operator does not use Drizzle tables. Its sessions live in a separate pi-durable SQLite file (`SCOUT_OPERATOR_DB_PATH`, default `scout-operator.db` next to `SCOUT_DB_PATH`) whose schema pi-durable owns. See `docs/operator/architecture.md`.
 
 ## Plugin Model
 
@@ -281,7 +273,7 @@ Plugins can optionally contribute to the operator by exporting an operator surfa
 
 ## Operator
 
-The operator is an AI-powered assistant for system administration, built on `pi-agent-core`. It runs as a set of hub services that manage persistent sessions, execute tools against monitored nodes, and stream results to the browser in real time.
+The operator is an AI-powered assistant for system administration, built on pi-durable (`@earendil-works/pi-durable`). It runs as a set of hub services that manage durable sessions, execute tools against monitored nodes, and stream results to the browser in real time.
 
 See [docs/operator/README.md](operator/README.md) for user-facing documentation and [docs/operator/architecture.md](operator/architecture.md) for developer-facing architecture details.
 
@@ -315,7 +307,8 @@ All configuration is through environment variables. No configuration files.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SCOUT_OPERATOR_MODEL_PROVIDER` | No | Auto-detected (prefers openai or anthropic) | pi-ai provider ID for the operator LLM |
+| `SCOUT_OPERATOR_DB_PATH` | No | `scout-operator.db` next to `SCOUT_DB_PATH` | pi-durable SQLite file for operator sessions |
+| `SCOUT_OPERATOR_MODEL_PROVIDER` | No | Auto-detected among configured providers (prefers anthropic, then openai) | pi-ai provider ID for the default operator model; `faux` selects a scripted local model for smoke tests |
 | `SCOUT_OPERATOR_MODEL_ID` | No | First reasoning model from selected provider | Specific model ID within the provider |
 | `SCOUT_OPERATOR_THINKING_LEVEL` | No | `medium` | Thinking level: off, minimal, low, medium, high, xhigh |
 | `SCOUT_OPERATOR_SYSTEM_PROMPT` | No | Built-in prompt | Custom system prompt for the operator |

@@ -1,10 +1,5 @@
 import type { Effect } from "effect"
-import type {
-  AgentTool,
-  AgentToolResult,
-  AgentToolUpdateCallback,
-} from "@mariozechner/pi-agent-core"
-import type { Static, TSchema } from "@sinclair/typebox"
+import type { Static, TSchema } from "typebox"
 
 export interface OperatorSessionContext {
   readonly id: string
@@ -36,6 +31,19 @@ export interface OperatorAfterToolHookInput extends OperatorToolHookInput {
 
 export interface ScoutOperatorToolExecutionContext {
   readonly session: OperatorSessionContext
+  readonly toolCallId: string
+  /** Aborted when the operator aborts the call. */
+  readonly signal: AbortSignal | undefined
+  /** Stream running output to the UI; it becomes the result text when the result omits `text`. */
+  readonly output: (chunk: string) => void
+}
+
+export interface ScoutOperatorToolResult {
+  /** Model-visible result text. */
+  readonly text?: string
+  /** JSON-serializable data for the UI; not shown to the model. */
+  readonly details?: unknown
+  readonly isError?: boolean
 }
 
 export interface ScoutOperatorResourceDefinition {
@@ -64,33 +72,33 @@ export interface ScoutOperatorHookSet {
   ) => Effect.Effect<void>
 }
 
-export interface ScoutOperatorTool<
-  TParameters extends TSchema = TSchema,
-  TDetails = unknown,
-> extends Omit<AgentTool<TParameters, TDetails>, "execute"> {
+/**
+ * A plugin-contributed operator tool. Tools are treated as mutating unless `requiresConfirmation`
+ * is `false`: mutating tools wait for operator approval, are blocked in plan mode, and never rerun
+ * after a hub restart interrupts them.
+ */
+export interface ScoutOperatorTool<TParameters extends TSchema = TSchema> {
+  readonly name: string
+  readonly label?: string
+  readonly description: string
+  readonly parameters: TParameters
   readonly requiresConfirmation?: boolean
   readonly execute: (
-    toolCallId: string,
     params: Static<TParameters>,
-    signal: AbortSignal | undefined,
-    onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
     ctx: ScoutOperatorToolExecutionContext,
-  ) => Promise<AgentToolResult<TDetails>>
+  ) => Promise<ScoutOperatorToolResult>
 }
 
 export interface ScoutOperatorSurface {
-  readonly tools?: ReadonlyArray<ScoutOperatorTool<any, any>>
+  readonly tools?: ReadonlyArray<ScoutOperatorTool<any>>
   readonly resources?: ReadonlyArray<ScoutOperatorResourceDefinition>
   readonly skills?: ReadonlyArray<ScoutOperatorSkillDefinition>
   readonly hooks?: ScoutOperatorHookSet
 }
 
-export const defineOperatorTool = <
-  const TParameters extends TSchema,
-  TDetails = unknown,
->(
-  tool: ScoutOperatorTool<TParameters, TDetails>,
-): ScoutOperatorTool<TParameters, TDetails> => tool
+export const defineOperatorTool = <const TParameters extends TSchema>(
+  tool: ScoutOperatorTool<TParameters>,
+): ScoutOperatorTool<TParameters> => tool
 
 export const defineOperatorResource = <const T extends ScoutOperatorResourceDefinition>(
   resource: T,

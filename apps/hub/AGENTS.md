@@ -25,8 +25,8 @@ apps/hub/
 | Browser / agent RPC entry points | `src/rpc/server.ts`, `src/rpc/agent-bridge.ts` | `/ws/rpc` for browsers, `/ws/rpc/agent` for agents |
 | Auth, startup config | `src/config.ts`, `src/auth/*`, `src/rpc/auth.ts` | Gate covers every path but `/health`; RPC middleware provides `CurrentIdentity` + audit log |
 | Plugin discovery | `src/services/plugin-registry.ts` | Loads packages from `SCOUT_PLUGIN_DIR` or `packages/` |
-| Operator session lifecycle | `src/services/operator-*.ts`, `src/services/AGENTS.md` | 7 services: runtime, sessions, manager, models, skills, extensions, resources |
-| Operator RPC handlers | `src/rpc/client-handlers.ts` | 17 operator.* methods (sessions, approvals, skills, models, events stream) |
+| Operator session lifecycle | `src/services/operator-*.ts`, `src/services/AGENTS.md` | pi-durable harness, sessions, tools, models, skills, extensions, resources |
+| Operator RPC handlers | `src/rpc/client-handlers.ts` | operator.* methods (sessions, prompt, abort, approvals, skills, models, watch stream) |
 
 ## CONVENTIONS
 - Add new hub business logic as services first, then provide those layers from `src/app.ts`.

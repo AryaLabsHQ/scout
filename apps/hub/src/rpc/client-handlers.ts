@@ -18,6 +18,7 @@ import type { Alert, LogBatch, System, SystemMetricsSample, TerminalOutput } fro
 import type { BroadcastEvent } from "../services/metrics-broadcast.js"
 import {
   ClientHubRpcs,
+  CurrentIdentity,
   ManagementError,
   SystemUpdateSchema,
   type AlertEvent,
@@ -29,11 +30,10 @@ import { MetricsIngestion } from "../services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../services/metrics-broadcast.js"
 import { AlertEngine } from "../services/alert-engine.js"
 import { OperatorModelRegistry } from "../services/operator-model-registry.js"
-import { OperatorRuntime } from "../services/operator-runtime.js"
-import { OperatorSessionManager } from "../services/operator-session-manager.js"
 import { OperatorSessions } from "../services/operator-sessions.js"
 import { OperatorSkills } from "../services/operator-skills.js"
 import { AgentRegistry, type HubAgentClient } from "./agent-bridge.js"
+import { actorOf } from "./auth.js"
 import * as schema from "../../drizzle/schema.js"
 
 // ── Type alias ────────────────────────────────────────────────────────────────
@@ -188,9 +188,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
     const mi = yield* MetricsIngestion
     const broadcast = yield* MetricsBroadcast
     const alerts = yield* AlertEngine
-    const operatorModelRegistry = yield* OperatorModelRegistry
-    const operatorRuntime = yield* OperatorRuntime
-    const operatorSessionManager = yield* OperatorSessionManager
+    const operatorModels = yield* OperatorModelRegistry
     const operatorSessions = yield* OperatorSessions
     const operatorSkills = yield* OperatorSkills
     const db = yield* Database
@@ -214,19 +212,16 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           Effect.map((rows) => (rows.length > 0 ? rowToSystem(rows[0]!) : null)),
         ),
 
-      "operator.sessions.list": () => operatorSessionManager.list(),
+      "operator.sessions.list": () => operatorSessions.list().pipe(Effect.orDie),
 
-      "operator.sessions.get": ({ sessionId }) => operatorSessionManager.get(sessionId),
+      "operator.sessions.get": ({ sessionId }) => operatorSessions.get(sessionId).pipe(Effect.orDie),
 
       "operator.skills.list": () => operatorSkills.list(),
 
-      "operator.models.list": () => operatorModelRegistry.list(),
-
-      "operator.sessions.branch": ({ sessionId, entryId }) =>
-        operatorSessionManager.branch(sessionId, entryId),
+      "operator.models.list": () => Effect.succeed(operatorModels.available),
 
       "operator.sessions.fork": ({ sessionId, entryId, title }) =>
-        operatorSessionManager.fork(sessionId, entryId, title),
+        operatorSessions.fork(sessionId, entryId, title),
 
       "systems.metrics": ({ id, range }) => {
         const hours = rangeToHours(range)
@@ -398,119 +393,37 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
             const connected = yield* registry.listConnected()
             resolvedNodeIds = connected.map((a) => a.agentId)
           }
-          return yield* operatorSessionManager.create({
-            title,
+          return yield* operatorSessions.create({
+            ...(title === undefined ? {} : { title }),
             selectedNodeIds: resolvedNodeIds,
-            attachedSkillIds,
+            ...(attachedSkillIds === undefined ? {} : { attachedSkillIds }),
           })
         }),
 
-      "operator.sessions.setTitle": ({ sessionId, title }) =>
-        operatorSessions.setTitle(sessionId, title.trim()),
+      "operator.sessions.setTitle": ({ sessionId, title }) => operatorSessions.setTitle(sessionId, title),
 
-      "operator.sessions.setSkills": ({ sessionId, skillIds }) =>
-        operatorSessionManager.setSkills(sessionId, skillIds),
+      "operator.sessions.setSkills": ({ sessionId, skillIds }) => operatorSessions.setSkills(sessionId, skillIds),
 
-      "operator.sessions.archive": ({ sessionId }) =>
-        operatorSessions.archive(sessionId),
+      "operator.sessions.archive": ({ sessionId }) => operatorSessions.archive(sessionId),
 
-      "operator.sessions.delete": ({ sessionId }) =>
-        operatorSessions.delete(sessionId),
+      "operator.sessions.delete": ({ sessionId }) => operatorSessions.delete(sessionId),
 
-      "operator.prompt": ({ sessionId, text }) =>
-        operatorSessionManager.get(sessionId).pipe(
-          Effect.flatMap((session) =>
-            session === null
-              ? Effect.fail(
-                  new ManagementError({
-                    code: "session-not-found",
-                    message: `Operator session ${sessionId} not found`,
-                  }),
-                )
-              : operatorSessions.appendEvent({
-                  id: crypto.randomUUID(),
-                  sessionId,
-                  at: Date.now(),
-                  type: "message.created",
-                  message: {
-                    id: crypto.randomUUID(),
-                    sessionId,
-                    role: "user",
-                    content: text,
-                    createdAt: Date.now(),
-                  },
-                }).pipe(
-                  Effect.flatMap(() => operatorRuntime.prompt(sessionId)),
-                  Effect.asVoid,
-                ),
-          ),
-        ),
+      "operator.prompt": ({ sessionId, text, requestId }) => operatorSessions.prompt(sessionId, text, requestId),
 
-      "operator.approvals.resolve": ({ sessionId, approvalId, decision }) =>
-        operatorSessionManager.get(sessionId).pipe(
-          Effect.flatMap((session) =>
-            session === null
-              ? Effect.fail(
-                  new ManagementError({
-                    code: "session-not-found",
-                    message: `Operator session ${sessionId} not found`,
-                  }),
-                )
-              : (() => {
-                  const approval = [...session.approvals]
-                    .reverse()
-                    .find((pendingApproval) => pendingApproval.id === approvalId)
+      "operator.sessions.abort": ({ sessionId }) => operatorSessions.abort(sessionId),
 
-                  if (!approval) {
-                    return Effect.fail(
-                      new ManagementError({
-                        code: "approval-not-found",
-                        message: `Approval ${approvalId} not found`,
-                      }),
-                    )
-                  }
-
-                  return operatorSessions.appendEvent({
-                    id: crypto.randomUUID(),
-                    sessionId,
-                    at: Date.now(),
-                    type: "approval.resolved",
-                    approval: {
-                      ...approval,
-                      status: decision,
-                      resolvedAt: Date.now(),
-                    },
-                  }).pipe(
-                    Effect.flatMap(() => {
-                      if (decision !== "approved") return Effect.void
-
-                      // For clarification approvals, inject the user's answer as context
-                      const isClarification = approval.kind === "clarification"
-                      const messageContent = isClarification
-                        ? `User responded to "${approval.reason}": ${decision}`
-                        : `Approval granted for "${approval.reason}". Continue with the approved action if it is still necessary.`
-
-                      return operatorSessions.appendEvent({
-                        id: crypto.randomUUID(),
-                        sessionId,
-                        at: Date.now(),
-                        type: "message.created",
-                        message: {
-                          id: crypto.randomUUID(),
-                          sessionId,
-                          role: "user",
-                          content: messageContent,
-                          createdAt: Date.now(),
-                        },
-                      }).pipe(
-                        Effect.flatMap(() => operatorRuntime.prompt(sessionId)),
-                      )
-                    }),
-                    Effect.asVoid,
-                  )
-                })()
-          ),
-        ),
+      // The decision records who made it: the identity ClientAuthMiddleware verified.
+      "operator.approvals.resolve": ({ sessionId, approvalId, decision, answer }) =>
+        Effect.gen(function* () {
+          const identity = yield* CurrentIdentity
+          yield* operatorSessions.resolveApproval({
+            sessionId,
+            approvalId,
+            decision,
+            actor: actorOf(identity),
+            ...(answer === undefined ? {} : { answer }),
+          })
+        }),
 
       "operator.sessions.setApprovalMode": ({ sessionId, approvalMode }) =>
         operatorSessions.setApprovalMode(sessionId, approvalMode),
@@ -691,8 +604,7 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           },
         ),
 
-      "operator.events.subscribe": ({ sessionId, afterSeq }) =>
-        operatorSessions.subscribe(sessionId, afterSeq),
+      "operator.sessions.watch": ({ sessionId }) => operatorSessions.watch(sessionId),
 
       "plugins.logs": ({ agentId, pluginId, streamId, entity, input }) =>
         Effect.gen(function* () {

@@ -65,7 +65,7 @@ export const operator = defineOperator({
       id: "docker-ops",
       name: "Docker Operations",
       description: "Guidance for Docker workflows.",
-      content: "Start with observe.plugins and plugin.logs before bash.run.",
+      content: "Start with observe_plugins and plugin_logs before bash_run.",
     }),
   ],
   hooks: {
@@ -83,7 +83,7 @@ Operator tools are executable capabilities contributed by a plugin.
 Use a plugin operator tool when:
 
 - the Operator needs a typed domain-specific capability
-- the plugin can provide something sharper than generic `plugin.runAction`
+- the plugin can provide something sharper than generic `plugin_run_action`
 - the tool meaning is stable and worth naming directly
 
 Good examples:
@@ -94,7 +94,7 @@ Good examples:
 
 Avoid:
 
-- trivial wrappers around `bash.run`
+- trivial wrappers around `bash_run`
 - broad generic tools with unclear semantics
 - tools that bypass existing approval policy
 

@@ -19,6 +19,7 @@ scout-agent -> ws://127.0.0.1:3901/ws/rpc/agent (Bearer SCOUT_TOKEN)
 | `k8s/rbac.yaml` | k3s (`sudo kubectl apply`) |
 | agent kubeconfig | `~/.config/scout/kubeconfig` |
 | SQLite database | `~/.local/state/scout/scout.db` (unit `StateDirectory=scout`) |
+| Operator sessions (pi-durable SQLite) | `~/.local/state/scout/scout-operator.db`, next to `scout.db`; pi-durable owns its schema |
 
 The units run the checkout at `/home/ubuntu/Developer/AryaLabsHQ/scout` with `~/.bun/bin/bun`:
 the hub and agent from source, the web from its nitro build (`apps/web/.output`). The user
@@ -68,6 +69,8 @@ Database schema (back up first when upgrading):
 ```sh
 install -d -m 700 ~/.local/state/scout
 cp -a ~/.local/state/scout/scout.db ~/.local/state/scout/scout.db.bak-$(date +%F) 2>/dev/null || true
+# Operator sessions: stop the hub first (one process owns this file); pi-durable migrates it on open.
+cp -a ~/.local/state/scout/scout-operator.db ~/.local/state/scout/scout-operator.db.bak-$(date +%F) 2>/dev/null || true
 SCOUT_DB_PATH=$HOME/.local/state/scout/scout.db bun run --cwd apps/hub db:push
 ```
 

@@ -105,7 +105,7 @@ export const operator = defineOperator({
       id: "example-skill",
       name: "Example Skill",
       description: "Operator guidance for the example plugin.",
-      content: "Prefer typed plugin capabilities before falling back to bash.run.",
+      content: "Prefer typed plugin capabilities before falling back to bash_run.",
     }),
   ],
 })
@@ -254,7 +254,7 @@ See [operator.md](./operator.md) for the deeper guidance.
 
 ## Design Rules
 
-- Prefer typed plugin actions and operator tools over `bash.run`.
+- Prefer typed plugin actions and operator tools over `bash_run`.
 - Prefer plugin logs/streams over raw shell access when the domain already has a typed interface.
 - Keep permissions narrow and explicit.
 - Make actions and streams bounded and well-scoped.

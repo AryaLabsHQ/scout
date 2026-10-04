@@ -73,18 +73,16 @@ describe("OperatorExtensions service", () => {
           selectedNodeIds: ["node-a"],
           attachedSkillIds: [],
           approvalMode: "confirm_each_mutation",
+          planMode: "off",
           modelProviderId: "openai",
           modelId: "gpt-5.4",
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          lastEventSeq: 0,
         },
         attachedSkillContents: [],
       })
 
       expect(sections).toHaveLength(2)
       expect(sections[0]).toContain("Known plugin ids: docker, systemd")
-      expect(sections[0]).toContain("observe.plugins")
+      expect(sections[0]).toContain("observe_plugins")
       expect(sections[1]).toBe("Docker operator hint")
     }).pipe(Effect.provide(OperatorExtensions.layer.pipe(Layer.provide(PluginRegistryTestLayer)))),
   )
