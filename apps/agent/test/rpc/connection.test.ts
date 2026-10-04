@@ -128,8 +128,8 @@ const capabilities: AgentCapabilities = {
   smart: false,
 }
 
-const agentLayer = (port: number) =>
-  makeHubConnectionLayer(timing).pipe(
+const agentLayer = (port: number, overrides?: Partial<HubConnectionTiming>) =>
+  makeHubConnectionLayer({ ...timing, ...overrides }).pipe(
     Layer.provide(
       Layer.succeed(CollectorRegistry)({
         discover: () => Effect.succeed(capabilities),
@@ -179,7 +179,7 @@ const sendReport = Effect.gen(function* () {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("HubConnectionLayer", () => {
-  it("reconnects and registers again after the hub restarts on the same port", async () => {
+  it("reconnects promptly after the hub restarts on the same port", async () => {
     const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
 
     const program = Effect.gen(function* () {
@@ -213,6 +213,48 @@ describe("HubConnectionLayer", () => {
     // Bounded by the 200ms retry cap plus jitter, not the old 30s ceiling.
     expect(reconnectMs).toBeLessThan(1_000)
   }, 15_000)
+
+  it("starts the backoff over after every established session", async () => {
+    const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
+    const cycles = 4
+
+    // A cap well above the per-cycle bound: delays that kept growing across
+    // sessions (100ms, 200ms, 400ms, 800ms, 1.6s, ...) would blow the bound
+    // by the second or third restart.
+    const program = Effect.gen(function* () {
+      let hub = yield* startHub(state, 0)
+      const port = hub.port
+
+      const agentScope = yield* Scope.make()
+      yield* Layer.build(
+        agentLayer(port, { retryBase: "100 millis", retryCap: "5 seconds" }),
+      ).pipe(Scope.provide(agentScope))
+      yield* waitUntil("first registration", () => state.connects.length === 1, 3_000)
+
+      const reconnects: Array<number> = []
+      for (let cycle = 1; cycle <= cycles; cycle++) {
+        yield* Scope.close(hub.scope, Exit.void)
+        yield* Effect.sleep("300 millis")
+        hub = yield* startHub(state, port)
+        reconnects.push(
+          yield* waitUntil(
+            `registration after restart ${cycle}`,
+            () => state.connects.length === cycle + 1,
+            5_000,
+          ),
+        )
+      }
+
+      yield* Scope.close(agentScope, Exit.void)
+      yield* Scope.close(hub.scope, Exit.void)
+      return reconnects
+    })
+
+    const reconnects = await Effect.runPromise(Effect.scoped(program))
+    expect(state.connects).toHaveLength(cycles + 1)
+    // Each outage replays the same fresh 100ms, 200ms, 400ms sequence.
+    for (const ms of reconnects) expect(ms).toBeLessThan(1_000)
+  }, 30_000)
 
   it("drops a hub that stops answering heartbeats and reconnects", async () => {
     const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
