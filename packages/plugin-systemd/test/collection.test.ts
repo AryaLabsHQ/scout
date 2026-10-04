@@ -81,7 +81,10 @@ const USER_SHOW = [
 ].join("\n")
 
 /** A fake systemctl for both managers; `--user` selects the user manager's answers. */
-const fakeSystemctl = (calls: string[], opts: { userManager?: boolean; timestampFlag?: boolean } = {}): Exec =>
+const fakeSystemctl = (
+  calls: string[],
+  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail" } = {},
+): Exec =>
   (command, args) => {
     calls.push(`${command} ${args.join(" ")}`)
     const user = args[0] === "--user"
@@ -118,8 +121,13 @@ const fakeSystemctl = (calls: string[], opts: { userManager?: boolean; timestamp
       )
     }
     if (rest[0] === "show") {
-      if (opts.timestampFlag === false && rest.includes("--timestamp=us+utc")) {
-        return Effect.succeed({ stdout: "", stderr: "Unknown timestamp format", exitCode: 1 })
+      if (opts.show === "fail") return Effect.succeed({ stdout: "", stderr: "Connection timed out", exitCode: 1 })
+      if (opts.timestampFlag === false) {
+        if (rest.includes("--timestamp=us+utc")) {
+          return Effect.succeed({ stdout: "", stderr: "Unknown timestamp format", exitCode: 1 })
+        }
+        // An older systemctl prints timestamps in the host's local time.
+        return ok((user ? USER_SHOW : SYSTEM_SHOW).replace(/(\d{2}:\d{2}:\d{2})\.\d+ UTC/g, "$1 CEST"))
       }
       return ok(user ? USER_SHOW : SYSTEM_SHOW)
     }
@@ -257,7 +265,19 @@ describe("systemd collection", () => {
     const result = await collect(fakeSystemctl(calls, { timestampFlag: false }))
     expect(calls.filter((call) => call.startsWith("systemctl show "))).toHaveLength(2)
     const dbus = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_UNIT_KIND && entity.ref.id === "dbus.service")
-    expect(dbus?.state).toMatchObject({ restarts: 2, pid: 812 })
+    expect(dbus?.state).toMatchObject({ restarts: 2, pid: 812, activeEnterAt: null })
+    // Local-time timestamps read as unknown, but the exit status survives.
+    const restic = result.entities!.find((entity) => entity.ref.id === "restic-backup.service")
+    expect(restic?.state).toMatchObject({ result: "exit-code", execMainStatus: 3, execMainExitAt: null })
+    const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)
+    expect(timer?.state).toMatchObject({ lastResult: "exit-code", lastExitStatus: 3, lastExitAt: null })
+  })
+
+  it("fails the collection instead of publishing units without details", async () => {
+    const exit = await Effect.runPromiseExit(
+      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { show: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
   })
 
   it("fails the collection when the system manager cannot list units", async () => {

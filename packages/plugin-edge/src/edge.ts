@@ -52,8 +52,8 @@ const REQUEST_TIMEOUT_MS = 2_000
 /**
  * Parse an endpoint list: comma-separated `name=url` or bare `url` entries.
  * Unset or blank uses the default (not explicit); `off` disables the source.
- * A bare url is named after its host:port. Repeated names get a numeric suffix
- * so entity ids stay unique.
+ * A bare url is named after its host:port. A name already taken gets the
+ * first free numeric suffix, so entity ids stay unique.
  */
 export const parseEndpointList = (
   value: string | undefined,
@@ -63,7 +63,7 @@ export const parseEndpointList = (
   if (trimmed.length === 0) return [{ ...fallback, explicit: false }]
   if (trimmed.toLowerCase() === "off") return []
 
-  const seen = new Map<string, number>()
+  const taken = new Set<string>()
   return trimmed
     .split(",")
     .map((entry) => entry.trim())
@@ -73,9 +73,10 @@ export const parseEndpointList = (
       const named = separator > 0 && !entry.slice(0, separator).includes("://")
       const url = (named ? entry.slice(separator + 1) : entry).trim().replace(/\/+$/, "")
       const base = named ? entry.slice(0, separator).trim() : hostOf(url)
-      const count = (seen.get(base) ?? 0) + 1
-      seen.set(base, count)
-      return { name: count === 1 ? base : `${base}-${count}`, url, explicit: true }
+      let name = base
+      for (let suffix = 2; taken.has(name); suffix++) name = `${base}-${suffix}`
+      taken.add(name)
+      return { name, url, explicit: true }
     })
 }
 
@@ -273,7 +274,13 @@ export const readProxy = (deps: EdgeDependencies, endpoint: EdgeEndpoint): Effec
       name: endpoint.name,
       endpoint: endpoint.url,
       reachable: Result.isSuccess(upstreams),
-      error: Result.isFailure(upstreams) ? errorText(upstreams.failure) : null,
+      // Upstreams decide reachability; a config that cannot be read is still
+      // an error, so the site list is never silently empty.
+      error: Result.isFailure(upstreams)
+        ? errorText(upstreams.failure)
+        : Result.isFailure(sites)
+          ? errorText(sites.failure)
+          : null,
       upstreams: Result.isSuccess(upstreams) ? upstreams.success : [],
       sites: Result.isSuccess(sites) ? sites.success : [],
     })),
@@ -289,7 +296,7 @@ export const tunnelStatus = (state: EdgeTunnelState): string =>
 export const proxyStatus = (state: EdgeProxyState): string =>
   !state.reachable
     ? EDGE_STATUS.unreachable
-    : state.upstreams.some((upstream) => upstream.fails > 0)
+    : state.error !== null || state.upstreams.some((upstream) => upstream.fails > 0)
       ? EDGE_STATUS.degraded
       : EDGE_STATUS.healthy
 

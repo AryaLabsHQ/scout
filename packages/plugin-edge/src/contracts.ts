@@ -73,7 +73,11 @@ export const EdgeSiteSchema = Schema.Struct({
   upstreams: Schema.Array(Schema.String),
 })
 
-/** `state` of an `edge.proxy` entity. */
+/**
+ * `state` of an `edge.proxy` entity. `reachable` follows the upstreams read;
+ * `error` is also set when only the config read failed, which marks the proxy
+ * degraded.
+ */
 export const EdgeProxyStateSchema = Schema.Struct({
   name: Schema.String,
   endpoint: Schema.String,

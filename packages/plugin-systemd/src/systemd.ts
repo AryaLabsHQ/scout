@@ -223,14 +223,20 @@ export const serviceDetails = (fields: Record<string, string> | undefined): Syst
       ? ""
       : `MainPID=${fields["MainPID"] ?? ""}\nMemoryCurrent=${fields["MemoryCurrent"] ?? ""}\nCPUUsageNSec=${fields["CPUUsageNSec"] ?? ""}`,
   )
-  const execMainExitAt = parseSystemdTimestamp(fields?.["ExecMainExitTimestamp"])
+  const exitTimestamp = fields?.["ExecMainExitTimestamp"]
+  const execMainExitAt = parseSystemdTimestamp(exitTimestamp)
   return {
     ...resources,
     unitFileState: stringField(fields?.["UnitFileState"]),
     result: stringField(fields?.["Result"]),
     // ExecMainStatus reads 0 before the main process ever exits; it only means
-    // something once there is an exit timestamp.
-    execMainStatus: execMainExitAt === null ? null : integerField(fields?.["ExecMainStatus"]),
+    // something once there is an exit timestamp. Gate on the raw property, not
+    // the parsed time: a local-time timestamp from an older systemctl reads as
+    // unknown but still marks an exit.
+    execMainStatus:
+      exitTimestamp === undefined || exitTimestamp.length === 0 || exitTimestamp === "n/a"
+        ? null
+        : integerField(fields?.["ExecMainStatus"]),
     execMainExitAt,
     activeEnterAt: parseSystemdTimestamp(fields?.["ActiveEnterTimestamp"]),
     restarts: integerField(fields?.["NRestarts"]),
@@ -688,7 +694,9 @@ export const createSystemdAgentPlugin = (
   /**
    * Every property in SHOW_PROPERTIES for `units`, in one systemctl call.
    * `--timestamp=us+utc` (systemd 248+) makes timestamps parseable without the
-   * agent's locale or timezone; an older systemctl rejects it, so retry bare.
+   * agent's locale or timezone; an older systemctl rejects it, so retry bare
+   * (its local-time timestamps then read as unknown). If both fail, the
+   * scope's collection fails rather than publishing units stripped of detail.
    */
   const showUnits = (scope: SystemdScope, units: ReadonlyArray<string>) => {
     if (units.length === 0) return Effect.succeed(new Map<string, Record<string, string>>())
@@ -696,7 +704,6 @@ export const createSystemdAgentPlugin = (
     return runSystemctl(deps, [...args, "--timestamp=us+utc"]).pipe(
       Effect.catch(() => runSystemctl(deps, args)),
       Effect.map(parseSystemctlShowBatch),
-      Effect.orElseSucceed(() => new Map<string, Record<string, string>>()),
     )
   }
 

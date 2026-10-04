@@ -107,6 +107,9 @@ describe("edge config", () => {
     expect(
       parseEndpointList("t=http://127.0.0.1:1,t=http://127.0.0.1:2", { name: "x", url: "u" }).map((endpoint) => endpoint.name),
     ).toEqual(["t", "t-2"])
+    expect(
+      parseEndpointList("a=http://h:1,a-2=http://h:2,a=http://h:3", { name: "x", url: "u" }).map((endpoint) => endpoint.name),
+    ).toEqual(["a", "a-2", "a-3"])
   })
 })
 
@@ -205,6 +208,18 @@ describe("edge plugin", () => {
     expect(result.metrics).toEqual([
       expect.objectContaining({ metricId: EDGE_METRIC_IDS.tunnelReadyConnections, value: 0 }),
     ])
+  })
+
+  it("marks a proxy degraded when its config cannot be read", async () => {
+    const { "http://127.0.0.1:2019/config/": _config, ...routes } = AGNI_ROUTES
+    const result = await Effect.runPromise(
+      plugin({ SCOUT_EDGE_CLOUDFLARED_METRICS: "off" }, {
+        ...routes,
+        "http://127.0.0.1:2019/reverse_proxy/upstreams": { status: 200, body: `[{"address":"127.0.0.1:3900","num_requests":0,"fails":0}]` },
+      }).collect!({ nodeId: "agni", now: 7 }),
+    )
+    expect(result.entities?.map((entity) => entity.status)).toEqual(["degraded"])
+    expect(result.entities?.[0]?.state).toMatchObject({ reachable: true, sites: [], error: expect.stringContaining("/config/") })
   })
 
   it("detects Caddy on its default admin address", async () => {
