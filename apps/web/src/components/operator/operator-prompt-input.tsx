@@ -318,7 +318,7 @@ export function OperatorPromptInput({
   return (
     <div className={cn(
       "relative border-t border-border",
-      approvalMode === "auto_approve_all" && "border-t-2 border-red-500/30",
+      approvalMode === "auto_approve_all" && "border-t-2 border-err/30",
       (isSubmitting || isBusy) && "border-t-0",
     )}>
       {(isSubmitting || isBusy) && (
@@ -402,7 +402,7 @@ export function OperatorPromptInput({
                       className={cn(
                         "size-1.5 shrink-0 rounded-full",
                         system.status === "online"
-                          ? "bg-emerald-500"
+                          ? "bg-ok"
                           : "bg-muted-foreground/40",
                       )}
                     />
@@ -463,7 +463,7 @@ export function OperatorPromptInput({
                 render={
                   <Button size="sm" variant="ghost" className={cn(
                     "h-7 text-xs",
-                    approvalMode === "auto_approve_all" && "text-red-400",
+                    approvalMode === "auto_approve_all" && "text-err",
                   )} />
                 }
               >

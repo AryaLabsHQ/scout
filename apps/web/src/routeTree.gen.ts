@@ -11,12 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as OverviewRouteImport } from './routes/overview'
 import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SystemsSystemIdRouteImport } from './routes/systems.$systemId'
 import { Route as OperatorSessionIdRouteImport } from './routes/operator_.$sessionId'
+import { Route as SystemsSystemIdServicesRouteImport } from './routes/systems_.$systemId.services'
+import { Route as SystemsSystemIdMetricsRouteImport } from './routes/systems_.$systemId.metrics'
+import { Route as SystemsSystemIdClusterRouteImport } from './routes/systems_.$systemId.cluster'
+import { Route as SystemsSystemIdServicesUnitIdRouteImport } from './routes/systems_.$systemId.services_.$unitId'
 import { Route as SystemsSystemIdPluginsPluginIdRouteImport } from './routes/systems_.$systemId.plugins.$pluginId'
 
 const TerminalRoute = TerminalRouteImport.update({
@@ -27,11 +30,6 @@ const TerminalRoute = TerminalRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OverviewRoute = OverviewRouteImport.update({
-  id: '/overview',
-  path: '/overview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OperatorRoute = OperatorRouteImport.update({
@@ -59,6 +57,27 @@ const OperatorSessionIdRoute = OperatorSessionIdRouteImport.update({
   path: '/operator/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemsSystemIdServicesRoute = SystemsSystemIdServicesRouteImport.update({
+  id: '/systems_/$systemId/services',
+  path: '/systems/$systemId/services',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SystemsSystemIdMetricsRoute = SystemsSystemIdMetricsRouteImport.update({
+  id: '/systems_/$systemId/metrics',
+  path: '/systems/$systemId/metrics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SystemsSystemIdClusterRoute = SystemsSystemIdClusterRouteImport.update({
+  id: '/systems_/$systemId/cluster',
+  path: '/systems/$systemId/cluster',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SystemsSystemIdServicesUnitIdRoute =
+  SystemsSystemIdServicesUnitIdRouteImport.update({
+    id: '/systems_/$systemId/services_/$unitId',
+    path: '/systems/$systemId/services/$unitId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SystemsSystemIdPluginsPluginIdRoute =
   SystemsSystemIdPluginsPluginIdRouteImport.update({
     id: '/systems_/$systemId/plugins/$pluginId',
@@ -70,35 +89,44 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/operator': typeof OperatorRoute
-  '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/operator/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/systems/$systemId/cluster': typeof SystemsSystemIdClusterRoute
+  '/systems/$systemId/metrics': typeof SystemsSystemIdMetricsRoute
+  '/systems/$systemId/services': typeof SystemsSystemIdServicesRoute
   '/systems/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
+  '/systems/$systemId/services/$unitId': typeof SystemsSystemIdServicesUnitIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/operator': typeof OperatorRoute
-  '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/operator/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/systems/$systemId/cluster': typeof SystemsSystemIdClusterRoute
+  '/systems/$systemId/metrics': typeof SystemsSystemIdMetricsRoute
+  '/systems/$systemId/services': typeof SystemsSystemIdServicesRoute
   '/systems/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
+  '/systems/$systemId/services/$unitId': typeof SystemsSystemIdServicesUnitIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/operator': typeof OperatorRoute
-  '/overview': typeof OverviewRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
   '/operator_/$sessionId': typeof OperatorSessionIdRoute
   '/systems/$systemId': typeof SystemsSystemIdRoute
+  '/systems_/$systemId/cluster': typeof SystemsSystemIdClusterRoute
+  '/systems_/$systemId/metrics': typeof SystemsSystemIdMetricsRoute
+  '/systems_/$systemId/services': typeof SystemsSystemIdServicesRoute
   '/systems_/$systemId/plugins/$pluginId': typeof SystemsSystemIdPluginsPluginIdRoute
+  '/systems_/$systemId/services_/$unitId': typeof SystemsSystemIdServicesUnitIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -106,46 +134,58 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/operator'
-    | '/overview'
     | '/settings'
     | '/terminal'
     | '/operator/$sessionId'
     | '/systems/$systemId'
+    | '/systems/$systemId/cluster'
+    | '/systems/$systemId/metrics'
+    | '/systems/$systemId/services'
     | '/systems/$systemId/plugins/$pluginId'
+    | '/systems/$systemId/services/$unitId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/alerts'
     | '/operator'
-    | '/overview'
     | '/settings'
     | '/terminal'
     | '/operator/$sessionId'
     | '/systems/$systemId'
+    | '/systems/$systemId/cluster'
+    | '/systems/$systemId/metrics'
+    | '/systems/$systemId/services'
     | '/systems/$systemId/plugins/$pluginId'
+    | '/systems/$systemId/services/$unitId'
   id:
     | '__root__'
     | '/'
     | '/alerts'
     | '/operator'
-    | '/overview'
     | '/settings'
     | '/terminal'
     | '/operator_/$sessionId'
     | '/systems/$systemId'
+    | '/systems_/$systemId/cluster'
+    | '/systems_/$systemId/metrics'
+    | '/systems_/$systemId/services'
     | '/systems_/$systemId/plugins/$pluginId'
+    | '/systems_/$systemId/services_/$unitId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
   OperatorRoute: typeof OperatorRoute
-  OverviewRoute: typeof OverviewRoute
   SettingsRoute: typeof SettingsRoute
   TerminalRoute: typeof TerminalRoute
   OperatorSessionIdRoute: typeof OperatorSessionIdRoute
   SystemsSystemIdRoute: typeof SystemsSystemIdRoute
+  SystemsSystemIdClusterRoute: typeof SystemsSystemIdClusterRoute
+  SystemsSystemIdMetricsRoute: typeof SystemsSystemIdMetricsRoute
+  SystemsSystemIdServicesRoute: typeof SystemsSystemIdServicesRoute
   SystemsSystemIdPluginsPluginIdRoute: typeof SystemsSystemIdPluginsPluginIdRoute
+  SystemsSystemIdServicesUnitIdRoute: typeof SystemsSystemIdServicesUnitIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -162,13 +202,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/overview': {
-      id: '/overview'
-      path: '/overview'
-      fullPath: '/overview'
-      preLoaderRoute: typeof OverviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/operator': {
@@ -206,6 +239,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OperatorSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/systems_/$systemId/services': {
+      id: '/systems_/$systemId/services'
+      path: '/systems/$systemId/services'
+      fullPath: '/systems/$systemId/services'
+      preLoaderRoute: typeof SystemsSystemIdServicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/systems_/$systemId/metrics': {
+      id: '/systems_/$systemId/metrics'
+      path: '/systems/$systemId/metrics'
+      fullPath: '/systems/$systemId/metrics'
+      preLoaderRoute: typeof SystemsSystemIdMetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/systems_/$systemId/cluster': {
+      id: '/systems_/$systemId/cluster'
+      path: '/systems/$systemId/cluster'
+      fullPath: '/systems/$systemId/cluster'
+      preLoaderRoute: typeof SystemsSystemIdClusterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/systems_/$systemId/services_/$unitId': {
+      id: '/systems_/$systemId/services_/$unitId'
+      path: '/systems/$systemId/services/$unitId'
+      fullPath: '/systems/$systemId/services/$unitId'
+      preLoaderRoute: typeof SystemsSystemIdServicesUnitIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/systems_/$systemId/plugins/$pluginId': {
       id: '/systems_/$systemId/plugins/$pluginId'
       path: '/systems/$systemId/plugins/$pluginId'
@@ -220,12 +281,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
   OperatorRoute: OperatorRoute,
-  OverviewRoute: OverviewRoute,
   SettingsRoute: SettingsRoute,
   TerminalRoute: TerminalRoute,
   OperatorSessionIdRoute: OperatorSessionIdRoute,
   SystemsSystemIdRoute: SystemsSystemIdRoute,
+  SystemsSystemIdClusterRoute: SystemsSystemIdClusterRoute,
+  SystemsSystemIdMetricsRoute: SystemsSystemIdMetricsRoute,
+  SystemsSystemIdServicesRoute: SystemsSystemIdServicesRoute,
   SystemsSystemIdPluginsPluginIdRoute: SystemsSystemIdPluginsPluginIdRoute,
+  SystemsSystemIdServicesUnitIdRoute: SystemsSystemIdServicesUnitIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

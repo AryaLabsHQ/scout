@@ -74,7 +74,7 @@ export const NodeMentionList = forwardRef<NodeMentionListRef, NodeMentionListPro
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                item.status === "online" ? "bg-emerald-500" : "bg-muted-foreground/40",
+                item.status === "online" ? "bg-ok" : "bg-muted-foreground/40",
               )}
             />
             <span className="text-foreground">{item.label}</span>

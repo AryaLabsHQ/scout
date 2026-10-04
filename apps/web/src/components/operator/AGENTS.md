@@ -6,11 +6,11 @@ The operator chat UI is decomposed into 7 component files + 10 tiptap extension 
 ## STRUCTURE
 | File | Purpose |
 |------|---------|
-| `operator-shell.tsx` | Session list view, routing, quick create |
+| `operator-shell.tsx` | Session list (rename, archive, delete behind confirms), routing, quick create |
 | `operator-session-panel.tsx` | Watch stream, state, layout, keyboard shortcuts, terminal mirroring |
 | `operator-prompt-input.tsx` | Tiptap editor, footer controls (model, scope, approval, plan, stop, queued count) |
 | `operator-timeline-item.tsx` | User/assistant/tool timeline items, inline approvals and clarification answers |
-| `operator-session-meta.tsx` | Right sidebar metadata cards |
+| `operator-session-meta.tsx` | Right panel: other sessions, scope, model, skills |
 | `operator-dialogs.tsx` | Create session + manage skills dialogs |
 | `operator-utils.ts` | Shared constants and small helpers |
 | `tiptap/` | Keyboard, @mention, /slash, attachment extensions |
@@ -28,6 +28,8 @@ The operator chat UI is decomposed into 7 component files + 10 tiptap extension 
 - Tool items with `terminal` mirror into the terminal dock as projection `${sessionId}:${toolCallId}`.
 
 ## CONVENTIONS
+- Show statuses through `SESSION_STATUS` / `APPROVAL_MODE_LABEL` (`operator-utils.ts`), never the raw enum; a tool waiting on a pending approval reads "Awaiting approval".
+- A pending mutation approval shows the exact command from the tool's `command` argument when it has one.
 - Keyboard shortcuts use `react-hotkeys-hook` (`useHotkeys`)
 - Command palette commands dispatch custom events consumed by the session panel
 - Approval mode and plan mode changes patch the live snapshot optimistically; the next snapshot supersedes it

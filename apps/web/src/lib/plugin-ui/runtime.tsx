@@ -10,9 +10,16 @@ import {
 import { schema } from "@json-render/react/schema"
 import { z } from "zod"
 import { toast } from "sonner"
+import { useConfirm, type ConfirmOptions } from "@/providers/confirm-provider"
 import { MetricsChart } from "@/components/charts/metrics-chart"
 import { LogViewer } from "@/components/log-viewer"
 import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -42,6 +49,7 @@ import type {
   PluginRouteState,
   PluginStreamMetadata,
   PluginTableColumn,
+  PluginUiActionBinding,
   PluginUiScreen,
   PluginUiSpec,
 } from "./types"
@@ -253,6 +261,8 @@ interface PluginUiRuntimeActions {
     readonly explicitInput?: Record<string, unknown>
     readonly inputStatePath?: string
     readonly closeFormOnSuccess?: boolean
+    /** Confirm-dialog copy from the screen's action binding, when it has one. */
+    readonly confirmCopy?: PluginUiActionBinding["confirm"]
   }) => Promise<void>
 }
 
@@ -266,7 +276,7 @@ function usePluginUiRuntime(): PluginUiRuntimeActions {
   return value
 }
 
-const CHART_COLORS = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#9333ea"] as const
+const CHART_COLORS = ["#ededed", "#a1a1a1", "#707070", "#4a4a4a", "#2e2e2e"] as const
 
 const deepMerge = (left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> => {
   const output: Record<string, unknown> = { ...left }
@@ -658,7 +668,7 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
         {props.title !== undefined || props.subtitle !== undefined || props.description !== undefined ? (
           <div className="space-y-1">
             {props.title !== undefined ? (
-              <h2 className="font-heading text-lg font-semibold">{readDisplayValue(props.title)}</h2>
+              <h2 className="text-lg font-semibold tracking-tight">{readDisplayValue(props.title)}</h2>
             ) : null}
             {props.subtitle !== undefined ? (
               <p className="text-sm text-muted-foreground">{readDisplayValue(props.subtitle)}</p>
@@ -672,11 +682,11 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
       </div>
     ),
     Section: ({ props, children }) => (
-      <div className="rounded border border-border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border">
         {props.title !== undefined || props.description !== undefined ? (
           <div className="border-b border-border px-4 py-3">
             {props.title !== undefined ? (
-              <h3 className="font-heading text-sm font-semibold">{readDisplayValue(props.title)}</h3>
+              <h3 className="text-sm font-medium">{readDisplayValue(props.title)}</h3>
             ) : null}
             {props.description !== undefined ? (
               <p className="mt-1 text-xs text-muted-foreground">{readDisplayValue(props.description)}</p>
@@ -732,10 +742,10 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
       <div
         className={
           props.tone === "warning"
-            ? "rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+            ? "rounded-md border border-warn/30 bg-warn/[0.06] px-3 py-2 text-sm"
             : props.tone === "danger"
-              ? "rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              : "rounded border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+              ? "rounded-md border border-err/30 bg-err/[0.06] px-3 py-2 text-sm"
+              : "rounded-md border border-border px-3 py-2 text-sm text-muted-foreground"
         }
       >
         {readDisplayValue(props.text)}
@@ -750,9 +760,9 @@ const { registry } = defineRegistry(SCOUT_UI_CATALOG, {
     ActionBar: ({ props }) => <ActionBarComponent props={props as Record<string, unknown>} />,
     LogPanel: ({ props }) => <LogPanelComponent props={props as Record<string, unknown>} />,
     Form: ({ props, children }) => (
-      <div className="rounded border border-border bg-card p-4">
+      <div className="rounded-lg border border-border p-4">
         {props.title !== undefined ? (
-          <div className="mb-3 text-sm font-semibold">{readDisplayValue(props.title)}</div>
+          <div className="mb-3 text-sm font-medium">{readDisplayValue(props.title)}</div>
         ) : null}
         <div className="space-y-4">{children}</div>
       </div>
@@ -800,11 +810,11 @@ function StatGridComponent(props: { readonly props: Record<string, unknown> }) {
       {items.map((metric) => {
         const latest = latestMetric(state.metrics, metric.metricId, entity)
         return (
-          <div key={metric.id ?? metric.metricId} className="rounded border border-border px-3 py-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <div key={metric.id ?? metric.metricId} className="rounded-lg border border-border px-4 py-3">
+            <div className="text-[12.5px] text-muted-foreground">
               {metric.label ?? metric.metricId}
             </div>
-            <div className="mt-2 text-2xl font-semibold">
+            <div className="mt-1.5 font-mono text-[22px] font-medium tabular">
               {latest ? formatMetricValue(latest.value, metric.unit ?? latest.unit) : "—"}
             </div>
           </div>
@@ -824,10 +834,10 @@ function StatCardComponent(props: { readonly props: Record<string, unknown> }) {
   const label = readDisplayValue(props.props["label"])
   const tone =
     props.props["tone"] === "success"
-      ? "border-emerald-500/30 bg-emerald-500/5"
+      ? "text-ok"
       : props.props["tone"] === "danger"
-        ? "border-destructive/30 bg-destructive/5"
-        : "border-border bg-card"
+        ? "text-err"
+        : ""
 
   let value = props.props["value"]
   if (metricId !== undefined && (value === undefined || value === null)) {
@@ -836,9 +846,9 @@ function StatCardComponent(props: { readonly props: Record<string, unknown> }) {
   }
 
   return (
-    <div className={`rounded border px-3 py-4 ${tone}`}>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{readDisplayValue(value)}</div>
+    <div className="rounded-lg border border-border px-4 py-3">
+      <div className="text-[12.5px] text-muted-foreground">{label}</div>
+      <div className={`mt-1.5 font-mono text-[22px] font-medium tabular ${tone}`}>{readDisplayValue(value)}</div>
     </div>
   )
 }
@@ -875,7 +885,7 @@ function EntityTableComponent(props: { readonly props: Record<string, unknown> }
           {columns.map((column) => (
             <TableHead key={column.id}>{column.label}</TableHead>
           ))}
-          {rowActions.length > 0 ? <TableHead>Actions</TableHead> : null}
+          {rowActions.length > 0 ? <TableHead className="w-12" aria-label="Actions" /> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -903,38 +913,40 @@ function EntityTableComponent(props: { readonly props: Record<string, unknown> }
               )
             })}
             {rowActions.length > 0 ? (
-              <TableCell>
-                <div className="flex flex-wrap gap-2">
-                  {rowActions.map((action) => {
-                    const actionId = action.actionId ?? action.id
-                    const metadata = state.plugin.agent?.actions.find((candidate) => candidate.id === actionId)
-                    return (
-                      <Button
-                        key={action.id ?? actionId}
-                        size="sm"
-                        variant={(action.variant ?? "outline") as "default" | "outline" | "secondary" | "ghost" | "destructive"}
-                        className="h-7 text-xs"
-                        onClick={async (event) => {
-                          event.stopPropagation()
-                          if (metadata?.requiresConfirmation) {
-                            const approved = window.confirm(
-                              `Run ${metadata.displayName.toLowerCase()} on ${entity.ref.id}?`,
-                            )
-                            if (!approved) {
-                              return
-                            }
+              <TableCell className="w-12 text-right">
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={(event) => event.stopPropagation()}
+                        className="inline-grid size-7 place-items-center rounded-md text-subtle hover:bg-muted hover:text-foreground"
+                        aria-label={`Actions for ${entity.ref.id}`}
+                      />
+                    }
+                  >
+                    <span aria-hidden>⋯</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
+                    {rowActions.map((action) => {
+                      const actionId = action.actionId ?? action.id
+                      const metadata = state.plugin.agent?.actions.find((candidate) => candidate.id === actionId)
+                      return (
+                        <DropdownMenuItem
+                          key={action.id ?? actionId}
+                          onClick={() =>
+                            void runtime.runAction({
+                              action: metadata,
+                              targetRef: entity.ref,
+                            })
                           }
-                          await runtime.runAction({
-                            action: metadata,
-                            targetRef: entity.ref,
-                          })
-                        }}
-                      >
-                        {action.label ?? metadata?.displayName ?? actionId}
-                      </Button>
-                    )
-                  })}
-                </div>
+                        >
+                          {action.label ?? metadata?.displayName ?? actionId}…
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </TableCell>
             ) : null}
           </TableRow>
@@ -968,8 +980,8 @@ function DetailListComponent(props: { readonly props: Record<string, unknown> })
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {renderItems.map((item, index) => (
-        <div key={`${item.label}:${index}`} className="rounded border border-border px-3 py-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div key={`${item.label}:${index}`} className="rounded-lg border border-border px-4 py-3">
+          <div className="text-[12.5px] text-subtle">
             {item.label}
           </div>
           <div className="mt-2 text-sm">
@@ -1052,15 +1064,6 @@ function ActionBarComponent(props: { readonly props: Record<string, unknown> }) 
             size="sm"
             variant={(action.variant ?? "outline") as "default" | "outline" | "secondary" | "ghost" | "destructive"}
             onClick={async () => {
-              if (binding?.confirm !== undefined) {
-                const approved = window.confirm(
-                  `${binding.confirm.title}\n\n${binding.confirm.message}`,
-                )
-                if (!approved) {
-                  return
-                }
-              }
-
               const bindingTarget =
                 binding?.params?.["target"] !== null && typeof binding?.params?.["target"] === "object"
                   ? (binding?.params?.["target"] as { entityRef?: EntityRef })
@@ -1072,6 +1075,7 @@ function ActionBarComponent(props: { readonly props: Record<string, unknown> }) 
                   ?? (binding?.params?.["entityRef"] as EntityRef | undefined)
                   ?? entity?.ref,
                 explicitInput: binding?.params?.["input"] as Record<string, unknown> | undefined,
+                ...(binding?.confirm !== undefined && { confirmCopy: binding.confirm }),
               })
             }}
           >
@@ -1156,7 +1160,7 @@ function LogPanelComponent(props: { readonly props: Record<string, unknown> }) {
         : 200
 
   return (
-    <div className="h-[420px] overflow-hidden rounded border border-border">
+    <div className="h-[420px] overflow-hidden rounded-lg border border-border">
       <LogViewer
         params={{
           agentId: String(state.system["id"] ?? ""),
@@ -1449,6 +1453,7 @@ function buildFormSpec(action: PluginActionMetadata, targetRef?: EntityRef): Plu
 
 function createRuntimeActions(args: {
   readonly store: StateStore
+  readonly confirm: (options: ConfirmOptions) => Promise<boolean>
   readonly runAction: (input: {
     readonly payload: {
       readonly agentId: string
@@ -1485,7 +1490,7 @@ function createRuntimeActions(args: {
         setSelectedEntityState(store, nextEntity)
       }
     },
-    runAction: async ({ action, targetRef, explicitInput, inputStatePath, closeFormOnSuccess }) => {
+    runAction: async ({ action, targetRef, explicitInput, inputStatePath, closeFormOnSuccess, confirmCopy }) => {
       const state = store.getSnapshot() as unknown as PluginRouteState
       if (action === undefined) {
         toast.error("Unknown plugin action")
@@ -1524,6 +1529,22 @@ function createRuntimeActions(args: {
       const input =
         explicitInput
         ?? normalizeActionInput(action.input, rawFormInput ?? {})
+
+      // Every plugin action runs behind the app's confirm dialog.
+      const machine = String(state.system["hostname"] ?? state.system["id"] ?? "this machine")
+      // The title always names the action, its target, and the machine; a screen's
+      // own confirm copy supplies the explanation and button label.
+      const approved = await args.confirm({
+        title: `${action.displayName}${targetRef ? ` ${targetRef.id}` : ""} on ${machine}?`,
+        description:
+          confirmCopy?.message ??
+          `${action.description ?? `Runs the ${state.plugin.manifest.displayName} plugin's ${action.displayName.toLowerCase()} action.`} Scout records this action in the hub audit log under your identity.`,
+        confirmLabel: confirmCopy?.confirmLabel ?? action.displayName,
+        destructive: confirmCopy?.variant === "danger" || action.requiresConfirmation,
+      })
+      if (!approved) {
+        return
+      }
 
       try {
         const result = await args.runAction({
@@ -1766,13 +1787,15 @@ export function PluginUiRenderer(props: {
     }
   }) => Promise<{ readonly output?: unknown }>
 }) {
+  const confirm = useConfirm()
   const runtime = useMemo(
     () =>
       createRuntimeActions({
         store: props.store,
+        confirm,
         runAction: props.runAction,
       }),
-    [props.runAction, props.store],
+    [confirm, props.runAction, props.store],
   )
   const handlers = useMemo(
     () =>

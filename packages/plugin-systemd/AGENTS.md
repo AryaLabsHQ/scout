@@ -24,7 +24,7 @@ packages/plugin-systemd/src/
 
 ## CONVENTIONS
 - Keep `manifest.ts` and `contracts.ts` in sync.
-- Route package exports through `src/index.ts`.
+- Route package exports through `src/index.ts`. The `./contracts` subpath exports `contracts.ts` alone (ids and schemas only, no Node imports) for the web dashboard.
 - Keep runtime adapters thin and move core behavior into `src/systemd.ts`.
 - Add new service-management actions or streams through `contracts.ts` first.
 - Never escalate privileges: reads run unprivileged, state changes run `systemctl --no-ask-password` and a polkit/permission refusal surfaces as a `permission-denied` execution error.

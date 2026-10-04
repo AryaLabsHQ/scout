@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArrowDown01Icon,
-  ArtificialIntelligence04Icon,
   MoreHorizontalCircle01Icon,
   SidebarRight01Icon,
 } from "@hugeicons/core-free-icons"
@@ -24,14 +23,8 @@ import type {
 import { HubClient } from "@/rpc/client"
 import { useOperator } from "@/providers/operator-provider"
 import { useTerminalPanel } from "@/providers/terminal-provider"
-import { Badge } from "@/components/ui/badge"
+import { StatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +39,7 @@ import {
 } from "@/components/ui/resizable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { OperatorShellVariant } from "./operator-utils"
-import { SESSION_LIST_REACTIVITY_KEY, isOperatorSessionBusy } from "./operator-utils"
+import { SESSION_LIST_REACTIVITY_KEY, SESSION_STATUS, isOperatorSessionBusy } from "./operator-utils"
 import { ManageSkillsDialog } from "./operator-dialogs"
 import { OperatorApprovalCard, OperatorTimelineItemCard } from "./operator-timeline-item"
 import { OperatorPromptInput } from "./operator-prompt-input"
@@ -499,17 +492,15 @@ export function OperatorSessionPanel({
               onScroll={handleScroll}
               className="min-h-0 flex-1 overflow-y-auto scrollbar-thin"
             >
-              <div className="mx-auto max-w-3xl space-y-3 p-4">
+              <div className="mx-auto max-w-3xl space-y-6 px-6 py-6">
                 {timeline.length === 0 && orphanPendingApprovals.length === 0 ? (
                   <div className="space-y-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Session created</CardTitle>
-                        <CardDescription>
-                          Send a prompt to get started, or pick a suggestion below.
-                        </CardDescription>
-                      </CardHeader>
-                    </Card>
+                    <div>
+                      <p className="text-sm font-medium">New session</p>
+                      <p className="mt-1 text-[13px] text-muted-foreground">
+                        Ask about your machines, or start from a suggestion. Changes always wait for your approval.
+                      </p>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {[
                         "Check the health of all nodes",
@@ -621,7 +612,7 @@ export function OperatorSessionPanel({
               }}
             >
               <ScrollArea className="h-full">
-                <div className="space-y-3 p-4">
+                <div className="space-y-6 p-5">
                   <OperatorSessionMeta detail={resolvedDetail} pendingApprovals={pendingApprovals} />
                 </div>
               </ScrollArea>
@@ -670,21 +661,20 @@ function SessionHeader({
   onToggleMeta?: () => void
 }) {
   return (
-    <div className="border-b border-border px-4 py-3">
+    <div className="border-b border-border px-5 py-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <HugeiconsIcon icon={ArtificialIntelligence04Icon} size={16} className="shrink-0" />
-          <h1 className="truncate font-heading text-base font-semibold">{session.title}</h1>
-          {session.status !== "idle" ? (
-            <Badge variant="outline" className="shrink-0 uppercase">
-              {session.status}
-            </Badge>
+        <div className="flex min-w-0 items-center gap-3">
+          {variant === "page" ? (
+            <Link to="/operator" className="shrink-0 text-[13px] text-subtle hover:text-foreground">
+              Operator /
+            </Link>
           ) : null}
-          {pendingApprovals > 0 ? (
-            <Badge variant="outline" className="shrink-0">
-              {pendingApprovals} pending
-            </Badge>
-          ) : null}
+          <h1 className="truncate text-base font-semibold tracking-tight">{session.title}</h1>
+          <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
+            <StatusDot tone={SESSION_STATUS[session.status].tone} />
+            {SESSION_STATUS[session.status].label}
+            {pendingApprovals > 1 ? ` · ${pendingApprovals} pending` : ""}
+          </span>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">

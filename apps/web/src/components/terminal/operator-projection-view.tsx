@@ -121,7 +121,7 @@ export function OperatorProjectionView({
     <div className={cn("flex h-full flex-col overflow-hidden bg-[#0d0d0d] text-[#d4d4d4]", className)}>
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2 text-[11px]">
         <div className="flex min-w-0 items-center gap-2">
-          <HugeiconsIcon icon={ArtificialIntelligence04Icon} size={12} className="shrink-0 text-cyan-300" />
+          <HugeiconsIcon icon={ArtificialIntelligence04Icon} size={12} className="shrink-0 text-muted-foreground" />
           <span className="truncate">{label}</span>
         </div>
         <div className="flex items-center gap-2 text-[#8a8a8a]">

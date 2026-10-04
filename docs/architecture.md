@@ -146,7 +146,7 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 
 All RPC methods are defined in `packages/shared/src/rpc/` and organized by communication direction.
 
-### Browser -> Hub (`ClientHubRpcs` -- 33 methods)
+### Browser -> Hub (`ClientHubRpcs` -- 37 methods)
 
 | Domain | Method | Type |
 |--------|--------|------|
@@ -174,6 +174,9 @@ All RPC methods are defined in `packages/shared/src/rpc/` and organized by commu
 | Operator | `operator.approvals.resolve` | Mutation |
 | Operator | `operator.skills.list` | Query |
 | Operator | `operator.models.list` | Query |
+| Plugins | `plugins.entities` | Query |
+| Plugins | `plugins.metrics` | Query |
+| Plugins | `plugins.events` | Query |
 | Plugins | `plugins.runAction` | Mutation |
 | Terminal | `terminal.input` | Mutation |
 | Terminal | `terminal.resize` | Mutation |

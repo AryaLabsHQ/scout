@@ -12,7 +12,7 @@ import {
 } from "recharts"
 import { formatBytes, formatPercent, formatBytesPerSec } from "@/lib/format"
 
-type Unit = "%" | "bytes" | "bytes/s"
+type Unit = "%" | "bytes" | "bytes/s" | "°C"
 
 interface MetricsChartProps {
   data: Record<string, unknown>[]
@@ -26,6 +26,7 @@ function formatYAxis(value: number, unit: Unit): string {
   if (unit === "%") return `${Math.round(value)}%`
   if (unit === "bytes") return formatBytes(value)
   if (unit === "bytes/s") return formatBytesPerSec(value)
+  if (unit === "°C") return `${Math.round(value)}°`
   return String(value)
 }
 
@@ -34,6 +35,7 @@ function formatTooltipValue(value: unknown, unit: Unit): string {
   if (unit === "%") return formatPercent(n)
   if (unit === "bytes") return formatBytes(n)
   if (unit === "bytes/s") return formatBytesPerSec(n)
+  if (unit === "°C") return `${n.toFixed(1)} °C`
   return String(n)
 }
 
@@ -65,6 +67,7 @@ export function MetricsChart({
         tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
         tickLine={false}
         axisLine={false}
+        minTickGap={48}
       />
     ),
     yAxis: (
@@ -91,12 +94,12 @@ export function MetricsChart({
             contentStyle={{
               background: "var(--popover)",
               border: "1px solid var(--border)",
-              borderRadius: 0,
+              borderRadius: 8,
               fontSize: 12,
               color: "var(--popover-foreground)",
             }}
           />
-          {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+          {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />}
           {dataKeys.map((dk) => (
             <Line
               key={dk.key}
@@ -119,8 +122,8 @@ export function MetricsChart({
         <defs>
           {dataKeys.map((dk, i) => (
             <linearGradient key={dk.key} id={gradientIds[i]} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={dk.color} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={dk.color} stopOpacity={0.02} />
+              <stop offset="5%" stopColor={dk.color} stopOpacity={0.16} />
+              <stop offset="95%" stopColor={dk.color} stopOpacity={0} />
             </linearGradient>
           ))}
         </defs>
@@ -132,12 +135,12 @@ export function MetricsChart({
           contentStyle={{
             background: "var(--popover)",
             border: "1px solid var(--border)",
-            borderRadius: 0,
+            borderRadius: 8,
             fontSize: 12,
             color: "var(--popover-foreground)",
           }}
         />
-        {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+        {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} iconType="plainline" />}
         {dataKeys.map((dk, i) => (
           <Area
             key={dk.key}

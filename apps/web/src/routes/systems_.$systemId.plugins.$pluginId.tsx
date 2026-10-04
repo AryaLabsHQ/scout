@@ -1,9 +1,7 @@
 import { useMemo } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons"
 import { useAtomSet } from "@effect/atom-react"
-import { Badge } from "@/components/ui/badge"
+import { Page, PageHeader } from "@/components/section"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -106,38 +104,31 @@ function PluginSystemPage() {
   }
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <Link
-            to="/systems/$systemId"
-            params={{ systemId }}
-            className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
-            Back to system
-          </Link>
-          <h1 className="font-heading text-lg font-semibold">{plugin.manifest.displayName}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{String((system as Record<string, unknown>)["hostname"] ?? "")}</span>
-            <span>{plugin.manifest.id}</span>
+    <Page>
+      <PageHeader
+        crumbs={
+          <>
+            <Link to="/systems/$systemId" params={{ systemId }} className="hover:text-foreground">
+              {String((system as Record<string, unknown>)["hostname"] ?? systemId)}
+            </Link>
+            <span>/</span>
+            <span>{plugin.manifest.displayName}</span>
+          </>
+        }
+        title={plugin.manifest.displayName}
+        meta={
+          <>
+            <span className="font-mono">{plugin.manifest.id}</span>
             <span>v{plugin.manifest.version}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1">
-          {((system as Record<string, any>)["pluginCapabilities"] ?? [])
-            .filter((capability: Record<string, unknown>) => capability["pluginId"] === plugin.manifest.id)
-            .map((capability: Record<string, unknown>) => (
-              <Badge
-                key={String(capability["pluginId"])}
-                variant="outline"
-                className="text-[10px]"
-              >
-                {String(capability["status"])}
-              </Badge>
-            ))}
-        </div>
-      </div>
+            {((system as Record<string, any>)["pluginCapabilities"] ?? [])
+              .filter((capability: Record<string, unknown>) => capability["pluginId"] === plugin.manifest.id)
+              .map((capability: Record<string, unknown>) => (
+                <span key={String(capability["pluginId"])}>{String(capability["status"])}</span>
+              ))}
+          </>
+        }
+      />
+      <div className="mt-6" />
 
       {primaryScreens.length > 1 ? (
         <div className="mb-6 flex flex-wrap gap-2">
@@ -145,7 +136,7 @@ function PluginSystemPage() {
             <Button
               key={screen.id}
               size="sm"
-              variant={screen.id === activePrimaryScreen.id ? "default" : "outline"}
+              variant={screen.id === activePrimaryScreen.id ? "secondary" : "ghost"}
               onClick={() => setPrimaryScreen(screen.id)}
             >
               {screen.title}
@@ -205,6 +196,6 @@ function PluginSystemPage() {
           ) : null}
         </SheetContent>
       </Sheet>
-    </div>
+    </Page>
   )
 }

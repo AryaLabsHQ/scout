@@ -21,13 +21,10 @@ function TerminalPage() {
     sessions.filter((t) => t.kind === "interactive" && t.agentId === agentId).length
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="mx-auto w-full max-w-[1240px] px-6 pt-8 pb-24">
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <HugeiconsIcon icon={TerminalIcon} size={18} className="text-foreground" />
-          <h1 className="font-heading text-lg font-semibold">Terminal</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-2xl font-semibold tracking-tight">Terminal</h1>
+        <p className="mt-1.5 text-[13px] text-muted-foreground">
           Open an interactive shell session on any connected agent. Sessions persist across navigation.
         </p>
         <p className="text-xs text-muted-foreground mt-1">
@@ -118,7 +115,7 @@ function AgentCard({
         <div className="flex items-center gap-2">
           <span
             className={`inline-block h-2 w-2 rounded-full shrink-0 ${
-              status === "online" ? "bg-green-500" : "bg-muted-foreground/40"
+              status === "online" ? "bg-ok" : "bg-muted-foreground/40"
             }`}
           />
           <p className="font-mono text-sm font-medium truncate">{hostname}</p>
@@ -126,7 +123,7 @@ function AgentCard({
         <div className="mt-1 flex items-center gap-1">
           <Badge
             variant={status === "online" ? "secondary" : "outline"}
-            className={`text-[9px] ${status === "online" ? "bg-green-500/10 text-green-500 border-green-500/20" : ""}`}
+            className={`text-[9px] ${status === "online" ? "bg-ok/10 text-ok border-ok/20" : ""}`}
           >
             {status}
           </Badge>

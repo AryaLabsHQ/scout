@@ -9,7 +9,6 @@ import {
   GitForkIcon,
   HelpCircleIcon,
   Shield01Icon,
-  TerminalIcon,
 } from "@hugeicons/core-free-icons"
 import type {
   OperatorApprovalRequest,
@@ -62,7 +61,7 @@ const streamdownPlugins = { code, cjk }
 const OperatorMarkdown = memo(
   ({ content, isAnimating = false }: { content: string; isAnimating?: boolean }) => (
     <Streamdown
-      className="sd-theme text-xs leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+      className="sd-theme text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       plugins={streamdownPlugins}
       controls={false}
       isAnimating={isAnimating}
@@ -182,19 +181,16 @@ function UserMessageCard({
   onFork: (entryId: string) => Promise<void>
 }) {
   return (
-    <div className="group ml-auto max-w-[80%] space-y-1 rounded-lg bg-secondary px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <p className="whitespace-pre-wrap text-xs text-foreground">{item.text}</p>
-        <Timestamp at={item.createdAt} />
+    <div className="group space-y-1">
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <span>You</span>
+        <span>·</span>
+        <Timestamp at={item.createdAt} className="text-xs text-subtle" />
+        <div className="ml-auto">
+          <HoverActions forkEntryId={item.entryId} content={item.text} isForking={isForking} onFork={onFork} />
+        </div>
       </div>
-      <div className="flex justify-end">
-        <HoverActions
-          forkEntryId={item.entryId}
-          content={item.text}
-          isForking={isForking}
-          onFork={onFork}
-        />
-      </div>
+      <p className="whitespace-pre-wrap border-l-2 border-border-strong pl-3 text-sm text-foreground">{item.text}</p>
     </div>
   )
 }
@@ -214,41 +210,45 @@ function AssistantMessageCard({
   }
 
   return (
-    <div className="group space-y-1 border-l-2 border-primary/20 py-2 pl-3">
+    <div className="group space-y-1">
+      <div className="flex items-center gap-2 text-xs text-subtle">
+        <span>Operator</span>
+        {item.streaming ? null : (
+          <>
+            <span>·</span>
+            <Timestamp at={item.createdAt} className="text-xs text-subtle" />
+          </>
+        )}
+        {item.streaming ? null : (
+          <div className="ml-auto">
+            <HoverActions
+              forkEntryId={item.entryId}
+              content={hasText ? item.text : undefined}
+              isForking={isForking}
+              onFork={onFork}
+            />
+          </div>
+        )}
+      </div>
       {item.thinking ? (
         <Collapsible>
-          <CollapsibleTrigger className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
+          <CollapsibleTrigger className="flex cursor-pointer items-center gap-1 text-xs text-subtle hover:text-muted-foreground">
             Thinking
             <HugeiconsIcon icon={ArrowDown01Icon} size={12} />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <p className="whitespace-pre-wrap py-1 text-[11px] text-muted-foreground">{item.thinking}</p>
+            <p className="whitespace-pre-wrap py-1 text-xs text-muted-foreground">{item.thinking}</p>
           </CollapsibleContent>
         </Collapsible>
       ) : null}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {hasText ? (
-            <OperatorMarkdown content={item.text} isAnimating={item.streaming} />
-          ) : item.streaming ? (
-            <span className="animate-pulse text-xs text-muted-foreground">...</span>
-          ) : null}
-        </div>
-        {item.streaming ? null : <Timestamp at={item.createdAt} />}
+      <div className="min-w-0 text-sm">
+        {hasText ? (
+          <OperatorMarkdown content={item.text} isAnimating={item.streaming} />
+        ) : item.streaming ? (
+          <span className="animate-pulse text-subtle">…</span>
+        ) : null}
       </div>
-      {item.errorMessage ? (
-        <p className="text-[11px] text-destructive">{item.errorMessage}</p>
-      ) : null}
-      {item.streaming ? null : (
-        <div className="flex justify-end">
-          <HoverActions
-            forkEntryId={item.entryId}
-            content={hasText ? item.text : undefined}
-            isForking={isForking}
-            onFork={onFork}
-          />
-        </div>
-      )}
+      {item.errorMessage ? <p className="text-xs text-err">{item.errorMessage}</p> : null}
     </div>
   )
 }
@@ -276,64 +276,55 @@ function ToolCallCard({
   onResolveApproval: ResolveApproval
   onMirrorTerminal: (toolCallId: string, terminal: OperatorTerminalOutput) => void
 }) {
+  const awaitingApproval = approval?.status === "pending"
   const isActive = item.status === "pending" || item.status === "running"
   const isFailed = item.status === "failed"
-  const [open, setOpen] = useState(isActive || isFailed)
+  const [open, setOpen] = useState(isFailed)
   const formattedArgs = formatToolArgs(item.args)
   const terminal = item.terminal
-
-  const statusColor = isActive
-    ? "text-muted-foreground"
+  const label = toolLabel(item.args)
+  const [tone, statusLabel] = awaitingApproval
+    ? (["warn", "Awaiting approval"] as const)
     : isFailed
-      ? "text-red-500"
-      : "text-green-500"
+      ? (["err", "Failed"] as const)
+      : isActive
+        ? (["off", "Running"] as const)
+        : approval?.status === "rejected"
+          ? (["off", "Rejected"] as const)
+          : (["ok", "Completed"] as const)
 
   return (
-    <div className="space-y-1">
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted/40">
-          <HugeiconsIcon icon={TerminalIcon} size={14} className="shrink-0 text-muted-foreground" />
-          <Badge variant="outline">{item.name}</Badge>
-          <Badge
-            variant="outline"
-            className={cn("uppercase", statusColor, isActive && "animate-pulse")}
-          >
-            {item.status}
-          </Badge>
-          <Timestamp at={item.createdAt} />
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={14}
-            className={cn(
-              "ml-auto shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-          />
+    <div className="space-y-2">
+      <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border border-border">
+        <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-raised">
+          <span className={cn("inline-block size-2 shrink-0 rounded-full", TONE_BG[tone], isActive && !awaitingApproval && "animate-pulse")} />
+          <span className="font-mono">{item.name}</span>
+          {label ? <span className="truncate text-muted-foreground">{label}</span> : null}
+          {item.nodeIds.length > 0 ? (
+            <span className="truncate font-mono text-xs text-subtle">{item.nodeIds.join(", ")}</span>
+          ) : null}
+          <span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-subtle">
+            {statusLabel}
+            <span>·</span>
+            <Timestamp at={item.createdAt} className="text-xs text-subtle" />
+            <HugeiconsIcon icon={ArrowDown01Icon} size={14} className={cn("transition-transform", open && "rotate-180")} />
+          </span>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="space-y-2 px-3 pb-2 pt-1">
-            {item.nodeIds.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {item.nodeIds.map((nodeId) => (
-                  <Badge key={nodeId} variant="outline">
-                    {nodeId}
-                  </Badge>
-                ))}
-              </div>
-            )}
+          <div className="space-y-2 border-t border-border px-3 py-2">
             {formattedArgs && (
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap bg-muted/40 p-2 text-[11px] text-muted-foreground scrollbar-thin">
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs text-muted-foreground scrollbar-thin">
                 {formattedArgs}
               </pre>
             )}
             {item.output && (
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap bg-muted/40 p-2 text-[11px] scrollbar-thin">
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap border-t border-border pt-2 font-mono text-xs scrollbar-thin">
                 {item.output}
               </pre>
             )}
             {terminal && (
               <Button size="sm" variant="outline" onClick={() => onMirrorTerminal(item.toolCallId, terminal)}>
-                Mirror in Dock
+                Mirror in terminal dock
               </Button>
             )}
           </div>
@@ -342,6 +333,7 @@ function ToolCallCard({
       {approval ? (
         <OperatorApprovalCard
           approval={approval}
+          command={toolCommand(item.args)}
           isResolvingApproval={isResolvingApproval}
           onResolveApproval={onResolveApproval}
         />
@@ -350,12 +342,31 @@ function ToolCallCard({
   )
 }
 
+const TONE_BG = { ok: "bg-ok", warn: "bg-warn", err: "bg-err", off: "bg-off" } as const
+
+/** A tool call's own description of what it is doing (`label`), when its arguments carry one. */
+function toolLabel(args: unknown): string | null {
+  if (typeof args !== "object" || args === null) return null
+  const label = (args as Record<string, unknown>)["label"]
+  return typeof label === "string" && label.length > 0 ? label : null
+}
+
+/** The shell command a tool call runs (`bash_run`), shown verbatim on its approval. */
+function toolCommand(args: unknown): string | null {
+  if (typeof args !== "object" || args === null) return null
+  const command = (args as Record<string, unknown>)["command"]
+  return typeof command === "string" && command.length > 0 ? command : null
+}
+
 export function OperatorApprovalCard({
   approval,
+  command = null,
   isResolvingApproval,
   onResolveApproval,
 }: {
   approval: OperatorApprovalRequest
+  /** The exact command the approval would run, when the tool call has one. */
+  command?: string | null
   isResolvingApproval: boolean
   onResolveApproval: ResolveApproval
 }) {
@@ -369,52 +380,55 @@ export function OperatorApprovalCard({
     )
   }
 
-  const borderColor =
-    approval.status === "pending"
-      ? "border-yellow-500"
-      : approval.status === "approved"
-        ? "border-green-500"
-        : "border-red-500"
+  const nodes = approval.affectedNodeIds.join(", ")
+
+  if (approval.status !== "pending") {
+    const verb = approval.status === "approved" ? "Approved" : approval.status === "rejected" ? "Rejected" : "Canceled"
+    return (
+      <div className="flex flex-wrap items-center gap-2 pl-1 text-xs text-subtle">
+        <HugeiconsIcon icon={Shield01Icon} size={13} />
+        <span>
+          {verb}
+          {approval.actor ? ` by ${approval.actor}` : ""}
+        </span>
+        <span>·</span>
+        <Timestamp at={approval.resolvedAt ?? approval.requestedAt} className="text-xs text-subtle" />
+      </div>
+    )
+  }
 
   return (
-    <div className={cn("ml-3 space-y-2 border-l-2 py-2 pl-3", borderColor)}>
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <HugeiconsIcon icon={Shield01Icon} size={14} className="text-muted-foreground" />
-        <Badge variant="outline" className="uppercase">
-          {approval.status === "pending" ? approval.kind : approval.status}
-        </Badge>
-        <span className="text-muted-foreground">{approval.reason}</span>
-        {approval.actor ? <span className="text-muted-foreground">by {approval.actor}</span> : null}
-        <Timestamp at={approval.resolvedAt ?? approval.requestedAt} className="ml-auto" />
+    <div className="space-y-3 rounded-md border border-warn/30 bg-warn/[0.05] p-4">
+      <div className="flex items-center gap-2.5 text-sm font-medium">
+        <span className="inline-block size-2 rounded-full bg-warn" />
+        Approve a change{nodes ? ` on ${nodes}` : ""}?
+        <Timestamp at={approval.requestedAt} className="ml-auto text-xs font-normal text-subtle" />
       </div>
-      {approval.affectedNodeIds.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {approval.affectedNodeIds.map((nodeId) => (
-            <Badge key={nodeId} variant="outline">
-              {nodeId}
-            </Badge>
-          ))}
-        </div>
-      )}
-      {approval.status === "pending" && (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={isResolvingApproval}
-            onClick={() => void onResolveApproval(approval.id, "approved")}
-          >
-            {isResolvingApproval ? "Working..." : "Approve"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isResolvingApproval}
-            onClick={() => void onResolveApproval(approval.id, "rejected")}
-          >
-            Reject
-          </Button>
-        </div>
-      )}
+      <p className="text-[13px] text-muted-foreground">
+        {approval.reason}. It runs once after approval; a hub restart never runs it again.
+      </p>
+      {command ? (
+        <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">
+          $ {command}
+        </pre>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={isResolvingApproval}
+          onClick={() => void onResolveApproval(approval.id, "approved")}
+        >
+          {isResolvingApproval ? "Working…" : "Approve and run"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isResolvingApproval}
+          onClick={() => void onResolveApproval(approval.id, "rejected")}
+        >
+          Reject
+        </Button>
+      </div>
     </div>
   )
 }
@@ -442,7 +456,7 @@ function ClarificationCard({
   }
 
   return (
-    <div className="ml-3 space-y-2 border-l-2 border-blue-500 py-2 pl-3">
+    <div className="space-y-2 rounded-md border border-border-strong p-4">
       <div className="flex items-center gap-2 text-[11px]">
         <HugeiconsIcon icon={HelpCircleIcon} size={14} className="text-muted-foreground" />
         <Badge variant="outline">{question?.header ?? "question"}</Badge>
@@ -470,7 +484,7 @@ function ClarificationCard({
                     onClick={() => toggleOption(option.label)}
                     className={cn(
                       "flex flex-col gap-0.5 border border-border px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/40",
-                      isSelected && "border-primary bg-accent",
+                      isSelected && "border-foreground bg-muted",
                     )}
                   >
                     <span className="font-medium">{option.label}</span>
