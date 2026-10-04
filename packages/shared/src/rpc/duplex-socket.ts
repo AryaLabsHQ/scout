@@ -83,6 +83,8 @@ export type DuplexCloseReason =
   | "SocketClosed"
   /** The peer sent nothing for a full heartbeat interval after a `Ping`. */
   | "HeartbeatTimeout"
+  /** A write to the socket failed; the connection can no longer be trusted. */
+  | "WriteFailed"
 
 export interface DuplexRpcOptions {
   /**
@@ -194,11 +196,13 @@ export const makeDuplexRpcProtocols = (
 
     // The underlying WebSocket writer waits for an open connection, so a
     // write issued after the peer went away would suspend forever. Fail it
-    // as soon as the session ends instead.
+    // as soon as the session ends instead. A write that fails on its own ends
+    // the session, so a half-broken socket cannot silently drop responses.
     const write = (chunk: Uint8Array | string): Effect.Effect<void, Socket.SocketError> =>
       Deferred.isDoneUnsafe(closed)
         ? Effect.fail(sessionClosedError)
         : writer.write(chunk).pipe(
+            Effect.tapError(() => Deferred.succeed(closed, "WriteFailed")),
             Effect.raceFirst(
               Deferred.await(closed).pipe(Effect.andThen(Effect.fail(sessionClosedError))),
             ),
@@ -258,7 +262,8 @@ export const makeDuplexRpcProtocols = (
       try {
         const encoded = parser.encode(response)
         if (encoded === undefined) return Effect.void
-        // Nobody is left to receive a response once the session has ended.
+        // A failed write has already ended the session (see `write`), and
+        // nobody is left to receive a response once it has.
         return Effect.ignore(write(encoded))
       } catch {
         return Effect.void
