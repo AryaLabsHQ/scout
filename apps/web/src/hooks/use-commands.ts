@@ -53,7 +53,10 @@ export interface Command {
 export function useCommands(): Command[] {
   const navigate = useNavigate()
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
-  const systemsList = systemsResult._tag === "Success" ? systemsResult.value : []
+  const systemsList = useMemo(
+    () => (systemsResult._tag === "Success" ? systemsResult.value : []),
+    [systemsResult],
+  )
   const { openDrawer, toggleDrawer } = useOperator()
   const {
     sessions,
