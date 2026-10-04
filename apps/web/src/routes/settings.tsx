@@ -67,7 +67,7 @@ function SeverityBadge({ severity }: { severity: AlertRule["severity"] }) {
     )
   }
   return (
-    <Badge className="text-[10px] uppercase tracking-wider px-1.5 py-0 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20">
+    <Badge className="text-[10px] uppercase tracking-wider px-1.5 py-0 bg-warn/10 text-warn border-warn/30 hover:bg-warn/10">
       Warning
     </Badge>
   )
@@ -77,7 +77,7 @@ function StatusDot({ status }: { status: System["status"] }) {
   return (
     <span
       className={`inline-block size-2 rounded-full ${
-        status === "online" ? "bg-green-500" : "bg-muted-foreground/40"
+        status === "online" ? "bg-ok" : "bg-muted-foreground/40"
       }`}
     />
   )
@@ -522,10 +522,10 @@ function SettingsPage() {
   const { alertRules, systems, health } = Route.useLoaderData()
 
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-6">
+    <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-6 px-6 pt-8 pb-24">
       <div>
-        <h1 className="font-heading text-base font-semibold">Settings</h1>
-        <p className="text-xs text-muted-foreground">Configure Scout and manage agents.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <p className="mt-1.5 text-[13px] text-muted-foreground">Alert rules, connected agents, and hub details.</p>
       </div>
 
       <Tabs defaultValue="alert-rules">

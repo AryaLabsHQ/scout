@@ -146,7 +146,7 @@ function TerminalTab({
         <span
           role="button"
           tabIndex={0}
-          className="ml-0.5 rounded hover:text-red-400 focus:outline-none"
+          className="ml-0.5 rounded hover:text-err focus:outline-none"
           onClick={(event) => {
             event.stopPropagation()
             onClose()
