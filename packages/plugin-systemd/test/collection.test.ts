@@ -83,7 +83,7 @@ const USER_SHOW = [
 /** A fake systemctl for both managers; `--user` selects the user manager's answers. */
 const fakeSystemctl = (
   calls: string[],
-  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail" } = {},
+  opts: { userManager?: boolean; timestampFlag?: boolean; show?: "ok" | "fail"; userShow?: "fail" } = {},
 ): Exec =>
   (command, args) => {
     calls.push(`${command} ${args.join(" ")}`)
@@ -121,7 +121,9 @@ const fakeSystemctl = (
       )
     }
     if (rest[0] === "show") {
-      if (opts.show === "fail") return Effect.succeed({ stdout: "", stderr: "Connection timed out", exitCode: 1 })
+      if (opts.show === "fail" || (user && opts.userShow === "fail")) {
+        return Effect.succeed({ stdout: "", stderr: "Connection timed out", exitCode: 1 })
+      }
       if (opts.timestampFlag === false) {
         if (rest.includes("--timestamp=us+utc")) {
           return Effect.succeed({ stdout: "", stderr: "Unknown timestamp format", exitCode: 1 })
@@ -276,6 +278,14 @@ describe("systemd collection", () => {
   it("fails the collection instead of publishing units without details", async () => {
     const exit = await Effect.runPromiseExit(
       createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { show: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  it("fails the collection when only the user manager's detail read fails", async () => {
+    // Publishing the system units alone would hide user units that still run.
+    const exit = await Effect.runPromiseExit(
+      createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { userShow: "fail" }))).collect!({ nodeId: "agni", now: 42 }),
     )
     expect(Exit.isFailure(exit)).toBe(true)
   })

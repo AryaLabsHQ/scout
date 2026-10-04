@@ -707,10 +707,36 @@ export const createSystemdAgentPlugin = (
     )
   }
 
+  const emptyScope = (scope: SystemdScope): ScopeSnapshot => ({
+    scope,
+    services: [],
+    timers: [],
+    schedule: [],
+    details: new Map(),
+  })
+
+  /**
+   * One manager's units, timers, and details. Only a failed service listing of
+   * the user manager means "no user manager" (e.g. an agent run as a system
+   * service without a login session) and yields an empty scope. Any later
+   * failure, such as the detail read, fails the collection so the hub keeps
+   * the last good units instead of dropping or stripping them.
+   */
   const collectScope = (scope: SystemdScope): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
+    listUnits(scope, "service").pipe(
+      Effect.map((services): ReadonlyArray<SystemdUnitMetrics> | null => services),
+      Effect.catch((error) => (scope === "user" ? Effect.succeed(null) : Effect.fail(error))),
+      Effect.flatMap((services) =>
+        services === null ? Effect.succeed(emptyScope(scope)) : collectListedScope(scope, services),
+      ),
+    )
+
+  const collectListedScope = (
+    scope: SystemdScope,
+    services: ReadonlyArray<SystemdUnitMetrics>,
+  ): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
     Effect.all(
       [
-        listUnits(scope, "service"),
         listUnits(scope, "timer").pipe(Effect.orElseSucceed(() => [])),
         runSystemctl(deps, [...scopeArgs(scope), "list-timers", "--all", "--output=json"]).pipe(
           Effect.map(parseSystemctlListTimers),
@@ -719,7 +745,7 @@ export const createSystemdAgentPlugin = (
       ],
       { concurrency: "unbounded" },
     ).pipe(
-      Effect.flatMap(([services, timers, schedule]) =>
+      Effect.flatMap(([timers, schedule]) =>
         showUnits(scope, [
           ...new Set([
             ...services.map((unit) => unit.unit),
@@ -731,22 +757,9 @@ export const createSystemdAgentPlugin = (
       ),
     )
 
-  const emptyScope = (scope: SystemdScope): ScopeSnapshot => ({
-    scope,
-    services: [],
-    timers: [],
-    schedule: [],
-    details: new Map(),
-  })
-
   const collect = (ctx: { readonly nodeId: string; readonly now: number }) =>
     Effect.all(
-      [
-        collectScope("system"),
-        // No user manager (e.g. an agent run as a system service without a
-        // login session) means no user units, not a failed collection.
-        collectScope("user").pipe(Effect.orElseSucceed(() => emptyScope("user"))),
-      ],
+      [collectScope("system"), collectScope("user")],
       { concurrency: "unbounded" },
     ).pipe(Effect.map((snapshots) => buildCollection(ctx.nodeId, ctx.now, snapshots)))
 
