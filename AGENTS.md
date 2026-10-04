@@ -78,6 +78,7 @@ Services are built with `Context.Service`, dependencies are composed with `Layer
 ## CONVENTIONS
 - Root `README.md` is still a template stub. Treat workspace source plus `e2e/README.md` as ground truth instead.
 - Effect and every `@effect/*` package are pinned to the same exact stable version in every workspace; bump them together.
+- `typescript` is pinned to the same exact 7.x version in every workspace, and every `typecheck` script runs TS 7's native `tsc`. TS 7 does not ship the TypeScript 5/6 JS API (`import "typescript"` exports only `version`); a tool that needs that API gets a scoped `typescript@6` alias for that tool alone.
 - `bunfig.toml` turns off Bun's global install store: `bun-types` and several React libraries import undeclared type packages (`undici-types`, `@types/react`), which only resolve from the per-repo `node_modules/.bun` store.
 - This is a Bun workspace repo with Turbo orchestration. Root scripts cover `dev`, `build`, `typecheck`, and formatting/linting; most tests run from workspace roots.
 - `.scratchpad/` is active working memory and research, not shipped code. Do not rely on it for product behavior.

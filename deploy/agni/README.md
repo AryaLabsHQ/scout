@@ -46,8 +46,7 @@ Steps 2 and 3 can land before the units run; Caddy answers 502 until the hub and
 cd ~/Developer/AryaLabsHQ/scout
 git fetch origin && git checkout --detach <release-sha>
 bun install --frozen-lockfile
-# The web build needs more than Node's default heap on Agni.
-NODE_OPTIONS=--max-old-space-size=6144 bun run --cwd apps/web build
+bun run --cwd apps/web build
 ```
 
 ## Install
@@ -133,7 +132,7 @@ The hub refuses to start (and the unit stops after five restarts) when `SCOUT_TO
 ```sh
 cd ~/Developer/AryaLabsHQ/scout && git fetch origin && git checkout --detach <new-sha>
 bun install --frozen-lockfile
-NODE_OPTIONS=--max-old-space-size=6144 bun run --cwd apps/web build
+bun run --cwd apps/web build
 # back up the database, then run db:push as in Install
 install -m 644 deploy/agni/systemd/scout-*.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 systemctl --user restart scout-hub scout-web scout-agent
