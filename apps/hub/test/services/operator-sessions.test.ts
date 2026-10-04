@@ -270,6 +270,23 @@ describe("OperatorSessions on pi-durable", () => {
     faux.setResponses([])
   })
 
+  it("lists unarchived sessions with their projected status", async () => {
+    script(fauxAssistantMessage("", { stopReason: "error", errorMessage: "provider exploded" }))
+    const { failedId, archivedId, listed } = await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        const failedId = yield* createSession(sessions)
+        yield* sessions.prompt(failedId, "Fail please")
+        yield* waitFor(sessions, failedId, (detail) => detail.session.status === "failed")
+        const archivedId = yield* createSession(sessions)
+        yield* sessions.archive(archivedId)
+        return { failedId, archivedId, listed: yield* sessions.list() }
+      }),
+    )
+    expect(listed.map((session) => session.id)).toEqual([failedId])
+    expect(listed[0]?.status).toBe("failed")
+    expect(listed.some((session) => session.id === archivedId)).toBe(false)
+  })
+
   it("streams session snapshots to a watcher", async () => {
     script(fauxAssistantMessage("Streamed answer."))
     const snapshots = await withOperator(storagePath, (sessions) =>

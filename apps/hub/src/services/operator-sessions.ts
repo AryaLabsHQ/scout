@@ -9,7 +9,6 @@ import {
   type ConversationView,
   type InboxState,
   type LiveState,
-  LiveDoc,
 } from "@earendil-works/pi-durable"
 import {
   ManagementError,
@@ -312,15 +311,19 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           Effect.flatMap((detail) => (detail === null ? Effect.fail(notFound(sessionId)) : Effect.succeed(detail))),
         )
 
+      /** Unarchived sessions, newest first. Status comes from the same projection as the detail. */
       const list = () =>
         Effect.gen(function* () {
           const index = yield* readIndex
-          const summaries = yield* Effect.forEach(Object.entries(index), ([id, meta]) =>
-            durable("operator-read", async (context) => {
-              const conversationId = Number(id) as ConversationId
-              const live = await harness.snapshot(LiveDoc, conversationId, context)
-              const approvals = await harness.snapshot(OperatorApprovalsDoc, conversationId, context)
-              return toSummary(id, meta, sessionStatus(meta, live, approvals, undefined))
+          const active = Object.entries(index).filter(([, meta]) => !meta.archived)
+          const summaries = yield* Effect.forEach(active, ([id, meta]) =>
+            Effect.gen(function* () {
+              const { conversation } = yield* requireSession(id)
+              const view = yield* readView(conversation)
+              const approvals = yield* durable("operator-read", (context) =>
+                harness.snapshot(OperatorApprovalsDoc, conversation.id, context),
+              )
+              return projectSession(id, meta, view, approvals).session
             }),
           )
           return summaries.sort((left, right) => right.updatedAt - left.updatedAt)
