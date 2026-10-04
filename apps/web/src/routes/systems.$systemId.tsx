@@ -1,48 +1,34 @@
+import { useEffect, useState } from "react"
+import { lastValue } from "@/lib/async-result"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useState } from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  ArrowLeft01Icon,
-  CpuIcon,
-  DriveIcon,
-  WifiConnected01Icon,
-  ServerStack01Icon,
-  GpuIcon,
-  ThermometerIcon,
-  TerminalIcon,
-} from "@hugeicons/core-free-icons"
-
-import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtomSet, useAtomValue } from "@effect/atom-react"
+import * as Option from "effect/Option"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
+import type { EntitySnapshot, EventRecord } from "@scout/plugin-sdk"
+import type { Alert, OperatorSessionSummary, SystemMetricsSample } from "@scout/shared"
+import { K8S_PLUGIN_ID } from "@scout/plugin-k8s/contracts"
+import { SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND } from "@scout/plugin-systemd/contracts"
 import { HubClient } from "@/rpc/client"
+import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
+import { usePins } from "@/hooks/use-pins"
+import { usePluginEntities, usePluginEvents } from "@/hooks/use-plugin-data"
+import { useUnitAction } from "@/hooks/use-unit-action"
+import { useConfirm } from "@/providers/confirm-provider"
 import { useTerminalPanel } from "@/providers/terminal-provider"
-import { MetricsChart } from "@/components/charts/metrics-chart"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { buttonVariants } from "@/components/ui/button"
-import {
-  formatBytes,
-  formatBytesPerSec,
-  formatDuration,
-  formatPercent,
-  formatTimeAgo,
-} from "@/lib/format"
+import { EmptyRow, GroupLabel, Page, PageHeader, Section } from "@/components/section"
+import { Sparkline } from "@/components/sparkline"
+import { TimeAgo } from "@/components/time-ago"
+import { StatusDot, type StatusTone } from "@/components/status-dot"
+import { UnitsTable } from "@/components/units-table"
+import { pluginUnavailable } from "@/components/plugin-status"
+import { formatBytes, formatBytesPerSec, formatDuration } from "@/lib/format"
+import { HEALTH_METRICS, METRIC_LABELS, formatMetricValue, ruleTone } from "@/lib/health"
+import { summarizeNamespaces } from "@/lib/k8s"
+import { byFailedThenName, unitState } from "@/lib/systemd"
 import { getAvailablePluginCapabilities } from "@/lib/system-capabilities"
-import type { SystemMetricsSample } from "@scout/shared"
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d"
-
-const TIME_RANGES: { label: string; value: TimeRange; hours: number }[] = [
-  { label: "1h", value: "1h", hours: 1 },
-  { label: "6h", value: "6h", hours: 6 },
-  { label: "24h", value: "24h", hours: 24 },
-  { label: "7d", value: "7d", hours: 168 },
-  { label: "30d", value: "30d", hours: 720 },
-]
-
-// ── Route ─────────────────────────────────────────────────────────────────────
+import { toast } from "sonner"
 
 export const Route = createFileRoute("/systems/$systemId")({
   loader: async ({ params }) => {
@@ -52,390 +38,510 @@ export const Route = createFileRoute("/systems/$systemId")({
     ])
     return { detail, metrics: metrics ?? [] }
   },
-  component: SystemDetailPage,
+  component: MachineOverviewPage,
 })
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function buildChartData(
-  reports: SystemMetricsSample[],
-  extractor: (r: SystemMetricsSample) => Record<string, number>
-) {
-  return reports.map((r) => ({
-    time: new Date(r.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    ...extractor(r),
-  }))
+/** Re-render every `ms` so relative times ("updated 5s ago") stay current. */
+function useTick(ms: number) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((tick) => tick + 1), ms)
+    return () => window.clearInterval(id)
+  }, [ms])
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Health strip ─────────────────────────────────────────────────────────────
 
-function SystemDetailPage() {
-  const { systemId } = Route.useParams()
-  const { detail, metrics: initialMetrics } = Route.useLoaderData()
-  // Live system data from atom query; falls back to loader data when loading
-  const systemResult = useAtomValue(HubClient.query("systems.get", { id: systemId }))
-  const liveSystem = systemResult._tag === "Success" ? systemResult.value : null
-  const { sessions, openSession } = useTerminalPanel()
+interface HealthCell {
+  readonly label: string
+  readonly value: string
+  readonly sub: string
+  readonly series: ReadonlyArray<number>
+  readonly max?: number
+  readonly tone: StatusTone | null
+}
 
-  const [selectedRange, setSelectedRange] = useState<TimeRange>("1h")
-  const [historicalMetrics, setHistoricalMetrics] =
-    useState<SystemMetricsSample[]>(initialMetrics)
-  const [loadingRange, setLoadingRange] = useState(false)
+function HealthStrip({ systemId, cells }: { systemId: string; cells: ReadonlyArray<HealthCell> }) {
+  return (
+    <div className="mt-6 grid grid-cols-2 overflow-hidden rounded-lg border border-border lg:grid-cols-4">
+      {cells.map((cell, index) => (
+        <Link
+          key={cell.label}
+          to="/systems/$systemId/metrics"
+          params={{ systemId }}
+          className={[
+            "group block min-w-0 px-5 py-4 transition-colors hover:bg-raised",
+            index % 2 === 1 ? "border-l border-border" : "",
+            index >= 2 ? "border-t border-border lg:border-t-0" : "",
+            index === 2 ? "lg:border-l" : "",
+          ].join(" ")}
+        >
+          <div className="flex justify-between text-[12.5px] text-muted-foreground">
+            <span>{cell.label}</span>
+            <span className="text-subtle group-hover:text-muted-foreground">1h →</span>
+          </div>
+          <div className="mt-1.5 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div
+                className={[
+                  "font-mono text-[22px] font-medium tracking-tight tabular",
+                  cell.tone === "err" ? "text-err" : cell.tone === "warn" ? "text-warn" : "",
+                ].join(" ")}
+              >
+                {cell.value}
+              </div>
+              <div className="mt-0.5 truncate text-xs text-subtle">{cell.sub}</div>
+            </div>
+            <Sparkline values={cell.series} max={cell.max} tone={cell.tone ?? "neutral"} className="hidden sm:block" />
+          </div>
+        </Link>
+      ))}
+    </div>
+  )
+}
 
-  const system = liveSystem ?? detail
-  const latestMetrics = historicalMetrics[historicalMetrics.length - 1] ?? detail?.latestMetrics ?? null
+function healthCells(
+  samples: ReadonlyArray<SystemMetricsSample>,
+  latest: SystemMetricsSample | null,
+  rules: Parameters<typeof ruleTone>[0],
+): ReadonlyArray<HealthCell> {
+  if (latest === null) return []
+  return [
+    {
+      label: "CPU",
+      value: `${latest.cpuPercent.toFixed(0)}%`,
+      sub: `${latest.cpuCores} cores · iowait ${latest.cpuIowaitPercent.toFixed(1)}%`,
+      series: samples.map((sample) => sample.cpuPercent),
+      max: 100,
+      tone: ruleTone(rules, HEALTH_METRICS.cpu, latest.cpuPercent),
+    },
+    {
+      label: "Memory",
+      value: `${latest.memoryPercent.toFixed(0)}%`,
+      sub: `${formatBytes(latest.memoryUsedBytes)} / ${formatBytes(latest.memoryTotalBytes)}${
+        latest.swapTotalBytes > 0 ? ` · swap ${formatBytes(latest.swapUsedBytes)}` : ""
+      }`,
+      series: samples.map((sample) => sample.memoryPercent),
+      max: 100,
+      tone: ruleTone(rules, HEALTH_METRICS.memory, latest.memoryPercent),
+    },
+    {
+      label: "Disk /",
+      value: latest.diskPercent === null ? "—" : `${latest.diskPercent.toFixed(0)}%`,
+      sub:
+        latest.diskUsedBytes !== null && latest.diskTotalBytes !== null
+          ? `${formatBytes(latest.diskUsedBytes)} / ${formatBytes(latest.diskTotalBytes)}`
+          : "no root filesystem",
+      series: samples.map((sample) => sample.diskReadBytesPerSec + sample.diskWriteBytesPerSec),
+      tone: ruleTone(rules, HEALTH_METRICS.disk, latest.diskPercent),
+    },
+    {
+      label: "Network",
+      value: formatBytesPerSec(latest.networkRxBytesPerSec),
+      sub: `↑ ${formatBytesPerSec(latest.networkTxBytesPerSec)}`,
+      series: samples.map((sample) => sample.networkRxBytesPerSec + sample.networkTxBytesPerSec),
+      tone: null,
+    },
+  ]
+}
 
-  async function handleRangeChange(range: TimeRange) {
-    setSelectedRange(range)
-    setLoadingRange(true)
+// ── Services ─────────────────────────────────────────────────────────────────
+
+function ServicesSection({ systemId, hostname, system }: { systemId: string; hostname: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+  const units = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND)
+  const { pins, isPinned, toggle } = usePins(systemId)
+  const { run } = useUnitAction(systemId, hostname)
+  const unavailable = pluginUnavailable(system, SYSTEMD_PLUGIN_ID, "systemd")
+  const failed = units.items.filter((unit) => unitState(unit).activeState === "failed").sort(byFailedThenName)
+  const active = units.items.filter((unit) => unitState(unit).activeState === "active").length
+  const pinned = pins
+    .map((id) => units.items.find((unit) => unit.ref.id === id))
+    .filter((unit): unit is EntitySnapshot => unit !== undefined && !failed.includes(unit))
+
+  return (
+    <Section
+      title="Services"
+      aside={
+        <>
+          {units.items.length > 0 ? (
+            <span>
+              systemd · <span className="tabular">{active}</span> active ·{" "}
+              <span className={failed.length > 0 ? "text-err tabular" : "tabular"}>{failed.length}</span> failed
+            </span>
+          ) : null}
+          <Link to="/systems/$systemId/services" params={{ systemId }} className="text-muted-foreground hover:text-foreground">
+            View all →
+          </Link>
+        </>
+      }
+    >
+      {unavailable ?? (units.loading ? (
+        <EmptyRow>Loading units…</EmptyRow>
+      ) : (
+        <>
+          <GroupLabel aside={<span className="tabular">{failed.length}</span>}>FAILED</GroupLabel>
+          {failed.length > 0 ? (
+            <UnitsTable systemId={systemId} units={failed} isPinned={isPinned} onTogglePin={toggle} onAction={run} />
+          ) : (
+            <EmptyRow>
+              <span className="flex items-center gap-2">
+                <StatusDot tone="ok" /> No failed units
+              </span>
+            </EmptyRow>
+          )}
+          <GroupLabel
+            aside={
+              <Link to="/systems/$systemId/services" params={{ systemId }} className="hover:text-foreground">
+                ☆ Pin from Services
+              </Link>
+            }
+          >
+            PINNED IN THIS BROWSER
+          </GroupLabel>
+          {pinned.length > 0 ? (
+            <UnitsTable systemId={systemId} units={pinned} isPinned={isPinned} onTogglePin={toggle} onAction={run} />
+          ) : (
+            <EmptyRow>Nothing pinned yet. Use ☆ on any unit in Services to keep it here.</EmptyRow>
+          )}
+        </>
+      ))}
+    </Section>
+  )
+}
+
+// ── Cluster ──────────────────────────────────────────────────────────────────
+
+function ClusterSection({ systemId, system }: { systemId: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+  const entities = usePluginEntities(systemId, K8S_PLUGIN_ID)
+  const events = usePluginEvents(systemId, K8S_PLUGIN_ID, 1)
+  const unavailable = pluginUnavailable(system, K8S_PLUGIN_ID, "Kubernetes")
+  const namespaces = summarizeNamespaces(entities.items)
+  const warnings = events.items.filter((event) => event.severity !== "info")
+
+  return (
+    <Section
+      title="Cluster"
+      aside={
+        <>
+          {namespaces.length > 0 ? <span>k8s · {namespaces.length} namespace{namespaces.length === 1 ? "" : "s"}</span> : null}
+          <Link to="/systems/$systemId/cluster" params={{ systemId }} className="text-muted-foreground hover:text-foreground">
+            View all →
+          </Link>
+        </>
+      }
+    >
+      {unavailable ??
+        (entities.loading ? (
+          <EmptyRow>Loading cluster…</EmptyRow>
+        ) : namespaces.length === 0 ? (
+          <EmptyRow>No workloads reported yet.</EmptyRow>
+        ) : (
+          <>
+            <table className="w-full table-fixed text-left text-[13px]">
+              <tbody>
+                {namespaces.map((namespace) => (
+                  <tr key={namespace.name} className="border-t border-border first:border-t-0">
+                    <td className="w-[34%] truncate px-4 py-2.5">
+                      <Link
+                        to="/systems/$systemId/cluster"
+                        params={{ systemId }}
+                        search={{ namespace: namespace.name }}
+                        className="flex items-center gap-2.5 hover:underline"
+                      >
+                        <StatusDot tone={namespace.tone} />
+                        <span className="truncate font-mono">{namespace.name}</span>
+                      </Link>
+                    </td>
+                    <td className="truncate px-4 py-2.5 text-muted-foreground">
+                      {namespace.workloads.map((workload) => workload.name).join(", ") || `${namespace.pods} pods`}
+                    </td>
+                    <td className="w-20 px-4 py-2.5 text-right font-mono tabular text-muted-foreground">
+                      {namespace.workloads.length > 0
+                        ? `${namespace.readyWorkloads}/${namespace.workloads.length}`
+                        : `${namespace.readyPods}/${namespace.pods}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <GroupLabel aside={<span className="tabular">{warnings.length}</span>}>WARNING EVENTS · 1H</GroupLabel>
+            {warnings.length === 0 ? (
+              <EmptyRow>No warning events</EmptyRow>
+            ) : (
+              <ul>
+                {warnings.slice(0, 4).map((event, index) => (
+                  <li key={`${event.ts}:${index}`} className="flex gap-3 border-t border-border px-4 py-2.5 text-[13px] first:border-t-0">
+                    <StatusDot tone="warn" className="mt-1.5" />
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      <span className="font-mono text-foreground">{event.entity?.id ?? event.eventId}</span> {event.message}
+                    </span>
+                    <span className="shrink-0 text-subtle"><TimeAgo at={event.ts} /></span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ))}
+    </Section>
+  )
+}
+
+// ── Activity ─────────────────────────────────────────────────────────────────
+
+interface ActivityItem {
+  readonly at: number
+  readonly key: string
+  readonly node: React.ReactNode
+  readonly dim?: boolean
+}
+
+function ActivitySection({
+  systemId,
+  alerts,
+  sessions,
+  events,
+}: {
+  systemId: string
+  alerts: ReadonlyArray<Alert>
+  sessions: ReadonlyArray<OperatorSessionSummary>
+  events: ReadonlyArray<EventRecord>
+}) {
+  const confirm = useConfirm()
+  const ack = useAtomSet(HubClient.mutation("alerts.ack"), { mode: "promise" })
+  const acknowledge = async (alert: Alert) => {
+    const label = METRIC_LABELS[alert.metric] ?? alert.metric
+    const confirmed = await confirm({
+      title: `Acknowledge ${label} on ${alert.systemId}?`,
+      description: "The alert stays open until its metric recovers, but it no longer counts as unseen.",
+      confirmLabel: "Acknowledge",
+    })
+    if (!confirmed) return
     try {
-      const hours = TIME_RANGES.find((r) => r.value === range)?.hours ?? 1
-      const data = await fetchSystemMetrics({ data: { systemId, hours } })
-      setHistoricalMetrics(data)
-    } finally {
-      setLoadingRange(false)
+      await ack({ payload: { alertId: alert.id }, reactivityKeys: ["alerts"] })
+      toast.success(`${label} acknowledged`)
+    } catch {
+      toast.error(`Could not acknowledge ${label}`)
     }
   }
+
+  const items: ActivityItem[] = [
+    ...alerts
+      .filter((alert) => alert.systemId === systemId)
+      .map((alert) => ({
+        at: alert.triggeredAt,
+        key: `alert:${alert.id}`,
+        dim: alert.state === "resolved",
+        node: (
+          <>
+            <td className="w-[38%] truncate px-4 py-2.5">
+              <span className="flex items-center gap-2.5">
+                <StatusDot
+                  tone={alert.state === "resolved" ? "off" : alert.severity === "critical" ? "err" : "warn"}
+                />
+                {/* Live values can move between the server render and hydration. */}
+                <span className="truncate" suppressHydrationWarning>
+                  {METRIC_LABELS[alert.metric] ?? alert.metric}{" "}
+                  <span className="font-mono text-muted-foreground tabular" suppressHydrationWarning>
+                    {formatMetricValue(alert.metric, alert.value)}
+                  </span>
+                </span>
+              </span>
+            </td>
+            <td className="truncate px-4 py-2.5 text-muted-foreground">
+              {alert.severity} · {alert.state}
+            </td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={alert.triggeredAt} /></td>
+            <td className="w-36 px-4 py-1.5 text-right">
+              {alert.state === "active" ? (
+                <Button size="sm" variant="outline" onClick={() => void acknowledge(alert)}>
+                  Acknowledge
+                </Button>
+              ) : null}
+            </td>
+          </>
+        ),
+      })),
+    ...sessions
+      .filter((session) => session.status === "waiting_for_user" && session.selectedNodeIds.includes(systemId))
+      .map((session) => ({
+        at: session.updatedAt,
+        key: `session:${session.id}`,
+        node: (
+          <>
+            <td className="w-[38%] truncate px-4 py-2.5">
+              <span className="flex items-center gap-2.5">
+                <StatusDot tone="warn" />
+                <span className="truncate">
+                  Operator · <span className="text-muted-foreground">{session.title}</span>
+                </span>
+              </span>
+            </td>
+            <td className="truncate px-4 py-2.5 text-muted-foreground">waiting for your decision</td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={session.updatedAt} /></td>
+            <td className="w-36 px-4 py-1.5 text-right">
+              <Button size="sm" variant="outline" render={<Link to="/operator/$sessionId" params={{ sessionId: session.id }} />}>
+                Review
+              </Button>
+            </td>
+          </>
+        ),
+      })),
+    ...events
+      .filter((event) => event.severity !== "info")
+      .map((event, index) => ({
+        at: event.ts,
+        key: `event:${event.pluginId}:${event.ts}:${index}`,
+        node: (
+          <>
+            <td className="w-[38%] truncate px-4 py-2.5">
+              <span className="flex items-center gap-2.5">
+                <StatusDot tone={event.severity === "error" ? "err" : "warn"} />
+                <span className="truncate font-mono">{event.entity?.id ?? event.eventId}</span>
+              </span>
+            </td>
+            <td className="truncate px-4 py-2.5 text-muted-foreground">{event.message ?? event.eventId}</td>
+            <td className="w-24 px-4 py-2.5 text-right text-subtle"><TimeAgo at={event.ts} /></td>
+            <td className="w-36" />
+          </>
+        ),
+      })),
+  ].sort((a, b) => b.at - a.at)
+
+  return (
+    <Section
+      title="Activity"
+      className="lg:col-span-2"
+      aside={
+        <>
+          <span>alerts, warnings, operator</span>
+          <Link to="/alerts" className="text-muted-foreground hover:text-foreground">
+            All alerts →
+          </Link>
+        </>
+      }
+    >
+      {items.length === 0 ? (
+        <EmptyRow>
+          <span className="flex items-center gap-2">
+            <StatusDot tone="ok" /> Quiet: no alerts, warnings, or pending operator decisions.
+          </span>
+        </EmptyRow>
+      ) : (
+        <table className="w-full table-fixed text-left text-[13px]">
+          <tbody>
+            {items.slice(0, 10).map((item) => (
+              <tr key={item.key} className={["border-t border-border first:border-t-0", item.dim ? "opacity-50" : ""].join(" ")}>
+                {item.node}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Section>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+function MachineOverviewPage() {
+  const { systemId } = Route.useParams()
+  const { detail, metrics: initialMetrics } = Route.useLoaderData()
+  useTick(5_000)
+  const systemResult = useAtomValue(HubClient.query("systems.get", { id: systemId }))
+  const system = lastValue(systemResult, null) ?? detail
+  const metricsAtom = HubClient.query("systems.metrics", { id: systemId, range: "1h" })
+  useRefreshInterval(metricsAtom)
+  const metricsResult = useAtomValue(metricsAtom)
+  const samples = Option.getOrElse(AsyncResult.value(metricsResult), () => initialMetrics)
+  const latest = samples.at(-1) ?? detail?.latestMetrics ?? null
+  const rulesResult = useAtomValue(HubClient.query("alertRules.list", undefined))
+  const rules = lastValue(rulesResult, [])
+  const alertsResult = useAtomValue(HubClient.query("alerts.list", undefined))
+  const alerts = lastValue(alertsResult, [])
+  const sessionsResult = useAtomValue(HubClient.query("operator.sessions.list", undefined))
+  const sessions = lastValue(sessionsResult, [])
+  const k8sEvents = usePluginEvents(systemId, K8S_PLUGIN_ID, 24)
+  const { sessions: terminals, openSession } = useTerminalPanel()
 
   if (!system) {
     return (
-      <div className="p-6">
-        <p className="text-muted-foreground">System not found.</p>
-      </div>
+      <Page>
+        <PageHeader title="Machine not found" meta={<span>No machine with id {systemId} has reported to this hub.</span>} />
+      </Page>
     )
   }
 
-  // Build chart datasets
-  const cpuData = buildChartData(historicalMetrics, (r) => ({
-    cpu: r.cpuPercent,
-  }))
-
-  const memData = buildChartData(historicalMetrics, (r) => ({ mem: r.memoryPercent }))
-
-  const diskIOData = buildChartData(historicalMetrics, (r) => {
-    return {
-      read: r.diskReadBytesPerSec,
-      write: r.diskWriteBytesPerSec,
-    }
-  })
-
-  // Network: collect all interface names
-  const netInterfaces = new Set<string>()
-  historicalMetrics.forEach((r) =>
-    Object.keys(r.networkRxBytesPerSecByInterface).forEach((name) => netInterfaces.add(name)),
+  const online = system.status === "online"
+  const otherPlugins = getAvailablePluginCapabilities(system).filter(
+    (capability) => capability.pluginId !== SYSTEMD_PLUGIN_ID && capability.pluginId !== K8S_PLUGIN_ID,
   )
-  const interfaceColors = ["#a855f7", "#ec4899", "#f97316", "#06b6d4", "#84cc16"]
-  const netDataKeys = Array.from(netInterfaces).map((name, i) => ({
-    key: `rx_${name}`,
-    color: interfaceColors[i % interfaceColors.length] ?? "#a855f7",
-    label: `${name} rx`,
-  }))
-  const netData = buildChartData(historicalMetrics, (r) => {
-    const result: Record<string, number> = {}
-    for (const [name, rx] of Object.entries(r.networkRxBytesPerSecByInterface)) {
-      result[`rx_${name}`] = rx
-    }
-    return result
-  })
-
-  // GPU data
-  const hasGpu = historicalMetrics.some((report) => report.gpuPercent !== null)
-  const gpuData = buildChartData(historicalMetrics, (r) => ({
-    gpu: r.gpuPercent ?? 0,
-    gpuMem: r.gpuMemoryPercent ?? 0,
-  }))
-
-  // Temp data
-  const hasTempData = historicalMetrics.some(
-    (r) => Object.keys(r.temperaturesCelsius).length > 0,
-  )
-  const tempLabels = new Set<string>()
-  historicalMetrics.forEach((r) =>
-    Object.keys(r.temperaturesCelsius).forEach((label) => tempLabels.add(label))
-  )
-  const tempColors = ["#ef4444", "#f97316", "#eab308", "#22c55e"]
-  const tempDataKeys = Array.from(tempLabels).map((label, i) => ({
-    key: `temp_${label}`,
-    color: tempColors[i % tempColors.length] ?? "#ef4444",
-    label,
-  }))
-  const tempData = buildChartData(historicalMetrics, (r) => {
-    const result: Record<string, number> = {}
-    for (const [label, celsius] of Object.entries(r.temperaturesCelsius)) {
-      result[`temp_${label}`] = celsius
-    }
-    return result
-  })
-
-  const pluginCapabilities = getAvailablePluginCapabilities(system)
+  const terminalCount = terminals.filter((terminal) => terminal.kind === "interactive" && terminal.agentId === systemId).length
 
   return (
-    <>
-    <div className="p-4 md:p-6">
-      {/* Back + Header */}
-      <div className="mb-4">
-        <Link
-          to="/overview"
-          className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
-          Back
-        </Link>
+    <Page>
+      <PageHeader
+        title={
+          <>
+            <StatusDot tone={online ? "ok" : "off"} className="size-2.5" />
+            {system.hostname}
+          </>
+        }
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!online}
+            onClick={() => openSession({ agentId: systemId, mode: "shell", label: system.hostname })}
+          >
+            {terminalCount > 0 ? `New terminal (${terminalCount})` : "Open terminal"}
+          </Button>
+        }
+        meta={
+          <>
+            <span>
+              {online ? "Online" : <TimeAgo at={system.lastSeen} prefix="Offline · last seen " />}
+              {latest ? ` · up ${formatDuration(latest.uptimeSeconds)}` : ""}
+            </span>
+            {latest ? (
+              <span>
+                {latest.cpuCores} cores · {formatBytes(latest.memoryTotalBytes)} RAM
+                {latest.diskTotalBytes !== null ? ` · ${formatBytes(latest.diskTotalBytes)} disk` : ""}
+              </span>
+            ) : null}
+            {latest ? (
+              <span className="font-mono tabular">
+                load {latest.loadAvg1m.toFixed(2)} / {latest.loadAvg5m.toFixed(2)} / {latest.loadAvg15m.toFixed(2)}
+              </span>
+            ) : null}
+            {system.tailscaleIp ? <span className="font-mono">{system.tailscaleIp}</span> : null}
+            {latest ? <span className="text-subtle">updated <TimeAgo at={latest.timestamp} /></span> : null}
+            {otherPlugins.map((capability) => (
+              <Link
+                key={capability.pluginId}
+                to="/systems/$systemId/plugins/$pluginId"
+                params={{ systemId, pluginId: capability.pluginId }}
+                className="text-subtle hover:text-foreground"
+              >
+                {capability.pluginId.replace(/^@scout\/plugin-/, "")} →
+              </Link>
+            ))}
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-block h-2.5 w-2.5 rounded-full ${
-                  system.status === "online" ? "bg-green-500" : "bg-muted-foreground"
-                }`}
-              />
-              <h1 className="font-heading text-lg font-semibold">{system.hostname}</h1>
-              <Badge variant="outline" className="text-[10px]">
-                {system.status}
-              </Badge>
-            </div>
-
-            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              {system.tailscaleIp && <span>{system.tailscaleIp}</span>}
-              {latestMetrics && (
-                <span>up {formatDuration(latestMetrics.uptimeSeconds)}</span>
-              )}
-              {system.lastSeen && <span>last seen {formatTimeAgo(system.lastSeen)}</span>}
-            </div>
-          </div>
-
-          {/* Capability badges + actions */}
-          <div className="flex flex-col gap-2 items-end">
-            {(() => {
-              const sessionCount = sessions.filter(
-                (t) => t.kind === "interactive" && t.agentId === systemId,
-              ).length
-              const hasSessions = sessionCount > 0
-              return (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1.5"
-                  disabled={system.status !== "online"}
-                  onClick={() =>
-                    openSession({
-                      agentId: systemId,
-                      mode: "shell",
-                      label: system.hostname,
-                    })
-                  }
-                >
-                  <HugeiconsIcon icon={TerminalIcon} size={12} />
-                  {hasSessions ? `New terminal (${sessionCount})` : "Open Terminal"}
-                </Button>
-              )
-            })()}
-            {pluginCapabilities.length > 0 && (
-              <div className="flex flex-wrap gap-1 justify-end">
-                {pluginCapabilities.map((plugin) => (
-                  <Link
-                    key={plugin.pluginId}
-                    to="/systems/$systemId/plugins/$pluginId"
-                    params={{ systemId, pluginId: plugin.pluginId }}
-                    className={buttonVariants({
-                      size: "sm",
-                      variant: "outline",
-                      className: "h-7 text-[10px]",
-                    })}
-                  >
-                    {plugin.pluginId}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Live metric summary */}
-      {latestMetrics && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            {
-              icon: CpuIcon,
-              label: "CPU",
-              value: formatPercent(latestMetrics.cpuPercent),
-              sub: `${latestMetrics.cpuCores} cores`,
-              color: "text-blue-500",
-            },
-            {
-              icon: ServerStack01Icon,
-              label: "Memory",
-              value: formatPercent(latestMetrics.memoryPercent),
-              sub: `${formatBytes(latestMetrics.memoryUsedBytes)} / ${formatBytes(latestMetrics.memoryTotalBytes)}`,
-              color: "text-green-500",
-            },
-            {
-              icon: DriveIcon,
-              label: "Disk",
-              value: latestMetrics.diskPercent !== null
-                ? formatPercent(latestMetrics.diskPercent)
-                : "N/A",
-              sub: latestMetrics.diskTotalBytes !== null
-                ? formatBytes(latestMetrics.diskTotalBytes)
-                : "",
-              color: "text-cyan-500",
-            },
-            {
-              icon: WifiConnected01Icon,
-              label: "Network",
-              value: formatBytesPerSec(latestMetrics.networkRxBytesPerSec),
-              sub: `↑ ${formatBytesPerSec(latestMetrics.networkTxBytesPerSec)}`,
-              color: "text-purple-500",
-            },
-          ].map(({ icon, label, value, sub, color }) => (
-            <div
-              key={label}
-              className="rounded-none border border-border bg-card p-3 ring-1 ring-foreground/10"
-            >
-              <div className="flex items-center gap-1.5">
-                <HugeiconsIcon icon={icon} size={14} className={color} />
-                <span className="text-[10px] text-muted-foreground">{label}</span>
-              </div>
-              <p className="mt-1 font-heading text-lg font-semibold">{value}</p>
-              <p className="text-[10px] text-muted-foreground">{sub}</p>
-            </div>
-          ))}
-        </div>
+      {latest ? (
+        <HealthStrip systemId={systemId} cells={healthCells(samples, latest, rules)} />
+      ) : (
+        <Section className="mt-6">
+          <EmptyRow>No metrics yet. The agent reports every few seconds once it connects.</EmptyRow>
+        </Section>
       )}
 
-      {/* Time range selector */}
-      <div className="mb-4 flex items-center gap-1">
-        {TIME_RANGES.map((range) => (
-          <Button
-            key={range.value}
-            variant={selectedRange === range.value ? "default" : "ghost"}
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            onClick={() => handleRangeChange(range.value)}
-            disabled={loadingRange}
-          >
-            {range.label}
-          </Button>
-        ))}
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <ServicesSection systemId={systemId} hostname={system.hostname} system={system} />
+        <ClusterSection systemId={systemId} system={system} />
+        <ActivitySection systemId={systemId} alerts={alerts} sessions={sessions} events={k8sEvents.items} />
       </div>
-
-      {/* Charts */}
-      <div className="space-y-6">
-        {/* CPU */}
-        <section>
-          <div className="mb-2 flex items-center gap-2">
-            <HugeiconsIcon icon={CpuIcon} size={14} className="text-blue-500" />
-            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              CPU Usage
-            </h2>
-          </div>
-          <MetricsChart
-            data={cpuData}
-            dataKeys={[{ key: "cpu", color: "#3b82f6", label: "CPU %" }]}
-            unit="%"
-            height={180}
-          />
-        </section>
-
-        {/* Memory */}
-        <section>
-          <div className="mb-2 flex items-center gap-2">
-            <HugeiconsIcon icon={ServerStack01Icon} size={14} className="text-green-500" />
-            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Memory Usage
-            </h2>
-          </div>
-          <MetricsChart
-            data={memData}
-            dataKeys={[{ key: "mem", color: "#22c55e", label: "Mem %" }]}
-            unit="%"
-            height={180}
-          />
-        </section>
-
-        {/* Disk I/O */}
-        <section>
-          <div className="mb-2 flex items-center gap-2">
-            <HugeiconsIcon icon={DriveIcon} size={14} className="text-cyan-500" />
-            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Disk I/O
-            </h2>
-          </div>
-          <MetricsChart
-            data={diskIOData}
-            dataKeys={[
-              { key: "read", color: "#06b6d4", label: "Read" },
-              { key: "write", color: "#8b5cf6", label: "Write" },
-            ]}
-            unit="bytes/s"
-            height={180}
-            type="line"
-          />
-        </section>
-
-        {/* Network */}
-        {netDataKeys.length > 0 && (
-          <section>
-            <div className="mb-2 flex items-center gap-2">
-              <HugeiconsIcon icon={WifiConnected01Icon} size={14} className="text-purple-500" />
-              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Network
-              </h2>
-            </div>
-            <MetricsChart
-              data={netData}
-              dataKeys={netDataKeys}
-              unit="bytes/s"
-              height={180}
-              type="line"
-            />
-          </section>
-        )}
-
-        {/* GPU */}
-        {hasGpu && (
-          <section>
-            <div className="mb-2 flex items-center gap-2">
-              <HugeiconsIcon icon={GpuIcon} size={14} className="text-yellow-500" />
-              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                GPU
-              </h2>
-            </div>
-            <MetricsChart
-              data={gpuData}
-              dataKeys={[
-                { key: "gpu", color: "#eab308", label: "GPU %" },
-                { key: "gpuMem", color: "#f97316", label: "VRAM %" },
-              ]}
-              unit="%"
-              height={180}
-            />
-          </section>
-        )}
-
-        {/* Temperature */}
-        {hasTempData && tempDataKeys.length > 0 && (
-          <section>
-            <div className="mb-2 flex items-center gap-2">
-              <HugeiconsIcon icon={ThermometerIcon} size={14} className="text-red-400" />
-              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Temperature
-              </h2>
-            </div>
-            <MetricsChart
-              data={tempData}
-              dataKeys={tempDataKeys}
-              unit="%" // use raw value label
-              height={180}
-              type="line"
-            />
-          </section>
-        )}
-
-      </div>
-    </div>
-  </>
+    </Page>
   )
 }

@@ -17,12 +17,17 @@ import type { PluginLogsParams } from "@scout/shared"
 
 interface PluginLogViewerProps {
   params: PluginLogsParams
-  onClose: () => void
+  /** Shows a Close button when given. */
+  onClose?: () => void
+  /** Header label; defaults to `<plugin>: <entity or stream>`. */
+  title?: string
+  /** Fixed height of the scrolling log body. */
+  className?: string
 }
 
 export type LogViewerProps = PluginLogViewerProps
 
-const TAIL_OPTIONS = [100, 500, 1000] as const
+const TAIL_OPTIONS = [100, 200, 500, 1000] as const
 const MAX_LINES = 1000
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -35,23 +40,22 @@ function highlightMatch(line: string, search: string): string {
   if (!search) return escapeHtml(line)
   const safe = escapeHtml(line)
   const safeSearch = escapeHtml(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  return safe.replace(new RegExp(`(${safeSearch})`, "gi"), '<mark class="bg-yellow-400/40 text-foreground">$1</mark>')
+  return safe.replace(new RegExp(`(${safeSearch})`, "gi"), '<mark class="bg-warn/30 text-foreground">$1</mark>')
 }
 
 // ── Inner component that owns the stream atom ─────────────────────────────────
 
 interface LogStreamProps {
   params: PluginLogsParams
-  onClose: () => void
+  tail: number
+  onTailChange: (tail: number) => void
+  onClose?: (() => void) | undefined
+  title?: string | undefined
+  className?: string | undefined
 }
 
-function LogStream({ params, onClose }: LogStreamProps) {
+function LogStream({ params, tail, onTailChange, onClose, title: titleProp, className }: LogStreamProps) {
   const [search, setSearch] = useState("")
-  const [tail, setTail] = useState<number>(
-    params.input !== undefined && typeof params.input === "object" && params.input !== null && typeof (params.input as Record<string, unknown>)["tail"] === "number"
-      ? (params.input as Record<string, number>)["tail"]
-      : 100,
-  )
   const [lines, setLines] = useState<string[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
 
@@ -134,89 +138,65 @@ function LogStream({ params, onClose }: LogStreamProps) {
     ? "Log stream error — check agent connection"
     : null
 
-  const title = params.entity?.id
+  const title = titleProp ?? (params.entity?.id
     ? `${params.pluginId}: ${params.entity.id}`
-    : `${params.pluginId}: ${params.streamId}`
+    : `${params.pluginId}: ${params.streamId}`)
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <span className="font-heading text-xs font-semibold flex-1 truncate">{title}</span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Tail selector — changing this requires remounting with new params */}
-          <Select value={String(tail)} onValueChange={(v) => setTail(Number(v))}>
-            <SelectTrigger size="sm" className="h-6 w-20 text-[10px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TAIL_OPTIONS.map((t) => (
-                <SelectItem key={t} value={String(t)}>
-                  {t} lines
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Auto-scroll */}
-          <Button
-            variant={autoScroll ? "default" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => {
-              setAutoScroll(true)
-              bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-            }}
-          >
-            {autoScroll ? "Live" : "Scroll to bottom"}
-          </Button>
-
-          {/* Close */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={onClose}
-          >
-            Close
-          </Button>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="border-b border-border px-3 py-1.5">
+    <div className={`flex h-full flex-col bg-background ${className ?? ""}`}>
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+        <span className="flex-1 truncate font-mono text-xs text-muted-foreground">{title}</span>
         <Input
-          placeholder="Filter logs..."
+          placeholder="Filter…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-6 text-[11px] font-mono"
+          className="h-7 w-48 text-xs"
         />
+        <Select value={String(tail)} onValueChange={(v) => onTailChange(Number(v))}>
+          <SelectTrigger size="sm" className="h-7 w-28 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TAIL_OPTIONS.map((t) => (
+              <SelectItem key={t} value={String(t)}>
+                {t} lines
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-2 text-xs"
+          onClick={() => {
+            setAutoScroll(true)
+            bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+          }}
+        >
+          <span
+            className={`inline-block size-2 rounded-full ${isStreaming && autoScroll ? "bg-ok live-pulse" : "bg-off"}`}
+          />
+          {autoScroll ? (isStreaming ? "Following" : "Stopped") : "Jump to latest"}
+        </Button>
+        {onClose ? (
+          <Button variant="ghost" size="sm" className="text-xs" onClick={onClose}>
+            Close
+          </Button>
+        ) : null}
       </div>
 
-      {/* Log output */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {errorMsg ? (
-          <div className="flex items-center justify-center p-6 text-xs text-destructive">
-            {errorMsg}
-          </div>
+          <div className="p-4 text-xs text-err">{errorMsg}</div>
         ) : (
           <ScrollArea className="h-full">
-            <div
-              ref={scrollRef}
-              onScroll={handleScroll}
-              className="h-full overflow-y-auto"
-            >
-              <pre className="min-h-full p-3 font-mono text-[11px] leading-relaxed text-foreground">
+            <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto">
+              <pre className="min-h-full px-4 py-3 font-mono text-xs leading-relaxed text-foreground">
                 {filteredLines.length === 0 ? (
-                  <span className="text-muted-foreground">
-                    {isStreaming ? "Waiting for logs..." : "Connecting..."}
-                  </span>
+                  <span className="text-subtle">{isStreaming ? "Waiting for logs…" : "Connecting…"}</span>
                 ) : (
                   filteredLines.map((line, i) => (
-                    <div
-                      key={i}
-                      dangerouslySetInnerHTML={{ __html: highlightMatch(line, search) }}
-                    />
+                    <div key={i} dangerouslySetInnerHTML={{ __html: highlightMatch(line, search) }} />
                   ))
                 )}
               </pre>
@@ -226,16 +206,9 @@ function LogStream({ params, onClose }: LogStreamProps) {
         )}
       </div>
 
-      {/* Status bar */}
-      <div className="flex items-center gap-2 border-t border-border px-3 py-1 text-[10px] text-muted-foreground">
-        <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${isStreaming ? "bg-green-500" : "bg-muted-foreground"}`}
-        />
-        <span>{isStreaming ? "Streaming" : "Stopped"}</span>
-        <span className="ml-auto">{filteredLines.length} lines</span>
-        {search && (
-          <span className="text-yellow-500">{filteredLines.length} matching</span>
-        )}
+      <div className="flex items-center gap-2 border-t border-border px-4 py-1.5 text-[11px] text-subtle">
+        <span className="ml-auto tabular">{filteredLines.length} lines</span>
+        {search ? <span className="text-warn">{filteredLines.length} matching</span> : null}
       </div>
     </div>
   )
@@ -248,15 +221,32 @@ function LogStream({ params, onClose }: LogStreamProps) {
  * renders incoming log batches. The stream finalizes when the component
  * unmounts (the atom's scope closes automatically).
  */
-export function LogViewer({
-  onClose,
-  params,
-}: LogViewerProps) {
+export function LogViewer({ onClose, params, title, className }: LogViewerProps) {
+  const initialTail =
+    typeof params.input === "object" && params.input !== null && typeof (params.input as Record<string, unknown>)["tail"] === "number"
+      ? Number((params.input as Record<string, unknown>)["tail"])
+      : 200
+  const [tail, setTail] = useState(initialTail)
+  // Keyed on the params' content so an inline params object from the caller
+  // does not restart the stream on every render; a new tail size does.
+  const paramsKey = JSON.stringify(params)
+  const streamParams = useMemo<PluginLogsParams>(
+    () => {
+      const base = JSON.parse(paramsKey) as PluginLogsParams
+      const input = typeof base.input === "object" && base.input !== null ? base.input : {}
+      return { ...base, input: { ...input, tail } }
+    },
+    [paramsKey, tail],
+  )
   return (
     <LogStream
-      key={`plugin:${params.agentId}:${params.pluginId}:${params.streamId}:${params.entity?.id ?? "none"}`}
-      params={params}
+      key={`plugin:${params.agentId}:${params.pluginId}:${params.streamId}:${params.entity?.id ?? "none"}:${tail}`}
+      params={streamParams}
+      tail={tail}
+      onTailChange={setTail}
       onClose={onClose}
+      title={title}
+      className={className}
     />
   )
 }

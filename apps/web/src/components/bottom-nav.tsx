@@ -10,8 +10,8 @@ import {
 import { cn } from "@/lib/utils"
 
 const NAV_ITEMS = [
+  { to: "/", label: "Overview", icon: DashboardCircleIcon },
   { to: "/operator", label: "Operator", icon: ArtificialIntelligence04Icon },
-  { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
   { to: "/alerts", label: "Alerts", icon: Alert01Icon },
   { to: "/terminal", label: "Terminal", icon: TerminalIcon },
   { to: "/settings", label: "Settings", icon: Settings01Icon },
@@ -24,7 +24,10 @@ export function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center border-t border-border bg-background md:hidden">
       {NAV_ITEMS.map((item) => {
-        const isActive = currentPath === item.to || currentPath.startsWith(item.to + "/")
+        const isActive =
+          item.to === "/"
+            ? currentPath === "/" || currentPath.startsWith("/systems/")
+            : currentPath === item.to || currentPath.startsWith(item.to + "/")
         return (
           <Link
             key={item.to}
@@ -32,14 +35,14 @@ export function BottomNav() {
             className={cn(
               "flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors",
               isActive
-                ? "text-primary"
+                ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
             <HugeiconsIcon
               icon={item.icon}
               size={22}
-              className={cn(isActive ? "text-primary" : "text-muted-foreground")}
+              className={cn(isActive ? "text-foreground" : "text-muted-foreground")}
             />
             <span>{item.label}</span>
           </Link>

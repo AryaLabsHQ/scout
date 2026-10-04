@@ -74,7 +74,7 @@ export function useCommands(): Command[] {
     // ── Navigation: static routes ─────────────────────────────────────────────
     const staticNav: Array<{ to: string; label: string; icon: IconSvgElement }> = [
       { to: "/operator", label: "Operator", icon: ArtificialIntelligence04Icon },
-      { to: "/overview", label: "Overview", icon: DashboardCircleIcon },
+      { to: "/", label: "Overview", icon: DashboardCircleIcon },
       { to: "/alerts", label: "Alerts", icon: Alert01Icon },
       { to: "/terminal", label: "Terminal", icon: TerminalIcon },
       { to: "/settings", label: "Settings", icon: Settings01Icon },
