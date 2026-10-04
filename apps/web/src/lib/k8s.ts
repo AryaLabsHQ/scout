@@ -1,4 +1,4 @@
-import type { EntitySnapshot } from "@scout/plugin-sdk"
+import type { EntitySnapshot, EventRecord } from "@scout/plugin-sdk"
 import { K8S_ENTITY_KINDS } from "@scout/plugin-k8s/contracts"
 import type { StatusTone } from "@/components/status-dot"
 
@@ -43,6 +43,7 @@ export function workloadsOf(entities: ReadonlyArray<EntitySnapshot>): ReadonlyAr
 export function workloadTone(workload: Pick<Workload, "status">): StatusTone {
   switch (workload.status) {
     case "ready":
+    case "scaled-to-zero":
       return "ok"
     case "progressing":
       return "warn"
@@ -105,4 +106,17 @@ export function podTone(pod: EntitySnapshot): StatusTone {
     default:
       return "off"
   }
+}
+
+/**
+ * The k8s collector re-reports an event on every collection and the hub stores
+ * each report, so the same event arrives many times. Keep one per identity.
+ */
+export function uniqueEvents(events: ReadonlyArray<EventRecord>): ReadonlyArray<EventRecord> {
+  const seen = new Map<string, EventRecord>()
+  for (const event of events) {
+    const key = `${event.eventId}|${event.entity?.kind ?? ""}|${event.entity?.id ?? ""}|${event.ts}|${event.message ?? ""}`
+    if (!seen.has(key)) seen.set(key, event)
+  }
+  return [...seen.values()]
 }

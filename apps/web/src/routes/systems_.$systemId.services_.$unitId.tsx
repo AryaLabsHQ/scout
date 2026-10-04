@@ -53,6 +53,7 @@ function UnitFile({ systemId, unitId }: { systemId: string; unitId: string }) {
 
   useEffect(() => {
     let cancelled = false
+    setFile(null)
     // Reading the unit file changes nothing, so it runs without a confirm.
     runAction({
       payload: {

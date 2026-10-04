@@ -1532,8 +1532,10 @@ function createRuntimeActions(args: {
 
       // Every plugin action runs behind the app's confirm dialog.
       const machine = String(state.system["hostname"] ?? state.system["id"] ?? "this machine")
+      // The title always names the action, its target, and the machine; a screen's
+      // own confirm copy supplies the explanation and button label.
       const approved = await args.confirm({
-        title: confirmCopy?.title ?? `${action.displayName}${targetRef ? ` ${targetRef.id}` : ""} on ${machine}?`,
+        title: `${action.displayName}${targetRef ? ` ${targetRef.id}` : ""} on ${machine}?`,
         description:
           confirmCopy?.message ??
           `${action.description ?? `Runs the ${state.plugin.manifest.displayName} plugin's ${action.displayName.toLowerCase()} action.`} Scout records this action in the hub audit log under your identity.`,

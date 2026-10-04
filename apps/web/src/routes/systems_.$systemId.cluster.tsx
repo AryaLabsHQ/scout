@@ -20,7 +20,7 @@ import { EmptyRow, Page, PageHeader, Section } from "@/components/section"
 import { TimeAgo } from "@/components/time-ago"
 import { StatusDot } from "@/components/status-dot"
 import { pluginUnavailable } from "@/components/plugin-status"
-import { namespaceOf, podTone, summarizeNamespaces, workloadTone, workloadsOf } from "@/lib/k8s"
+import { namespaceOf, podTone, summarizeNamespaces, uniqueEvents, workloadTone, workloadsOf } from "@/lib/k8s"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/systems_/$systemId/cluster")({
@@ -111,7 +111,7 @@ function ClusterPage() {
   const pods = entities.items
     .filter((entity) => entity.ref.kind === K8S_ENTITY_KINDS.pod && inScope(entity))
     .sort((a, b) => a.ref.id.localeCompare(b.ref.id))
-  const warnings = events.items
+  const warnings = uniqueEvents(events.items)
     .filter((event) => event.severity !== "info")
     .filter((event) => selected === undefined || event.entity?.id.startsWith(`${selected}/`) || event.entity?.id === selected)
     .sort((a, b) => b.ts - a.ts)

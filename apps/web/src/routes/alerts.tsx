@@ -108,6 +108,13 @@ function AlertsPage() {
 
   const label = (alert: Alert) => `${METRIC_LABELS[alert.metric] ?? alert.metric} on ${hostnames.get(alert.systemId) ?? alert.systemId}`
 
+  // A failed mutation drops its optimistic state so the live list shows the truth again.
+  const dropOverride = (alertId: string) =>
+    setOverrides((current) => {
+      const { [alertId]: _dropped, ...rest } = current
+      return rest
+    })
+
   const onAck = async (alert: Alert) => {
     const confirmed = await confirm({
       title: `Acknowledge ${label(alert)}?`,
@@ -119,6 +126,7 @@ function AlertsPage() {
     try {
       await ack({ payload: { alertId: alert.id }, reactivityKeys: ["alerts"] })
     } catch {
+      dropOverride(alert.id)
       toast.error(`Could not acknowledge ${label(alert)}`)
     }
   }
@@ -135,6 +143,7 @@ function AlertsPage() {
     try {
       await resolve({ payload: { alertId: alert.id }, reactivityKeys: ["alerts"] })
     } catch {
+      dropOverride(alert.id)
       toast.error(`Could not resolve ${label(alert)}`)
     }
   }

@@ -26,7 +26,7 @@ import { UnitsTable } from "@/components/units-table"
 import { pluginUnavailable } from "@/components/plugin-status"
 import { formatBytes, formatBytesPerSec, formatDuration } from "@/lib/format"
 import { HEALTH_METRICS, METRIC_LABELS, formatMetricValue, ruleTone } from "@/lib/health"
-import { summarizeNamespaces } from "@/lib/k8s"
+import { summarizeNamespaces, uniqueEvents } from "@/lib/k8s"
 import { byFailedThenName, unitState } from "@/lib/systemd"
 import { getAvailablePluginCapabilities } from "@/lib/system-capabilities"
 import { toast } from "sonner"
@@ -217,7 +217,7 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
   const events = usePluginEvents(systemId, K8S_PLUGIN_ID, 1)
   const unavailable = pluginUnavailable(system, K8S_PLUGIN_ID, "Kubernetes")
   const namespaces = summarizeNamespaces(entities.items)
-  const warnings = events.items.filter((event) => event.severity !== "info")
+  const warnings = uniqueEvents(events.items).filter((event) => event.severity !== "info")
 
   return (
     <Section
@@ -387,7 +387,7 @@ function ActivitySection({
           </>
         ),
       })),
-    ...events
+    ...uniqueEvents(events)
       .filter((event) => event.severity !== "info")
       .map((event, index) => ({
         at: event.ts,
