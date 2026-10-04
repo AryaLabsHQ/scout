@@ -2,110 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { Effect, Fiber, Layer, Stream } from "effect"
-import { createModels } from "@earendil-works/pi-ai/models"
-import {
-  fauxAssistantMessage,
-  fauxProvider,
-  type FauxResponseStep,
-  fauxToolCall,
-} from "@earendil-works/pi-ai/providers/faux"
+import { Effect, Fiber, Stream } from "effect"
+import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux"
 import type { OperatorSessionDetail, OperatorTimelineItem } from "@scout/shared"
-import { AgentRegistry } from "../../src/rpc/agent-bridge.js"
-import { MetricsIngestion } from "../../src/services/metrics-ingestion.js"
-import { OperatorExtensions } from "../../src/services/operator-extensions.js"
-import { OperatorHarness, openOperatorHarness } from "../../src/services/operator-harness.js"
-import { OperatorModelRegistry } from "../../src/services/operator-model-registry.js"
-import { OperatorResources } from "../../src/services/operator-resources.js"
 import { OperatorSessions } from "../../src/services/operator-sessions.js"
-import { OperatorSkills } from "../../src/services/operator-skills.js"
-import { openBunSqliteStorage } from "../../src/services/operator-storage.js"
-import { PluginRegistry } from "../../src/services/plugin-registry.js"
-import { TestDatabaseLayer } from "../helpers/test-database.js"
-
-// ── Fakes ────────────────────────────────────────────────────────────────────
-
-const faux = fauxProvider()
-const models = createModels()
-models.setProvider(faux.provider)
-
-const ModelLayer = Layer.succeed(OperatorModelRegistry, {
-  models,
-  available: [{ providerId: "faux", modelId: "faux-1", label: "faux/faux-1", reasoning: false }],
-  defaultModel: { providerId: "faux", modelId: "faux-1" },
-  thinkingLevel: "off",
-  systemPrompt: "You are a test operator.",
-})
-
-const dockerManifest = {
-  id: "docker",
-  displayName: "Docker",
-  actions: [
-    {
-      id: "restart-container",
-      displayName: "Restart container",
-      targetKinds: ["container"],
-      permissions: ["node:spawn-process"],
-      requiresConfirmation: true,
-    },
-  ],
-  streams: [],
-  metrics: [],
-  entityKinds: [],
-} as never
-
-const PluginLayer = Layer.succeed(PluginRegistry, {
-  list: () => Effect.succeed([{ rootDir: "/tmp/docker", pluginPath: "/tmp/docker/plugin.ts", manifest: dockerManifest }]),
-  get: () => Effect.succeed(null),
-  listHubPlugins: () => Effect.succeed([]),
-  listWebPlugins: () => Effect.succeed([]),
-  listOperatorPlugins: () => Effect.succeed([]),
-  getOperatorPlugin: () => Effect.succeed(null),
-})
-
-/** What the fake node agent was asked to do. */
-let executed: Array<string> = []
-
-const fakeClient = {
-  "terminal.exec": ({ command }: { command: string }) => {
-    executed.push(`bash:${command}`)
-    if (command === "hang") {
-      return Stream.concat(Stream.make({ _tag: "session-start" as const, sessionId: "term-hang" }), Stream.never)
-    }
-    return Stream.make(
-      { _tag: "session-start" as const, sessionId: "term-1" },
-      { _tag: "output" as const, dataBase64: Buffer.from(`ran ${command}\r\n`).toString("base64") },
-      { _tag: "exit" as const, exitCode: 0 },
-    )
-  },
-  "terminal.close": () => Effect.void,
-  "plugins.runAction": ({ actionId }: { actionId: string }) => {
-    executed.push(`action:${actionId}`)
-    return Effect.succeed({ success: true, summary: `${actionId} done` })
-  },
-}
-
-const AgentLayer = Layer.succeed(AgentRegistry, {
-  getClient: () => Effect.succeed(fakeClient),
-  listConnected: () => Effect.succeed([]),
-} as never)
-
-const operatorLayer = (path: string) => {
-  const base = Layer.mergeAll(
-    TestDatabaseLayer,
-    PluginLayer,
-    AgentLayer,
-    ModelLayer,
-    MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
-    OperatorExtensions.layer.pipe(Layer.provide(PluginLayer)),
-    OperatorSkills.layer.pipe(Layer.provide(PluginLayer)),
-    OperatorResources.layer.pipe(Layer.provide(PluginLayer)),
-  )
-  const harness = Layer.effect(OperatorHarness, openOperatorHarness(() => openBunSqliteStorage(path))).pipe(
-    Layer.provide(base),
-  )
-  return OperatorSessions.layer.pipe(Layer.provideMerge(Layer.merge(harness, base)))
-}
+import { executed, faux, operatorLayer } from "../helpers/operator.js"
 
 /** Run against the operator storage at `path`; the Harness closes when this returns, like a hub stop. */
 const withOperator = <A>(path: string, use: (sessions: typeof OperatorSessions.Service) => Effect.Effect<A, unknown>) =>
@@ -152,7 +53,7 @@ let storagePath: string
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "scout-operator-"))
   storagePath = join(directory, "operator.sqlite")
-  executed = []
+  executed.length = 0
 })
 
 afterEach(() => {

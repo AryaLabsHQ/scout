@@ -45,7 +45,7 @@ const UNAUDITED_RPCS: ReadonlySet<ClientRpcTag> = new Set<ClientRpcTag>([
   "metrics.subscribe",
   "alerts.subscribe",
   "systems.subscribe",
-  "operator.events.subscribe",
+  "operator.sessions.watch",
   "plugins.logs",
   "terminal.input",
   "terminal.resize",

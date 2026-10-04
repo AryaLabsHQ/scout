@@ -18,6 +18,7 @@ import type { Alert, LogBatch, System, SystemMetricsSample, TerminalOutput } fro
 import type { BroadcastEvent } from "../services/metrics-broadcast.js"
 import {
   ClientHubRpcs,
+  CurrentIdentity,
   ManagementError,
   SystemUpdateSchema,
   type AlertEvent,
@@ -32,6 +33,7 @@ import { OperatorModelRegistry } from "../services/operator-model-registry.js"
 import { OperatorSessions } from "../services/operator-sessions.js"
 import { OperatorSkills } from "../services/operator-skills.js"
 import { AgentRegistry, type HubAgentClient } from "./agent-bridge.js"
+import { actorOf } from "./auth.js"
 import * as schema from "../../drizzle/schema.js"
 
 // ── Type alias ────────────────────────────────────────────────────────────────
@@ -410,13 +412,17 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
       "operator.sessions.abort": ({ sessionId }) => operatorSessions.abort(sessionId),
 
-      // TODO(S2 rebase): pass the verified Access identity from the RPC context as `actor`.
+      // The decision records who made it: the identity ClientAuthMiddleware verified.
       "operator.approvals.resolve": ({ sessionId, approvalId, decision, answer }) =>
-        operatorSessions.resolveApproval({
-          sessionId,
-          approvalId,
-          decision,
-          ...(answer === undefined ? {} : { answer }),
+        Effect.gen(function* () {
+          const identity = yield* CurrentIdentity
+          yield* operatorSessions.resolveApproval({
+            sessionId,
+            approvalId,
+            decision,
+            actor: actorOf(identity),
+            ...(answer === undefined ? {} : { answer }),
+          })
         }),
 
       "operator.sessions.setApprovalMode": ({ sessionId, approvalMode }) =>

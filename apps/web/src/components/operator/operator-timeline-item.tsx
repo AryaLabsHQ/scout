@@ -384,6 +384,7 @@ export function OperatorApprovalCard({
           {approval.status === "pending" ? approval.kind : approval.status}
         </Badge>
         <span className="text-muted-foreground">{approval.reason}</span>
+        {approval.actor ? <span className="text-muted-foreground">by {approval.actor}</span> : null}
         <Timestamp at={approval.resolvedAt ?? approval.requestedAt} className="ml-auto" />
       </div>
       {approval.affectedNodeIds.length > 0 && (
@@ -450,6 +451,7 @@ function ClarificationCard({
             {approval.status}
           </Badge>
         ) : null}
+        {approval.actor ? <span className="text-muted-foreground">by {approval.actor}</span> : null}
         <Timestamp at={approval.resolvedAt ?? approval.requestedAt} className="ml-auto" />
       </div>
       <p className="whitespace-pre-wrap text-xs font-medium">{question?.question ?? approval.reason}</p>
