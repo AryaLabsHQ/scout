@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/main.ts",
     "build": "bun build --compile src/main.ts --outfile dist/scout-agent",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "bun --bun vitest run",
     "test:watch": "bun --bun vitest"
   },
@@ -20,7 +20,7 @@
     "@effect/vitest": "4.0.0",
     "@types/node": "^25.1.0",
     "bun-types": "^1.4.2",
-    "typescript": "^6.0.2",
+    "typescript": "7.0.2",
     "vitest": "^5.0.3"
   }
 }

@@ -17,11 +17,10 @@
     "format:check": "oxfmt --check"
   },
   "devDependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260404.1",
     "oxfmt": "^0.43.0",
     "oxlint": "^1.57.0",
     "turbo": "^2.8.17",
-    "typescript": "^6.0.2"
+    "typescript": "7.0.2"
   },
   "packageManager": "bun@1.4.2"
 }
