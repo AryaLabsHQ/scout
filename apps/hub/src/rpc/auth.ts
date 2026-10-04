@@ -1,55 +1,121 @@
 /**
- * Auth middleware for the ClientHubRpcs server.
+ * Browser RPC authentication and audit.
  *
- * Reads a Bearer token from the `authorization` header and compares it
- * against `SCOUT_TOKEN` from the environment. Rejects with `Unauthorized`
- * when the token is absent or mismatched.
+ * Implements the shared `ClientAuthMiddleware` for `ClientHubRpcs`. The
+ * websocket upgrade already passed `HttpAuthGate`; the RPC server copies the
+ * upgrade request's headers onto every RPC, so each call re-verifies the
+ * Access JWT, provides `CurrentIdentity` to the handler, and logs who invoked
+ * every RPC that can change state. Unary calls are authorized when they start
+ * and run to completion; a stream RPC (a live subscription) fails with
+ * `Unauthorized` when its JWT expires, since it would otherwise outlive the
+ * session indefinitely.
  */
 
-import { Config, Effect, Layer, Schema } from "effect"
-import * as RpcMiddleware from "effect/rpc/RpcMiddleware"
+import { Clock, Duration, Effect, Layer } from "effect"
+import type * as Rpc from "effect/rpc/Rpc"
+import type * as RpcGroup from "effect/rpc/RpcGroup"
+import * as RpcSchema from "effect/rpc/RpcSchema"
+import {
+  ClientAuthMiddleware,
+  CurrentIdentity,
+  Unauthorized,
+  type ClientHubRpcs,
+  type Identity,
+} from "@scout/shared"
+import { BrowserAuth } from "../auth/browser-auth.js"
 
-// ── Error type ────────────────────────────────────────────────────────────────
+type ClientRpcTag = Rpc.Tag<RpcGroup.Rpcs<typeof ClientHubRpcs>>
 
-export class Unauthorized extends Schema.Error<Unauthorized>("Unauthorized")({
-  _tag: Schema.tag("Unauthorized"),
-  message: Schema.String,
-}) {}
+/**
+ * RPCs that only read state. Everything else is audited, so a new RPC is
+ * audited until someone deliberately lists it here. `terminal.input` and
+ * `terminal.resize` act inside a session whose `terminal.open` was audited;
+ * logging keystrokes would leak secrets.
+ */
+const UNAUDITED_RPCS: ReadonlySet<ClientRpcTag> = new Set<ClientRpcTag>([
+  "systems.list",
+  "systems.get",
+  "systems.metrics",
+  "operator.sessions.list",
+  "operator.sessions.get",
+  "operator.skills.list",
+  "operator.models.list",
+  "alerts.list",
+  "alertRules.list",
+  "metrics.subscribe",
+  "alerts.subscribe",
+  "systems.subscribe",
+  "operator.events.subscribe",
+  "plugins.logs",
+  "terminal.input",
+  "terminal.resize",
+])
 
-// ── Middleware service ────────────────────────────────────────────────────────
+/** Identifier-like payload fields safe to log; free text and terminal data are never logged. */
+const AUDIT_FIELDS = [
+  "id",
+  "agentId",
+  "pluginId",
+  "actionId",
+  "alertId",
+  "sessionId",
+  "approvalId",
+  "decision",
+  "mode",
+] as const
 
-export class AuthMiddleware extends RpcMiddleware.Service<AuthMiddleware>()(
-  "scout/AuthMiddleware",
-  {
-    error: Unauthorized,
-    requiredForClient: true,
-  },
-) {}
+const auditTarget = (payload: unknown): Record<string, string> => {
+  if (typeof payload !== "object" || payload === null) return {}
+  const record = payload as Record<string, unknown>
+  const target: Record<string, string> = {}
+  for (const field of AUDIT_FIELDS) {
+    const value = record[field]
+    if (typeof value === "string" || typeof value === "number") target[field] = String(value)
+  }
+  const entity = record["entity"] as { readonly kind?: unknown; readonly id?: unknown } | undefined
+  if (typeof entity?.id === "string") target["entity"] = `${String(entity.kind)}/${entity.id}`
+  return target
+}
 
-// ── Live implementation ───────────────────────────────────────────────────────
+export const actorOf = (identity: Identity): string => identity.email ?? identity.subject
 
-export const AuthMiddlewareLive =
-  Layer.effect(
-    AuthMiddleware,
-    Effect.gen(function* () {
-      // Read once at layer construction time — no per-request Config.string call
-      const expectedToken = yield* Config.String("SCOUT_TOKEN")
+export const ClientAuthMiddlewareLive = Layer.effect(
+  ClientAuthMiddleware,
+  Effect.gen(function* () {
+    const browserAuth = yield* BrowserAuth
 
-      return AuthMiddleware.of((effect, options) => {
-        const authHeader = options.headers["authorization"] as string | undefined
+    return ClientAuthMiddleware.of((effect, { rpc, payload, headers }) =>
+      Effect.gen(function* () {
+        const { identity, expiresAt } = yield* browserAuth.authenticate(headers).pipe(
+          Effect.mapError((error) => new Unauthorized({ message: error.message })),
+        )
+        const actor = actorOf(identity)
 
-        // Accept "Bearer <token>" or a bare token
-        const provided = authHeader?.startsWith("Bearer ")
-          ? authHeader.slice(7)
-          : authHeader
-
-        if (!provided || provided !== expectedToken) {
-          return Effect.fail(
-            new Unauthorized({ message: "Invalid or missing SCOUT_TOKEN" }),
-          ) as never
+        if (!UNAUDITED_RPCS.has(rpc._tag as ClientRpcTag)) {
+          yield* Effect.logInfo("rpc audit").pipe(
+            Effect.annotateLogs({
+              rpc: rpc._tag,
+              actor,
+              identitySource: identity.source,
+              ...auditTarget(payload),
+            }),
+          )
         }
 
-        return effect
-      })
-    }),
-  )
+        const handled = effect.pipe(
+          Effect.provideService(CurrentIdentity, identity),
+          Effect.annotateLogs({ actor }),
+        )
+        if (expiresAt === null || !RpcSchema.isStreamSchema(rpc.successSchema)) return yield* handled
+
+        const remaining = expiresAt - (yield* Clock.currentTimeMillis)
+        return yield* Effect.raceFirst(
+          handled,
+          Effect.sleep(Duration.millis(Math.max(0, remaining))).pipe(
+            Effect.andThen(Effect.fail(new Unauthorized({ message: "Cloudflare Access session expired" }))),
+          ),
+        )
+      }),
+    )
+  }),
+)

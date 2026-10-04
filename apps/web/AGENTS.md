@@ -31,6 +31,8 @@ apps/web/
 
 ## CONVENTIONS
 - Prefer `src/server/*` for initial page data and `HubClient` atoms for ongoing live state.
+- Server functions call the hub only through `hubFetch` (`src/server/hub.ts`), which forwards the Cloudflare Access credential; a raw `fetch` to the hub is rejected with 401.
+- The browser connects to `/ws/rpc` same-origin; never embed the hub's internal URL in client code.
 - `AtomProvider` must stay high in the tree so the HubClient runtime is pinned before consumers mount.
 - Shared contract types come from `@scout/shared`; the web app should not invent parallel interfaces for systems, alerts, terminal output, or plugin actions.
 - Large route files are normal here; route-level state belongs with the route unless it becomes cross-page UI state.

@@ -1,0 +1,88 @@
+# Kubernetes identity for the Scout agent's k8s plugin on Agni.
+#
+# Grants read access to exactly what packages/plugin-k8s collects and
+# describes, plus the writes its declared actions perform:
+#   scale-workload        kubectl scale  -> deployments/scale, statefulsets/scale
+#   restart-pod/delete-pod kubectl delete pod -> pods: delete
+# No access to Secrets or ConfigMaps. Apply with deploy/agni/README.md.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scout
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scout-agent
+  namespace: scout
+---
+# Long-lived token for the agent's kubeconfig. Rotate by deleting this
+# Secret, re-applying, and rebuilding ~/.config/scout/kubeconfig.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: scout-agent-token
+  namespace: scout
+  annotations:
+    kubernetes.io/service-account.name: scout-agent
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: scout-agent
+rules:
+  # Collection (kubectl get ... -o json) and describe-resource.
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - pods
+      - services
+      - endpoints
+      - events
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  # pod-logs stream (kubectl logs).
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # scale-workload (kubectl scale reads and patches the scale subresource;
+  # older clients update it).
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale"]
+    verbs: ["get", "patch", "update"]
+  # restart-pod and delete-pod (kubectl delete pod).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scout-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: scout-agent
+subjects:
+  - kind: ServiceAccount
+    name: scout-agent
+    namespace: scout

@@ -12,11 +12,19 @@
 
 ## Configuration
 
-Common environment variables:
+Required environment variables (the hub refuses to start without them):
+- `SCOUT_TOKEN`: agent token, non-blank
+- `SCOUT_ACCESS_TEAM_DOMAIN`, `SCOUT_ACCESS_AUD`: Cloudflare Access verification for browsers,
+  unless `SCOUT_AUTH=disabled` on a loopback `SCOUT_HOST` (local development only)
+
+Common optional variables:
+- `SCOUT_HOST` (default `127.0.0.1`), `SCOUT_PORT` (default `3001`)
 - `SCOUT_DB_PATH`
-- `SCOUT_PORT`
-- `SCOUT_TOKEN`
 - `SCOUT_PLUGIN_DIR`
+
+Every path except `/health` requires a Cloudflare Access JWT, or the agent token on
+`/ws/rpc/agent`; see [`docs/architecture.md`](../../docs/architecture.md#authentication). Config
+validation lives in [`src/config.ts`](./src/config.ts) and the auth code in [`src/auth`](./src/auth).
 
 Database migration config lives in [`drizzle.config.ts`](./drizzle.config.ts), and the main layer graph lives in [`src/app.ts`](./src/app.ts).
 

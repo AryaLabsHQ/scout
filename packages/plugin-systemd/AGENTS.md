@@ -27,6 +27,7 @@ packages/plugin-systemd/src/
 - Route package exports through `src/index.ts`.
 - Keep runtime adapters thin and move core behavior into `src/systemd.ts`.
 - Add new service-management actions or streams through `contracts.ts` first.
+- Never escalate privileges: reads run unprivileged, state changes run `systemctl --no-ask-password` and a polkit/permission refusal surfaces as a `permission-denied` execution error.
 
 ## ANTI-PATTERNS
 - Do not duplicate systemd ids or permission names outside `contracts.ts` / `manifest.ts`.

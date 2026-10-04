@@ -70,14 +70,28 @@ All nodes also report core system metrics (CPU, memory, disk, network, processes
 ```
 SCOUT_TOKEN=test-token-123
 SCOUT_DB_PATH=./test.db
+SCOUT_HOST=127.0.0.1
 SCOUT_PORT=3001
+SCOUT_AUTH=disabled
 ```
+
+`SCOUT_AUTH=disabled` turns off Cloudflare Access verification for browsers and is refused unless
+the hub listens on a loopback address. Agents still need `SCOUT_TOKEN`.
+
+> **Linux hosts:** containers reach the host through `host.docker.internal` (the Docker bridge
+> gateway), which does not reach a hub bound to `127.0.0.1`. Docker Desktop on macOS forwards it to
+> host loopback, so the defaults work there. On Linux, bind the hub to the bridge gateway
+> (`SCOUT_HOST=172.17.0.1`) and configure Access instead of disabling auth, for example with a
+> test JWKS via `SCOUT_ACCESS_CERTS_URL`.
 
 ### apps/web/.env.test
 
 ```
 SCOUT_HUB_URL=http://127.0.0.1:3001
 ```
+
+The browser opens `/ws/rpc` on the web origin (`:3000`); the Vite dev server proxies it to
+`SCOUT_HUB_URL`.
 
 The containers use matching env vars set in `e2e/compose.yml`:
 

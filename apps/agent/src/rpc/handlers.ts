@@ -10,7 +10,7 @@ import { existsSync } from "node:fs"
 import os from "node:os"
 import { HubAgentRpcs, ManagementError } from "@scout/shared"
 import type { TerminalOutput, LogBatch } from "@scout/shared"
-import { AgentPluginHost } from "../services/plugin-host.js"
+import { AgentPluginHost, PluginHostError } from "../services/plugin-host.js"
 
 // ── Terminal helpers ───────────────────────────────────────────────────────────
 
@@ -237,11 +237,8 @@ const fail = (code: string, message: string) =>
 
 const mapPluginHostError = (error: Error) =>
   new ManagementError({
-    code: error.message === "invalid-input" ? "invalid-input" : "plugin-error",
-    message:
-      error.message === "plugin-not-loaded"
-        ? "Requested plugin is not loaded"
-        : error.message,
+    code: error instanceof PluginHostError ? error.code : "plugin-error",
+    message: error.message,
   })
 
 // ── Handler layer ─────────────────────────────────────────────────────────────

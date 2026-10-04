@@ -22,8 +22,10 @@ Common optional variables:
 - `SCOUT_COLLECTORS_DISABLE`
 - `SCOUT_COLLECTORS_ENABLE`
 - `SCOUT_PLUGIN_DIR`
+- `KUBECONFIG`: kubeconfig for the k8s plugin's `kubectl` calls
 
-The config loader lives in [`src/config.ts`](./src/config.ts).
+The agent sends `SCOUT_TOKEN` as `Authorization: Bearer` on the websocket upgrade and in
+`agent.connect`. The config loader lives in [`src/config.ts`](./src/config.ts).
 
 ## Key Entry Points
 

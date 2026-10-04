@@ -1,7 +1,11 @@
-import { Config, Effect, Layer, Logger } from "effect"
+import { Effect, Layer, Logger } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpRouter from "effect/http/HttpRouter"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { AppLayer } from "./app.js"
+import { BrowserAuth } from "./auth/browser-auth.js"
+import { HttpAuthGate } from "./auth/http-gate.js"
+import { HubConfig } from "./config.js"
 import { AppRoutes } from "./routes.js"
 import { Retention } from "./services/retention.js"
 import { RpcLayer } from "./rpc/server.js"
@@ -16,12 +20,23 @@ const LoggingLayer: Layer.Layer<never, never, never> = process.env["NODE_ENV"] =
   ? Logger.layer([Logger.consoleJson])
   : Layer.empty
 
+// ── Configuration + auth ─────────────────────────────────────────────────────
+
+// HubConfig fails the launch on invalid or missing settings (fail closed).
+const ConfigLayer = HubConfig.layer
+
+const AuthLayer = BrowserAuth.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provideMerge(ConfigLayer),
+)
+
 // ── Server layer ─────────────────────────────────────────────────────────────
 
 const ServerLayer = Effect.gen(function* () {
-  const port = yield* Config.withDefault(Config.Number("SCOUT_PORT"), 3001)
-  return BunHttpServer.layer({ port: Math.round(port) })
-}).pipe(Layer.unwrap)
+  const { host, port } = yield* HubConfig
+  yield* Effect.logInfo("Scout hub listening", { host, port })
+  return BunHttpServer.layer({ hostname: host, port })
+}).pipe(Layer.unwrap, Layer.provide(ConfigLayer))
 
 // ── Retention background fiber ────────────────────────────────────────────────
 
@@ -36,12 +51,14 @@ const RetentionBackgroundLayer = Layer.effectDiscard(
 
 // Merge RPC routes alongside existing routes so both use the same HttpRouter.
 // RpcLayer bundles the client-facing /ws/rpc server + AgentRegistry + /ws/rpc/agent route.
-const AllRoutes = Layer.merge(AppRoutes, RpcLayer)
+// HttpAuthGate is global middleware: it authenticates every path except /health.
+const AllRoutes = Layer.mergeAll(AppRoutes, RpcLayer, HttpAuthGate)
 
 const AppServerLayer = AllRoutes.pipe(
   HttpRouter.serve,
   Layer.provide(ServerLayer),
   Layer.provide(AppLayer),
+  Layer.provide(AuthLayer),
 )
 
 const FullLayer = Layer.merge(

@@ -4,41 +4,64 @@ This document describes the architecture of Scout, a system observability and ma
 
 ## System Topology
 
+Scout runs as two processes behind one origin: the hub (API, RPC, state) and the web dashboard
+(TanStack Start SSR). A reverse proxy splits paths between them, so the browser talks to both
+same-origin. On Agni the origin is `scout.arya.sh`, protected by Cloudflare Access.
+
 ```
-agni (OVH VPS, systemd)
-+----------------------------------------------------------+
-|  scout (single Bun process)                               |
-|  +-- TanStack Start (SSR initial load + static PWA)       |
-|  +-- REST /api/* (@effect/platform-bun HTTP routes)       |
-|  +-- WS /ws/rpc          (RpcServer<ClientHubRpcs>)       |
-|  |       browsers use AtomRpc.Service over NDJSON         |
-|  +-- WS /ws/rpc/agent    (DuplexRpcSocket per agent:      |
-|                           RpcServer<AgentHubRpcs> +       |
-|                           RpcClient<HubAgentRpcs>)        |
-|                                                            |
-|  SQLite (WAL mode, Drizzle ORM, 30-day tiered retention)  |
-+------------------+---------------------------------------+
-                   |
-     +-------------+-------------+
-     | WS          | WS          |
-     v             v             |
-+---------+  +----------+       |
-| Agent   |  | Agent    |       |
-| (agni)  |  | (inferno)|       |
-| sys+k8s |  | sys only |       |
-| Duplex- |  | Duplex-  |       |
-| RpcSock |  | RpcSock  |       |
-+---------+  +----------+       |
-                                |
-Client (phone via Tailscale) <--+
-+-- SSR initial load -> TanStack loader -> hub REST
+browser
+  -> Cloudflare Access (app "Scout", scout.arya.sh)
+  -> cloudflared tunnel agni-host
+  -> Caddy 127.0.0.1:80 (http://scout.arya.sh)
+       /api/*, /ws/*, /health  -> hub  127.0.0.1:3901   (/ws/rpc/agent answers 404 here)
+       everything else         -> web  127.0.0.1:3900
+
+agni (OVH VPS, systemd --user units)
++-----------------------------------------------------------+
+| scout-hub (Bun, apps/hub)                                  |
+|  +-- REST /api/*, /health  (@effect/platform-bun routes)   |
+|  +-- WS /ws/rpc       RpcServer<ClientHubRpcs>, NDJSON     |
+|  +-- WS /ws/rpc/agent DuplexRpcSocket per agent:           |
+|                       RpcServer<AgentHubRpcs> +            |
+|                       RpcClient<HubAgentRpcs>              |
+|  +-- SQLite (WAL, Drizzle, 30-day tiered retention)        |
++-----------------------------------------------------------+
+| scout-web (Bun, apps/web .output)                          |
+|  +-- TanStack Start SSR; server functions call the hub at  |
+|      SCOUT_HUB_URL, forwarding the Access credential       |
++-----------------------------------------------------------+
+| scout-agent (Bun, apps/agent)                              |
+|  +-- ws://127.0.0.1:3901/ws/rpc/agent, Bearer SCOUT_TOKEN  |
++-----------------------------------------------------------+
+
+Browser
++-- SSR initial load -> TanStack loader -> server function -> hub REST
 |   -> AtomProvider seeds query atoms via useAtomInitialValues
-+-- Client-side:    HubClient = AtomRpc.Service backed by
-|                   BrowserSocket.layerWebSocket(/ws/rpc)
-|                   + NDJSON serialization
++-- Client-side: HubClient = AtomRpc.Service backed by
+|                BrowserSocket.layerWebSocket(same-origin /ws/rpc)
+|                + NDJSON serialization
 +-- Typed queries / mutations / streams via useAtomValue +
     useAtom hooks. reactivityKeys drive cache invalidation.
 ```
+
+Deployment assets and the runbook live in [`deploy/agni`](../deploy/agni/README.md).
+
+## Authentication
+
+| Caller | Path | Credential | Checked by |
+|--------|------|------------|------------|
+| Anyone | `/health` | none | -- |
+| Browser, web SSR | `/api/*`, `/ws/rpc`, any other path | Cloudflare Access JWT: `Cf-Access-Jwt-Assertion` header, else `CF_Authorization` cookie | `HttpAuthGate` (`apps/hub/src/auth/http-gate.ts`) |
+| Browser RPC | each `ClientHubRpcs` call | same JWT, copied from the upgrade request | `ClientAuthMiddleware` (`apps/hub/src/rpc/auth.ts`) |
+| Agent | `/ws/rpc/agent` | `Authorization: Bearer <SCOUT_TOKEN>` on the upgrade, and `token` in `agent.connect` | `HttpAuthGate`, `agent.connect` handler |
+
+- The hub verifies the RS256 signature against `https://<team-domain>/cdn-cgi/access/certs`
+  (cached; refetched on an unknown `kid` at most every 30 s, and hourly), plus `iss`, `aud`,
+  `exp`, and `nbf` (30 s leeway).
+- `ClientAuthMiddleware` provides `CurrentIdentity` (`source`, `subject`, `email`) to RPC handlers
+  and logs an `rpc audit` line with the actor for every RPC outside the read-only list.
+- The hub fails closed at startup: it requires a non-blank `SCOUT_TOKEN` and both Access settings
+  unless `SCOUT_AUTH=disabled` is set on a loopback `SCOUT_HOST` (local development and e2e).
 
 ## Three-Runtime Model
 
@@ -46,7 +69,7 @@ Scout runs as three distinct runtime contexts that share typed contracts through
 
 ### Hub (`apps/hub`)
 
-The hub is a single Bun process that serves the web frontend, REST bootstrap endpoints, and two WebSocket RPC surfaces. It owns all persistent state in SQLite and acts as the control plane for agents and browser clients.
+The hub is a Bun process that serves REST bootstrap endpoints and two WebSocket RPC surfaces; it does not serve the web frontend. It owns all persistent state in SQLite and acts as the control plane for agents and browser clients.
 
 Key responsibilities:
 - SQLite persistence via Drizzle ORM (WAL mode)
@@ -77,7 +100,7 @@ Key responsibilities:
 
 ### Web (`apps/web`)
 
-The web dashboard is a TanStack Start application with SSR bootstrap and client-side AtomRpc state management.
+The web dashboard is a separate TanStack Start (nitro) process with SSR bootstrap and client-side AtomRpc state management.
 
 Key responsibilities:
 - SSR page loaders fetch initial data from hub REST endpoints
@@ -93,14 +116,14 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 
 1. Browser requests a page from TanStack Start
 2. The route loader calls `createServerFn` wrappers in `apps/web/src/server/*`
-3. Server functions fetch from hub REST endpoints (`/api/systems`, `/api/alerts`, etc.)
+3. Server functions fetch from hub REST endpoints (`/api/systems`, `/api/alerts`, etc.) at `SCOUT_HUB_URL`, forwarding the visitor's Access JWT header or `CF_Authorization` cookie
 4. Loader data is returned to the client
 5. `AtomProvider` calls `useAtomInitialValues` to pre-seed the `HubClient` query atoms with `AsyncResult.success(data)`
 6. The page renders immediately with server-fetched data
 
 ### Live AtomRpc
 
-1. `AtomProvider` mounts and establishes a WebSocket to `/ws/rpc`
+1. `AtomProvider` mounts and establishes a WebSocket to `/ws/rpc` on the page origin (the reverse proxy routes it to the hub; Vite proxies it in development)
 2. `HubClient` is an `AtomRpc.Service` backed by `BrowserSocket.layerWebSocket` + NDJSON serialization
 3. Components use `useAtomValue(HubClient.query(...))` for reads and `useAtomSet(HubClient.mutation(...))` for writes
 4. Stream subscriptions (metrics, alerts, system updates, operator events) use `HubClient.runtime.pull` with `Atom.pull`-style consumption
@@ -108,7 +131,7 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 
 ### Agent Duplex Socket
 
-1. Agent connects to `/ws/rpc/agent` and authenticates with `SCOUT_TOKEN`
+1. Agent connects to `/ws/rpc/agent` with `Authorization: Bearer <SCOUT_TOKEN>` and repeats the token in `agent.connect`
 2. The single WebSocket carries two RPC directions via `DuplexRpcSocket`:
    - **Agent -> Hub** (`AgentHubRpcs`): `agent.connect`, `agent.report`, `agent.reportPluginCollection`
    - **Hub -> Agent** (`HubAgentRpcs`): `terminal.open`, `terminal.input`, `terminal.resize`, `terminal.close`, `plugins.runAction`, `plugins.logs`
@@ -270,11 +293,23 @@ All configuration is through environment variables. No configuration files.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SCOUT_TOKEN` | Yes | -- | Shared authentication token for agent and browser connections |
+| `SCOUT_TOKEN` | Yes | -- | Agent authentication token; blank is refused |
+| `SCOUT_ACCESS_TEAM_DOMAIN` | Yes, unless auth disabled | -- | Cloudflare Access team domain, e.g. `aryalabs.cloudflareaccess.com` |
+| `SCOUT_ACCESS_AUD` | Yes, unless auth disabled | -- | Access application Audience (AUD) tag |
+| `SCOUT_AUTH` | No | `access` | `access` or `disabled`; `disabled` requires a loopback `SCOUT_HOST` |
+| `SCOUT_ACCESS_CERTS_URL` | No (test only) | `https://<team-domain>/cdn-cgi/access/certs` | JWKS URL override for local tests |
+| `SCOUT_HOST` | No | `127.0.0.1` | HTTP/WebSocket listen address |
+| `SCOUT_PORT` | No | `3001` | HTTP/WebSocket listen port |
 | `SCOUT_DB_PATH` | No | `./scout.db` | SQLite database file path |
-| `SCOUT_PORT` | No | `3000` | HTTP/WebSocket listen port |
 | `SCOUT_LOG_LEVEL` | No | `info` | Structured log level |
-| `SCOUT_PLUGIN_DIR` | No | -- | Additional directory to scan for external plugins |
+| `SCOUT_PLUGIN_DIR` | No | `packages/` | Directory to scan for plugins |
+
+### Web Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SCOUT_HUB_URL` | No | `http://127.0.0.1:3001` | Hub base URL for SSR/server functions (and the Vite dev proxy) |
+| `NITRO_HOST` / `NITRO_PORT` | No | nitro defaults | Production listener of the built server |
 
 ### Operator Configuration
 
@@ -291,8 +326,10 @@ All configuration is through environment variables. No configuration files.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SCOUT_HUB_URL` | Yes | -- | WebSocket URL of the hub (e.g., `ws://hub:3000`) |
-| `SCOUT_TOKEN` | Yes | -- | Shared authentication token (must match hub) |
+| `SCOUT_HUB_URL` | Yes | -- | URL of the hub (e.g., `ws://127.0.0.1:3901`) |
+| `SCOUT_TOKEN` | Yes | -- | Agent authentication token (must match hub); blank is refused |
+| `SCOUT_HOSTNAME` | No | OS hostname | System id reported to the hub |
+| `KUBECONFIG` | No | kubectl default | Kubeconfig used by the k8s plugin's `kubectl` calls |
 | `SCOUT_PLUGIN_DIR` | No | -- | Additional directory to scan for external plugins |
 | `SCOUT_LOG_LEVEL` | No | `info` | Structured log level |
 | `SCOUT_COLLECTORS_DISABLE` | No | -- | Comma-separated list of core collectors to disable |
@@ -304,13 +341,13 @@ These architectural decisions are locked and should not be revisited without exp
 
 | Decision | Choice |
 |----------|--------|
-| Hub deployment | Single Bun process (web + API + WS) as systemd on agni |
+| Hub deployment | Hub (API + WS) and web (SSR) as separate Bun processes, systemd user units on agni |
 | Agent deployment | Standalone binary + systemd per machine |
 | Collectors | Auto-discover + config override per agent |
 | K8s monitoring | Generic discovery (not Agni-specific) |
 | Data retention | 30-day tiered (1m -> 10m -> 20m -> 120m -> 480m) |
 | Plugin model | Runtime-loaded trusted plugins, one package per plugin |
-| Web serving | Hub serves TanStack Start + API + WS in one process |
+| Web serving | Reverse proxy splits one origin between web (pages) and hub (`/api`, `/ws`, `/health`) |
 | SSR strategy | Server functions for initial load, direct client -> hub after |
 | Terminal emulator | ghostty-web (custom React wrapper) |
 | HTTP layer | @effect/platform-bun (native WS upgrade) |
@@ -320,7 +357,7 @@ These architectural decisions are locked and should not be revisited without exp
 | React | React 19 + shadcn/ui v4 + @effect/atom-react |
 | Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service |
 | Hub <-> agent protocol | effect/rpc over one WebSocket, DuplexRpcSocket adapter |
-| Auth | Shared static token (Tailscale network) |
+| Auth | Cloudflare Access JWT for browsers; shared token for agents |
 | Network metrics | Total rx/tx bytes only |
 | K8s scope | Full workload (Pods, Deployments, Services, Ingress, Jobs) |
 | Historical ranges | 1h / 6h / 24h / 7d |

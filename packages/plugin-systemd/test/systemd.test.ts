@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Cause, Effect, Exit, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   decodePluginUiScreen,
@@ -197,7 +197,58 @@ describe("systemd plugin", () => {
     )
 
     expect(result).toMatchObject({ success: true, output: {} })
-    expect(calls).toContain("systemctl restart nginx.service")
+    expect(calls).toContain("systemctl --no-ask-password restart nginx.service")
+  })
+
+  it("reports a polkit refusal as permission-denied instead of escalating", async () => {
+    const calls: string[] = []
+    const packageUnderTest = {
+      manifest,
+      agent: createSystemdAgentPlugin(
+        makeDeps({
+          exec: (command, args) => {
+            calls.push(`${command} ${args.join(" ")}`)
+            return Effect.succeed({
+              stdout: "",
+              stderr: "Failed to stop nginx.service: Interactive authentication required.\n",
+              exitCode: 1,
+            })
+          },
+        }),
+      ),
+    }
+
+    const exit = await Effect.runPromiseExit(
+      executePluginAction(
+        packageUnderTest,
+        {
+          nodeId: "node-1",
+          permissions: new Set(["node:systemd", "node:spawn-process"]),
+        },
+        {
+          pluginId: SYSTEMD_PLUGIN_ID,
+          actionId: SYSTEMD_ACTION_IDS.stopUnit,
+          target: {
+            nodeId: "node-1",
+            entity: {
+              pluginId: SYSTEMD_PLUGIN_ID,
+              kind: SYSTEMD_UNIT_KIND,
+              nodeId: "node-1",
+              id: "nginx.service",
+            },
+          },
+          input: {},
+        },
+      ),
+    )
+
+    expect(calls).toEqual(["systemctl --no-ask-password stop nginx.service"])
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+      code: "permission-denied",
+      actionId: SYSTEMD_ACTION_IDS.stopUnit,
+    })
+    expect(calls.some((call) => call.startsWith("sudo"))).toBe(false)
   })
 
   it("writes a unit file and reloads systemd", async () => {
@@ -256,7 +307,7 @@ describe("systemd plugin", () => {
       expect.arrayContaining([
         "systemctl show -p FragmentPath nginx.service",
         "systemd-analyze verify /tmp/scout-systemd.test",
-        "systemctl daemon-reload",
+        "systemctl --no-ask-password daemon-reload",
       ]),
     )
   })

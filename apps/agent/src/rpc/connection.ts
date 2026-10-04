@@ -1,7 +1,8 @@
 /**
  * Hub connection for the new @effect/rpc protocol.
  *
- * Opens a WebSocket to the hub's /ws/rpc/agent path, wraps it with
+ * Opens a WebSocket to the hub's /ws/rpc/agent path (authenticated with
+ * `Authorization: Bearer <SCOUT_TOKEN>` on the upgrade), wraps it with
  * makeDuplexRpcProtocols, starts an RpcServer for HubAgentRpcs (so the
  * agent handles hub-initiated commands), and builds an RpcClient for
  * AgentHubRpcs (so the agent can call agent.connect + agent.report).
@@ -79,9 +80,16 @@ const makeConnectOnce = (
 
     yield* Effect.logInfo("HubConnection: connecting", { url: wsUrl })
 
-    // Build a WebSocket socket using globalThis.WebSocket (available in Bun)
+    // Bun's WebSocket accepts upgrade headers; the hub rejects the upgrade
+    // unless it carries the agent token.
     const socket = yield* Socket.makeWebSocket(wsUrl).pipe(
-      Effect.provide(Socket.layerWebSocketConstructorGlobal),
+      Effect.provideService(
+        Socket.WebSocketConstructor,
+        (url) =>
+          new globalThis.WebSocket(url, {
+            headers: { authorization: `Bearer ${config.token}` },
+          }),
+      ),
     )
 
     // All per-connection work runs in a scoped region so finalizers clean up

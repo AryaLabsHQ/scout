@@ -50,12 +50,12 @@ Each node exercises a different subset of the agent's collectors.
 # In one terminal:
 cd apps/hub
 rm -f test.db  # fresh DB
-SCOUT_TOKEN=test-token-123 SCOUT_DB_PATH=./test.db SCOUT_PORT=3001 bun run db:push
-SCOUT_TOKEN=test-token-123 SCOUT_DB_PATH=./test.db SCOUT_PORT=3001 bun run dev
+bun --env-file=.env.test run db:push
+bun --env-file=.env.test run dev   # loopback hub, SCOUT_AUTH=disabled
 
 # In another terminal (optional — for the dashboard):
 cd apps/web
-SCOUT_HUB_URL=http://localhost:3001 bun run dev
+bun --env-file=.env.test run dev
 ```
 
 Then bring up the test nodes:
@@ -185,6 +185,8 @@ gives precise process targeting for stop/restart without pattern-matching.
   `bun --hot` from the mount.
 - `host.docker.internal` resolves to the host on Docker Desktop for Mac. On
   Linux you may need `--add-host=host.docker.internal:host-gateway` (already
-  wired in `compose.yml`).
+  wired in `compose.yml`). On Linux that address is the bridge gateway, which
+  cannot reach the loopback-only `SCOUT_AUTH=disabled` hub; see
+  `docs/e2e-testing.md` for the Linux setup.
 - If Docker Desktop's **Resource Saver** auto-pauses the engine, disable it in
   Settings → Resources → Resource Saver (or use a shorter idle timeout).

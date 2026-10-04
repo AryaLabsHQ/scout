@@ -17,7 +17,10 @@ export class AgentConfig {
 
   static readonly load = Effect.gen(function* () {
     const hubUrl = yield* Config.String("SCOUT_HUB_URL")
-    const token = yield* Config.String("SCOUT_TOKEN")
+    const token = (yield* Config.String("SCOUT_TOKEN")).trim()
+    if (token.length === 0) {
+      return yield* Effect.fail(new Error("SCOUT_TOKEN must not be blank"))
+    }
     const hostname = yield* Config.withDefault(
       Config.String("SCOUT_HOSTNAME"),
       os.hostname(),

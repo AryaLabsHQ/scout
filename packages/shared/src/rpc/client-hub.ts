@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import * as Rpc from "effect/rpc/Rpc"
 import * as RpcGroup from "effect/rpc/RpcGroup"
+import { ClientAuthMiddleware } from "./client-auth.js"
 
 import {
   OperatorApprovalResolveParamsSchema,
@@ -44,6 +45,8 @@ import {
  * ClientHubRpcs — the RPC group that the **browser** calls on the **hub**.
  *
  * Served by the hub at `/ws/rpc` via `RpcServer.layerProtocolWebsocket`.
+ * Every RPC runs behind `ClientAuthMiddleware`, which fails with
+ * `Unauthorized` unless the hub verified the caller's identity.
  * Consumed by the browser via `AtomRpc.Service` → `HubClient.query` /
  * `HubClient.mutation`.
  *
@@ -257,4 +260,4 @@ export const ClientHubRpcs = RpcGroup.make(
     error: ManagementError,
     stream: true,
   }),
-)
+).middleware(ClientAuthMiddleware)

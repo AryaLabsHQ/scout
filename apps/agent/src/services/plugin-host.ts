@@ -19,12 +19,21 @@ import {
 const isPluginDetected = (capability: PluginCapability): boolean =>
   capability.status === "available" || capability.status === "degraded"
 
+/**
+ * A plugin failure carrying the structured code callers branch on (for
+ * example `permission-denied`) alongside the plugin's explanation.
+ */
+export class PluginHostError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 const mapExecutionError = (error: PluginExecutionError) =>
-  new Error(
-    error.code === "invalid-target"
-      ? "invalid-input"
-      : error.code,
-  )
+  new PluginHostError(error.code === "invalid-target" ? "invalid-input" : error.code, error.message)
 
 export class AgentPluginHost extends Context.Service<
   AgentPluginHost,
@@ -111,7 +120,7 @@ export class AgentPluginHost extends Context.Service<
         registry.getAgentPlugin(pluginId).pipe(
           Effect.flatMap((plugin) =>
             plugin === null
-              ? Effect.fail(new Error("plugin-not-loaded"))
+              ? Effect.fail(new PluginHostError("plugin-not-loaded", "Requested plugin is not loaded"))
               : Effect.succeed(plugin),
           ),
         )
