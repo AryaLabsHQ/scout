@@ -3,7 +3,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process"
-import { Cause, Duration, Effect, Queue, Stream } from "effect"
+import { Cause, Duration, Effect, Fiber, Queue, Stream } from "effect"
 
 export interface ProcessLineBatch {
   readonly lines: ReadonlyArray<string>
@@ -85,6 +85,7 @@ export const followProcessLines = (
       const stdout = proc.stdout!
       const decoder = new TextDecoder()
       let buffer = ""
+      let pendingOffer: Fiber.Fiber<unknown> | undefined
 
       const toBatches = (lines: Array<string>): Array<ProcessLineBatch> => {
         const batches: Array<ProcessLineBatch> = []
@@ -100,23 +101,29 @@ export const followProcessLines = (
         buffer = lines.pop() ?? ""
         const batches = toBatches(lines.filter((line) => line.length > 0))
         if (batches.length === 0) return
-        // Hold further chunks (and "end") until the consumer has room, which
-        // also keeps batches in order.
+        // Hold further chunks until the consumer has room, which also keeps
+        // batches in order: only one offer is ever outstanding.
         stdout.pause()
-        Effect.runFork(
+        pendingOffer = Effect.runFork(
           Queue.offerAll(queue, batches).pipe(Effect.ensuring(Effect.sync(() => stdout.resume()))),
         )
       })
       proc.once("error", (error) => {
         Queue.failCauseUnsafe(queue, Cause.fail(new Error(`${command} failed: ${error.message}`)))
       })
-      // "close" fires after stdout has ended, so every chunk has been offered
-      // and the trailing partial line is complete.
+      // "close" fires once stdout has ended, so the trailing partial line is
+      // complete. The queue ends only after the last chunk's offer lands.
       proc.once("close", () => {
         buffer += decoder.decode()
         const tail = buffer.length > 0 ? toBatches([buffer]) : []
         buffer = ""
-        Effect.runFork(Queue.offerAll(queue, tail).pipe(Effect.andThen(Queue.end(queue))))
+        const previous = pendingOffer
+        Effect.runFork(
+          (previous === undefined ? Effect.void : Fiber.await(previous)).pipe(
+            Effect.andThen(Queue.offerAll(queue, tail)),
+            Effect.andThen(Queue.end(queue)),
+          ),
+        )
       })
     }),
     { bufferSize: bufferBatches },

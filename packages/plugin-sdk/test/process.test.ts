@@ -38,6 +38,19 @@ describe("followProcessLines", () => {
     for (const batch of batches) expect(batch.length).toBeLessThanOrEqual(2)
   })
 
+  it("delivers every line when the child exits while the consumer is behind", async () => {
+    const lines = await Effect.runPromise(
+      followProcessLines("seq", ["1", "5000"], { maxBatchLines: 50, bufferBatches: 1 }).pipe(
+        Stream.mapEffect((batch) => Effect.as(Effect.sleep("2 millis"), batch.lines)),
+        Stream.runCollect,
+        Effect.map((batches) => Array.from(batches).flat()),
+      ),
+    )
+
+    expect(lines).toHaveLength(5000)
+    expect(lines.at(-1)).toBe("5000")
+  })
+
   it("fails when the command cannot be started", async () => {
     const exit = await Effect.runPromiseExit(
       Stream.runDrain(followProcessLines("scout-no-such-command", [])),
