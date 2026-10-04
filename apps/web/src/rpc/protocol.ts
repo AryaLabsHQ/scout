@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
+import { RpcClient, RpcSerialization } from "effect/rpc"
 import { BrowserSocket } from "@effect/platform-browser"
 
 /**

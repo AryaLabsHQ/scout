@@ -1,5 +1,5 @@
 import { Config, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -118,7 +118,7 @@ const toPluginSkill = (
   content: skill.content,
 })
 
-export class OperatorSkills extends ServiceMap.Service<
+export class OperatorSkills extends Context.Service<
   OperatorSkills,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorSkill>>
@@ -131,7 +131,7 @@ export class OperatorSkills extends ServiceMap.Service<
   {
     make: Effect.gen(function* () {
       const configuredDirs = yield* Config.withDefault(
-        Config.string("SCOUT_OPERATOR_SKILLS_DIRS"),
+        Config.String("SCOUT_OPERATOR_SKILLS_DIRS"),
         "",
       )
       const pluginRegistry = yield* PluginRegistry

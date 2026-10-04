@@ -1,5 +1,5 @@
 import { Effect, Layer, Schedule } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { and, eq, lt } from "drizzle-orm"
 import type { SystemMetricsSample } from "@scout/shared"
 import { Database } from "./database.js"
@@ -162,7 +162,7 @@ function averageSamples(samples: SystemMetricsSample[]): SystemMetricsSample {
   }
 }
 
-export class Retention extends ServiceMap.Service<Retention, {
+export class Retention extends Context.Service<Retention, {
   /**
    * Trigger a single retention + downsampling pass immediately.
    * Normally called by the background ticker, but exposed for testing.

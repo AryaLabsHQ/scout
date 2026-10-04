@@ -7,11 +7,11 @@
  */
 
 import { Config, Effect, Layer, Schema } from "effect"
-import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware"
+import * as RpcMiddleware from "effect/rpc/RpcMiddleware"
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
-export class Unauthorized extends Schema.ErrorClass<Unauthorized>("Unauthorized")({
+export class Unauthorized extends Schema.Error<Unauthorized>("Unauthorized")({
   _tag: Schema.tag("Unauthorized"),
   message: Schema.String,
 }) {}
@@ -33,7 +33,7 @@ export const AuthMiddlewareLive =
     AuthMiddleware,
     Effect.gen(function* () {
       // Read once at layer construction time — no per-request Config.string call
-      const expectedToken = yield* Config.string("SCOUT_TOKEN")
+      const expectedToken = yield* Config.String("SCOUT_TOKEN")
 
       return AuthMiddleware.of((effect, options) => {
         const authHeader = options.headers["authorization"] as string | undefined

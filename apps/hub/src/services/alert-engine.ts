@@ -1,5 +1,5 @@
 import { Effect, Layer, Ref } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { eq, or, gte, desc, and } from "drizzle-orm"
 import type { Alert, AlertRule } from "@scout/shared"
 import { Database } from "./database.js"
@@ -61,7 +61,7 @@ function rowToRule(row: typeof schema.alertRules.$inferSelect): AlertRule {
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
-export class AlertEngine extends ServiceMap.Service<AlertEngine, {
+export class AlertEngine extends Context.Service<AlertEngine, {
   readonly _tag: "@scout/AlertEngine"
   /**
    * Evaluate all enabled rules against normalized metric samples.

@@ -1,7 +1,7 @@
 import { constants as fsConstants } from "node:fs"
 import { access } from "node:fs/promises"
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import {
   loadPluginsFromDirectory,
   type LoadedScoutPlugin,
@@ -25,7 +25,7 @@ const isDirectoryReadable = (path: string) =>
 const hasAgentRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedAgentPlugin =>
   plugin.agent !== undefined
 
-export class AgentPluginRegistry extends ServiceMap.Service<
+export class AgentPluginRegistry extends Context.Service<
   AgentPluginRegistry,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>

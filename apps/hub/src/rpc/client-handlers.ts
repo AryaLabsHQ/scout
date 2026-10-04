@@ -23,7 +23,7 @@ import {
   type AlertEvent,
   type AlertRule,
 } from "@scout/shared"
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
+import type { RpcClientError } from "effect/rpc/RpcClientError"
 import { Database } from "../services/database.js"
 import { MetricsIngestion } from "../services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../services/metrics-broadcast.js"

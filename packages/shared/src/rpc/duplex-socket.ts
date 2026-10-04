@@ -1,11 +1,11 @@
 /**
  * Duplex RPC Socket adapter.
  *
- * `@effect/rpc`'s built-in socket transports (`RpcServer.layerProtocolWebsocket`
+ * `effect/rpc`'s built-in socket transports (`RpcServer.layerProtocolWebsocket`
  * and `RpcClient.layerProtocolSocket`) each take exclusive ownership of the
- * underlying `Socket.Socket` — they call `socket.runRaw(handler)` with a
- * role-specific handler. This prevents a single WebSocket from carrying
- * RPCs in both directions (both peers initiating requests).
+ * underlying `Socket.Socket` — each acquires `socket.reader` and handles
+ * every frame in its own role. This prevents a single WebSocket from
+ * carrying RPCs in both directions (both peers initiating requests).
  *
  * Scout needs exactly this for the hub↔agent channel: the agent dials
  * one WS to the hub, and both sides call RPCs on the other (hub invokes
@@ -16,7 +16,7 @@
  * `Protocol` services — one `RpcServer.Protocol` (for handling inbound
  * requests of the "serverGroup") and one `RpcClient.Protocol` (for
  * initiating requests of the "clientGroup"). Both share:
- *   - a single `socket.runRaw` reader (dispatches inbound messages by
+ *   - a single `socket.reader` pull loop (dispatches inbound messages by
  *     `_tag`: Request/Ack/Interrupt/Eof/Ping → server role, everything
  *     else → client role)
  *   - a single `socket.writer` for outbound bytes
@@ -29,20 +29,21 @@
  * Tag discrimination safety: `FromClientEncoded` tags (Request, Ack,
  * Interrupt, Eof, Ping) and `FromServerEncoded` tags (Chunk, Exit, Defect,
  * Pong, ClientProtocolError) are disjoint — verified in
- * `effect/unstable/rpc/RpcMessage.ts`.
+ * `effect/rpc/RpcMessage.ts`.
  */
 
 import { Effect, Layer, Option, Queue } from "effect"
+import { constVoid } from "effect/Function"
 import type * as Scope from "effect/Scope"
-import type * as Socket from "effect/unstable/socket/Socket"
+import type * as Socket from "effect/socket/Socket"
 import type {
   FromClientEncoded,
   FromServerEncoded,
-} from "effect/unstable/rpc/RpcMessage"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import { RpcClientDefect, RpcClientError } from "effect/unstable/rpc/RpcClientError"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
+} from "effect/rpc/RpcMessage"
+import * as RpcClient from "effect/rpc/RpcClient"
+import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import * as RpcServer from "effect/rpc/RpcServer"
 
 /**
  * Returns `true` if the encoded RPC message represents a "from client"
@@ -93,19 +94,17 @@ export const makeDuplexRpcProtocols = (
   Effect.gen(function* () {
     const serialization = yield* RpcSerialization.RpcSerialization
     const parser = serialization.makeUnsafe()
-    const writeRaw = yield* socket.writer
+    const writer = yield* socket.writer
 
-    // Routing callbacks installed by each Protocol's `run(f)` invocation
-    // via withRun's buffer. Until installed, inbound messages for that
-    // side are no-ops — but in practice RpcServer/RpcClient call `run`
-    // during layer construction, well before any message arrives.
+    // Routing callbacks installed by each Protocol's `make(f)` callback.
+    // RpcServer/RpcClient buffer inbound messages until their `run` loop
+    // starts, so messages arriving before that are replayed, not dropped.
     let routeToServer: (
       clientId: number,
       data: FromClientEncoded,
     ) => Effect.Effect<void> = () => Effect.void
-    let routeToClient: (
-      data: FromServerEncoded,
-    ) => Effect.Effect<void> = () => Effect.void
+    let routeToClient: (data: FromServerEncoded) => Effect.Effect<void> = () =>
+      Effect.void
 
     // Server-side clientId is fixed at 0 — the duplex adapter has exactly
     // one peer (the other end of the WS).
@@ -120,36 +119,45 @@ export const makeDuplexRpcProtocols = (
       Queue.offer(disconnects, PEER_CLIENT_ID).pipe(Effect.orDie),
     )
 
-    // Fork the socket reader loop. Each parsed frame is dispatched to
-    // either the server- or client-side handler by _tag.
-    const noop: (value: void) => void = () => {}
-    yield* Effect.forkScoped(
-      socket
-        .runRaw((data) => {
-          try {
-            const decoded = parser.decode(data) as ReadonlyArray<
-              FromClientEncoded | FromServerEncoded
-            >
-            if (decoded.length === 0) return Effect.void
-            let i = 0
-            return Effect.whileLoop({
-              while: () => i < decoded.length,
-              body: () => {
-                const msg = decoded[i++]!
-                return isFromClientEncoded(msg)
-                  ? routeToServer(PEER_CLIENT_ID, msg)
-                  : routeToClient(msg)
-              },
-              step: noop,
-            })
-          } catch {
-            // Decode errors drop the frame rather than tearing down the
-            // whole connection. The RPC engine's per-request timeout will
-            // surface any downstream consequences.
-            return Effect.void
-          }
+    const processFrame = (data: Uint8Array | string): Effect.Effect<void> => {
+      try {
+        const decoded = parser.decode(data) as ReadonlyArray<
+          FromClientEncoded | FromServerEncoded
+        >
+        if (decoded.length === 0) return Effect.void
+        let i = 0
+        return Effect.whileLoop({
+          while: () => i < decoded.length,
+          body: () => {
+            const msg = decoded[i++]!
+            return isFromClientEncoded(msg)
+              ? routeToServer(PEER_CLIENT_ID, msg)
+              : routeToClient(msg)
+          },
+          step: constVoid,
         })
-        .pipe(Effect.ignore),
+      } catch {
+        // Decode errors drop the frame rather than tearing down the
+        // whole connection. The RPC engine's per-request timeout will
+        // surface any downstream consequences.
+        return Effect.void
+      }
+    }
+
+    // Fork the socket reader loop. Acquiring the reader establishes the
+    // connection; each pulled frame is dispatched to either the server- or
+    // client-side handler by _tag. The pull fails with a SocketError when
+    // the connection closes, which ends the loop.
+    yield* Effect.forkScoped(
+      Effect.gen(function* () {
+        const { pull } = yield* socket.reader
+        while (true) {
+          const frames = yield* pull
+          for (const frame of frames) {
+            yield* processFrame(frame)
+          }
+        }
+      }).pipe(Effect.scoped, Effect.ignore),
     )
 
     // ── Outbound send functions ─────────────────────────────────────────
@@ -161,7 +169,7 @@ export const makeDuplexRpcProtocols = (
       try {
         const encoded = parser.encode(response)
         if (encoded === undefined) return Effect.void
-        return Effect.orDie(writeRaw(encoded))
+        return Effect.orDie(writer.write(encoded))
       } catch {
         return Effect.void
       }
@@ -178,7 +186,7 @@ export const makeDuplexRpcProtocols = (
       try {
         const encoded = parser.encode(request)
         if (encoded === undefined) return Effect.void
-        return writeRaw(encoded).pipe(
+        return writer.write(encoded).pipe(
           Effect.mapError((cause) =>
             toClientError("duplex socket write failed", cause),
           ),
@@ -201,17 +209,42 @@ export const makeDuplexRpcProtocols = (
         supportsAck: true,
         supportsTransferables: false,
         supportsSpanPropagation: false,
+        supportsNotifications: true,
+        codecFor: serialization.codecFor,
       })
     })
 
-    const clientProtocolService = yield* RpcClient.Protocol.make((writeResponse) => {
-      routeToClient = writeResponse
-      return Effect.succeed({
-        send: sendFromClient,
-        supportsAck: true,
-        supportsTransferables: false,
-      })
-    })
+    // The client side mirrors `RpcClient.makeProtocolSocket`: responses that
+    // carry a requestId go to the client that issued the request; anything
+    // else is broadcast to every active client on this socket.
+    const clientProtocolService = yield* RpcClient.Protocol.make(
+      (writeResponse, clientIds) => {
+        const requestClients = new Map<string | number, number>()
+        routeToClient = (response) => {
+          if ("requestId" in response) {
+            const clientId = requestClients.get(response.requestId)
+            if (clientId !== undefined) {
+              if (response._tag === "Exit") requestClients.delete(response.requestId)
+              return writeResponse(clientId, response)
+            }
+          }
+          return Effect.forEach(
+            clientIds,
+            (clientId) => writeResponse(clientId, response),
+            { discard: true },
+          )
+        }
+        return Effect.succeed({
+          send: (clientId, request) => {
+            if (request._tag === "Request") requestClients.set(request.id, clientId)
+            return sendFromClient(request)
+          },
+          supportsAck: true,
+          supportsTransferables: false,
+          codecFor: serialization.codecFor,
+        })
+      },
+    )
 
     return {
       serverProtocol: Layer.succeed(RpcServer.Protocol, serverProtocolService),

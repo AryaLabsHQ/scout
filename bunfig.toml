@@ -1,0 +1,6 @@
+[install]
+# Keep packages in the repo-local isolated store (node_modules/.bun). Bun's
+# global store resolves each package from its own cache directory, so type
+# imports that packages use without declaring (bun-types -> undici-types,
+# React libraries -> @types/react) stop resolving and typecheck fails.
+globalStore = false

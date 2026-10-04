@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type {
   OperatorAfterToolHookInput as PluginOperatorAfterToolHookInput,
   OperatorPromptHookInput as PluginOperatorPromptHookInput,
@@ -72,7 +72,7 @@ const summarizePluginSurface = (pluginIds: ReadonlyArray<string>): string | null
         "Use observe.plugins before plugin.runAction or plugin.logs so actions and streams stay bounded to installed capabilities.",
       ].join("\n")
 
-export class OperatorExtensions extends ServiceMap.Service<
+export class OperatorExtensions extends Context.Service<
   OperatorExtensions,
   {
     readonly beforePrompt: (

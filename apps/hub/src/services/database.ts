@@ -1,16 +1,16 @@
 import { Config, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { Database as BunDatabase } from "bun:sqlite"
 import * as schema from "../../drizzle/schema.js"
 
 export type ScoutDatabase = ReturnType<typeof drizzle<typeof schema>>
 
-export class Database extends ServiceMap.Service<Database, ScoutDatabase>()(
+export class Database extends Context.Service<Database, ScoutDatabase>()(
   "@scout/Database",
   {
     make: Effect.gen(function* () {
-      const dbPath = yield* Config.withDefault(Config.string("SCOUT_DB_PATH"), "./scout.db")
+      const dbPath = yield* Config.withDefault(Config.String("SCOUT_DB_PATH"), "./scout.db")
 
       const db = yield* Effect.acquireRelease(
         Effect.sync(() => {

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
-import * as Rpc from "effect/unstable/rpc/Rpc"
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
+import * as Rpc from "effect/rpc/Rpc"
+import * as RpcGroup from "effect/rpc/RpcGroup"
 import { AgentCapabilitiesSchema } from "../schemas/system.js"
 import { CoreMetricsPayloadSchema } from "../schemas/system-metrics.js"
 import {
@@ -33,7 +33,7 @@ export const AgentPluginCollectionPayload = Schema.Struct({
   collection: PluginCollectionResultSchema,
 })
 
-export class AgentConnectError extends Schema.ErrorClass<AgentConnectError>(
+export class AgentConnectError extends Schema.Error<AgentConnectError>(
   "AgentConnectError",
 )({
   _tag: Schema.tag("AgentConnectError"),

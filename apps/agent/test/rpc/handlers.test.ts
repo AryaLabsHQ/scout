@@ -15,7 +15,7 @@ import {
   startTerminalSession,
 } from "../../src/rpc/handlers.js"
 import { HubAgentRpcs, ManagementError } from "@scout/shared"
-import * as RpcMessage from "effect/unstable/rpc/RpcMessage"
+import * as RpcMessage from "effect/rpc/RpcMessage"
 import { AgentPluginHost } from "../../src/services/plugin-host.js"
 import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
 import type { TerminalOutput } from "@scout/shared"
@@ -24,7 +24,7 @@ import type { TerminalOutput } from "@scout/shared"
 
 const testOptions = {
   clientId: 0 as number,
-  requestId: RpcMessage.RequestId(1n),
+  requestId: RpcMessage.RequestId(1),
   headers: {} as never,
 }
 

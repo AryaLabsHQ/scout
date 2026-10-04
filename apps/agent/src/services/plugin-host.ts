@@ -1,5 +1,5 @@
 import { Cause, Effect, Layer, Stream } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type {
   ActionRequest,
   LogChunk,
@@ -26,7 +26,7 @@ const mapExecutionError = (error: PluginExecutionError) =>
       : error.code,
   )
 
-export class AgentPluginHost extends ServiceMap.Service<
+export class AgentPluginHost extends Context.Service<
   AgentPluginHost,
   {
     readonly listCapabilities: () => Effect.Effect<ReadonlyArray<PluginCapability>>

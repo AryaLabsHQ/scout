@@ -17,14 +17,14 @@
  */
 
 import { Config, Effect, Fiber, Layer, Ref } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { eq } from "drizzle-orm"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcGroup from "effect/rpc/RpcGroup"
+import * as RpcServer from "effect/rpc/RpcServer"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
   AgentConnectError,
   AgentHubRpcs,
@@ -69,7 +69,7 @@ interface AgentEntry {
  * disconnect) AND the typed RPC client used by hub-initiated management
  * calls.
  */
-export class AgentRegistry extends ServiceMap.Service<
+export class AgentRegistry extends Context.Service<
   AgentRegistry,
   {
     /**
@@ -282,7 +282,7 @@ export class AgentRegistry extends ServiceMap.Service<
  * decoded info + capabilities from the RPC payload; the bridge closure
  * has already captured the typed HubAgentClient for this socket.
  */
-export class RegisterAgent extends ServiceMap.Service<
+export class RegisterAgent extends Context.Service<
   RegisterAgent,
   (
     info: AgentInfo,
@@ -309,7 +309,7 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.connect",
   Effect.gen(function* () {
     const registerFn = yield* RegisterAgent
-    const expectedToken = yield* Config.string("SCOUT_TOKEN")
+    const expectedToken = yield* Config.String("SCOUT_TOKEN")
 
     return ({ token, hostname, version, platform, capabilities, pluginCapabilities }) =>
       Effect.gen(function* () {

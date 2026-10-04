@@ -1,5 +1,5 @@
 import { Config, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import {
   getModels,
   getProviders,
@@ -76,7 +76,7 @@ const selectDefaultModel = (
   return models.find((model) => model.reasoning) ?? models[0] ?? null
 }
 
-export class OperatorModelRegistry extends ServiceMap.Service<
+export class OperatorModelRegistry extends Context.Service<
   OperatorModelRegistry,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorModelDescriptor>>
@@ -90,19 +90,19 @@ export class OperatorModelRegistry extends ServiceMap.Service<
   {
     make: Effect.gen(function* () {
       const configuredProviderId = yield* Config.withDefault(
-        Config.string("SCOUT_OPERATOR_MODEL_PROVIDER"),
+        Config.String("SCOUT_OPERATOR_MODEL_PROVIDER"),
         "",
       )
       const configuredModelId = yield* Config.withDefault(
-        Config.string("SCOUT_OPERATOR_MODEL_ID"),
+        Config.String("SCOUT_OPERATOR_MODEL_ID"),
         "",
       )
       const configuredSystemPrompt = yield* Config.withDefault(
-        Config.string("SCOUT_OPERATOR_SYSTEM_PROMPT"),
+        Config.String("SCOUT_OPERATOR_SYSTEM_PROMPT"),
         DEFAULT_SYSTEM_PROMPT,
       )
       const configuredThinkingLevel = yield* Config.withDefault(
-        Config.string("SCOUT_OPERATOR_THINKING_LEVEL"),
+        Config.String("SCOUT_OPERATOR_THINKING_LEVEL"),
         "medium",
       )
 

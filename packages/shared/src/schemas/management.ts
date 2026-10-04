@@ -47,7 +47,7 @@ export const PluginLogsLocalParamsSchema = Schema.Struct({
  * Generic management error the hub/agent can return for any of the
  * management RPCs. Carries a machine-readable code and human message.
  */
-export class ManagementError extends Schema.ErrorClass<ManagementError>(
+export class ManagementError extends Schema.Error<ManagementError>(
   "ManagementError",
 )({
   code: Schema.String,

@@ -10,17 +10,17 @@
     "test:watch": "bun --bun vitest"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.43",
+    "@effect/platform-bun": "4.0.0",
     "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
-    "effect": "4.0.0-beta.43",
+    "effect": "4.0.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-beta.43",
+    "@effect/vitest": "4.0.0",
     "@types/node": "^25.1.0",
-    "bun-types": "^1.3.11",
+    "bun-types": "^1.4.2",
     "typescript": "^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.3"
   }
 }

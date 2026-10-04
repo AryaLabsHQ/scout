@@ -16,17 +16,17 @@ export class AgentConfig {
   ) {}
 
   static readonly load = Effect.gen(function* () {
-    const hubUrl = yield* Config.string("SCOUT_HUB_URL")
-    const token = yield* Config.string("SCOUT_TOKEN")
+    const hubUrl = yield* Config.String("SCOUT_HUB_URL")
+    const token = yield* Config.String("SCOUT_TOKEN")
     const hostname = yield* Config.withDefault(
-      Config.string("SCOUT_HOSTNAME"),
+      Config.String("SCOUT_HOSTNAME"),
       os.hostname(),
     )
-    const interval = yield* Config.withDefault(Config.number("SCOUT_INTERVAL"), 15)
-    const disableStr = yield* Config.withDefault(Config.string("SCOUT_COLLECTORS_DISABLE"), "")
-    const enableStr = yield* Config.withDefault(Config.string("SCOUT_COLLECTORS_ENABLE"), "")
+    const interval = yield* Config.withDefault(Config.Number("SCOUT_INTERVAL"), 15)
+    const disableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_DISABLE"), "")
+    const enableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_ENABLE"), "")
     const pluginDir = yield* Config.withDefault(
-      Config.string("SCOUT_PLUGIN_DIR"),
+      Config.String("SCOUT_PLUGIN_DIR"),
       DEFAULT_PLUGIN_DIR,
     )
 

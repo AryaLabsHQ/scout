@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type { AgentMessage } from "@mariozechner/pi-agent-core"
 import type {
   OperatorMessage as PersistedOperatorMessage,
@@ -156,7 +156,7 @@ export interface OperatorPreparedRuntimeSession {
   readonly messages: ReadonlyArray<AgentMessage>
 }
 
-export class OperatorSessionManager extends ServiceMap.Service<
+export class OperatorSessionManager extends Context.Service<
   OperatorSessionManager,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorSessionSummary>>

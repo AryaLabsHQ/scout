@@ -13,7 +13,7 @@ import { HubAgentHandlersLive } from "./rpc/handlers.js"
 
 const LogLevelLayer = Layer.unwrap(
   Effect.gen(function* () {
-    const levelStr = yield* Config.withDefault(Config.string("SCOUT_LOG_LEVEL"), "info")
+    const levelStr = yield* Config.withDefault(Config.String("SCOUT_LOG_LEVEL"), "info")
     const level = levelStr.toLowerCase()
     let logLevel: LogLevel = "Info"
     if (level === "debug") logLevel = "Debug"

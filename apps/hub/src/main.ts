@@ -1,5 +1,5 @@
 import { Config, Effect, Layer, Logger } from "effect"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
+import * as HttpRouter from "effect/http/HttpRouter"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { AppLayer } from "./app.js"
 import { AppRoutes } from "./routes.js"
@@ -19,7 +19,7 @@ const LoggingLayer: Layer.Layer<never, never, never> = process.env["NODE_ENV"] =
 // ── Server layer ─────────────────────────────────────────────────────────────
 
 const ServerLayer = Effect.gen(function* () {
-  const port = yield* Config.withDefault(Config.number("SCOUT_PORT"), 3001)
+  const port = yield* Config.withDefault(Config.Number("SCOUT_PORT"), 3001)
   return BunHttpServer.layer({ port: Math.round(port) })
 }).pipe(Layer.unwrap)
 
