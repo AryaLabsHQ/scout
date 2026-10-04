@@ -1,0 +1,29 @@
+# Scout hub: REST + browser/agent websocket RPC on 127.0.0.1:3901.
+# Install: deploy/agni/README.md
+[Unit]
+Description=Scout hub (control plane)
+Documentation=file:///home/ubuntu/Developer/AryaLabsHQ/scout/deploy/agni/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/Developer/AryaLabsHQ/scout/apps/hub
+# Creates ~/.local/state/scout for the SQLite database.
+StateDirectory=scout
+Environment=NODE_ENV=production
+Environment=SCOUT_HOST=127.0.0.1
+Environment=SCOUT_PORT=3901
+Environment=SCOUT_DB_PATH=%S/scout/scout.db
+Environment=SCOUT_PLUGIN_DIR=/home/ubuntu/Developer/AryaLabsHQ/scout/packages
+# Values in the env file override the defaults above.
+EnvironmentFile=%h/.config/scout/hub.env
+ExecStart=%h/.bun/bin/bun src/main.ts
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

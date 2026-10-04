@@ -1,0 +1,25 @@
+# Scout web dashboard (TanStack Start / nitro build) on 127.0.0.1:3900.
+# Install: deploy/agni/README.md
+[Unit]
+Description=Scout web dashboard
+Documentation=file:///home/ubuntu/Developer/AryaLabsHQ/scout/deploy/agni/README.md
+After=network-online.target scout-hub.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/Developer/AryaLabsHQ/scout/apps/web
+Environment=NODE_ENV=production
+Environment=NITRO_HOST=127.0.0.1
+Environment=NITRO_PORT=3900
+Environment=SCOUT_HUB_URL=http://127.0.0.1:3901
+EnvironmentFile=%h/.config/scout/web.env
+ExecStart=%h/.bun/bin/bun .output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

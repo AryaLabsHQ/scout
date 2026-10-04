@@ -1,0 +1,31 @@
+# Scout agent for Agni itself: collectors + docker/k8s/systemd plugins,
+# connected to the local hub over loopback.
+# Install: deploy/agni/README.md
+[Unit]
+Description=Scout agent (agni)
+Documentation=file:///home/ubuntu/Developer/AryaLabsHQ/scout/deploy/agni/README.md
+After=network-online.target scout-hub.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/Developer/AryaLabsHQ/scout/apps/agent
+Environment=NODE_ENV=production
+Environment=SCOUT_HUB_URL=ws://127.0.0.1:3901
+Environment=SCOUT_HOSTNAME=agni
+Environment=SCOUT_PLUGIN_DIR=/home/ubuntu/Developer/AryaLabsHQ/scout/packages
+# Read-only-plus-scoped-writes ServiceAccount (deploy/agni/k8s/rbac.yaml),
+# never the root-only k3s admin kubeconfig.
+Environment=KUBECONFIG=%h/.config/scout/kubeconfig
+EnvironmentFile=%h/.config/scout/agent.env
+ExecStart=%h/.bun/bin/bun src/main.ts
+Restart=on-failure
+RestartSec=5
+# The agent never escalates: systemd mutations of system units fail with
+# permission-denied instead of going through sudo.
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target
