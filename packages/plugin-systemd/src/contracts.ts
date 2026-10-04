@@ -3,14 +3,103 @@ import type { PluginUiScreen } from "@scout/plugin-sdk"
 
 export const SYSTEMD_PLUGIN_ID = "systemd"
 export const SYSTEMD_CAPABILITY_ID = "systemd"
+/** A service unit of the system manager (`systemctl`). */
 export const SYSTEMD_UNIT_KIND = "systemd.unit"
+/** A service unit of the agent user's manager (`systemctl --user`). */
+export const SYSTEMD_USER_UNIT_KIND = "systemd.user-unit"
+/** A timer unit of the system manager. */
+export const SYSTEMD_TIMER_KIND = "systemd.timer"
+/** A timer unit of the agent user's manager. */
+export const SYSTEMD_USER_TIMER_KIND = "systemd.user-timer"
+
+/**
+ * Which systemd manager owns a unit. The two managers have separate unit
+ * namespaces (both can run a `dbus.service`), so each scope gets its own
+ * entity kinds and user-scope commands run `systemctl --user`.
+ */
+export type SystemdScope = "system" | "user"
+
+export const SYSTEMD_SERVICE_KINDS = {
+  system: SYSTEMD_UNIT_KIND,
+  user: SYSTEMD_USER_UNIT_KIND,
+} as const satisfies Record<SystemdScope, string>
+
+export const SYSTEMD_TIMER_KINDS = {
+  system: SYSTEMD_TIMER_KIND,
+  user: SYSTEMD_USER_TIMER_KIND,
+} as const satisfies Record<SystemdScope, string>
+
+/** The scope a service or timer entity kind belongs to, or null for any other kind. */
+export const systemdScopeOfKind = (kind: string): SystemdScope | null => {
+  switch (kind) {
+    case SYSTEMD_UNIT_KIND:
+    case SYSTEMD_TIMER_KIND:
+      return "system"
+    case SYSTEMD_USER_UNIT_KIND:
+    case SYSTEMD_USER_TIMER_KIND:
+      return "user"
+    default:
+      return null
+  }
+}
 
 export const SYSTEMD_FEATURES = [
   "collect",
   "actions",
   "logs",
   "unit-files",
+  "timers",
+  "user-units",
 ] as const
+
+const NullableString = Schema.NullOr(Schema.String)
+const NullableNumber = Schema.NullOr(Schema.Number)
+const ScopeSchema = Schema.Literals(["system", "user"])
+
+/**
+ * `state` of a `systemd.unit` / `systemd.user-unit` entity. Timestamps are
+ * epoch milliseconds. `execMainStatus` is the main process exit status of the
+ * last run and is null until the unit's main process has exited once.
+ */
+export const SystemdUnitStateSchema = Schema.Struct({
+  scope: ScopeSchema,
+  description: Schema.String,
+  loadState: Schema.String,
+  activeState: Schema.String,
+  subState: Schema.String,
+  unitFileState: NullableString,
+  result: NullableString,
+  execMainStatus: NullableNumber,
+  execMainExitAt: NullableNumber,
+  activeEnterAt: NullableNumber,
+  restarts: NullableNumber,
+  pid: NullableNumber,
+  memoryBytes: NullableNumber,
+  cpuUsageNs: NullableNumber,
+})
+
+/**
+ * `state` of a `systemd.timer` / `systemd.user-timer` entity. `lastResult`,
+ * `lastExitStatus`, and `lastExitAt` describe the last run of the unit the
+ * timer activates; `activatesState` is that unit's current active state.
+ */
+export const SystemdTimerStateSchema = Schema.Struct({
+  scope: ScopeSchema,
+  description: Schema.String,
+  activeState: Schema.String,
+  subState: Schema.String,
+  unitFileState: NullableString,
+  activates: Schema.String,
+  nextRunAt: NullableNumber,
+  lastTriggerAt: NullableNumber,
+  activatesState: NullableString,
+  lastResult: NullableString,
+  lastExitStatus: NullableNumber,
+  lastExitAt: NullableNumber,
+})
+
+export type SystemdUnitState = typeof SystemdUnitStateSchema.Type
+export type SystemdTimerState = typeof SystemdTimerStateSchema.Type
 
 export const SYSTEMD_METRIC_IDS = {
   totalUnits: "units.total",

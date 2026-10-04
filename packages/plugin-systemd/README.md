@@ -6,7 +6,7 @@
 
 - Describe the systemd plugin manifest and permissions
 - Define the systemd unit entity, related metrics, actions, streams, and alerts
-- Detect systemd support on an agent and collect unit state
+- Detect systemd support on an agent and collect unit state: system and user (`systemctl --user`) services, timers with their next and last run, and each unit's last result, exit status, and restart count
 - Expose actions such as start, stop, restart, enable, disable, daemon reload, and unit-file read/write
 - Provide the plugin's hub, web, and operator surfaces
 

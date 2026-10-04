@@ -18,7 +18,7 @@ scout/
 │       ├── src/components/operator/  # operator chat UI + tiptap rich input
 ├── packages/
 │   ├── plugin-sdk/ # plugin contracts, loader, execution/runtime helpers
-│   ├── plugin-*    # concrete plugins: docker, k8s, systemd
+│   ├── plugin-*    # concrete plugins: docker, edge, k8s, systemd
 │   └── shared/     # Effect Schema models and RPC groups shared by all runtimes
 ├── e2e/            # multi-node Docker harness for end-to-end testing
 └── .scratchpad/    # ephemeral research and milestone notes; not product code
@@ -31,7 +31,7 @@ scout/
 | Change hub APIs or live control flow | `apps/hub/src/routes.ts`, `apps/hub/src/rpc`, `packages/shared/src/rpc` | REST is for bootstrap/HTTP, RPC is for live browser and agent traffic |
 | Change browser data flow | `apps/web/src/routes`, `apps/web/src/server`, `apps/web/src/rpc`, `apps/web/src/providers/atom-provider.tsx` | SSR bootstrap happens before AtomRpc subscriptions |
 | Add or change shared wire contracts | `packages/shared/src/schemas`, `packages/shared/src/rpc` | Shared package is the source of truth for cross-runtime shapes |
-| Add or change plugin capabilities | `packages/plugin-sdk`, `packages/plugin-docker`, `packages/plugin-k8s`, `packages/plugin-systemd` | Plugin manifests, contracts, and runtime adapters live together |
+| Add or change plugin capabilities | `packages/plugin-sdk`, `packages/plugin-docker`, `packages/plugin-edge`, `packages/plugin-k8s`, `packages/plugin-systemd` | Plugin manifests, contracts, and runtime adapters live together |
 | Run the full stack against disposable nodes | `e2e/README.md`, `e2e/scripts`, `e2e/nodes` | Hub runs on the host; containers mount the repo at `/opt/scout` |
 | Operator sessions, tools, approvals | `apps/hub/src/services/operator-*`, `apps/web/src/components/operator/` | Hub services own runtime + persistence; web owns chat UI |
 
@@ -126,6 +126,7 @@ cd e2e && ./scripts/up.sh
 - `packages/shared/src/schemas/AGENTS.md` — canonical Effect Schema models
 - `packages/plugin-sdk/AGENTS.md` — plugin runtime/loader SDK
 - `packages/plugin-docker/AGENTS.md` — Docker plugin package
+- `packages/plugin-edge/AGENTS.md` — edge plugin package (cloudflared, Caddy)
 - `packages/plugin-k8s/AGENTS.md` — Kubernetes plugin package
 - `packages/plugin-systemd/AGENTS.md` — systemd plugin package
 - `e2e/AGENTS.md` — Docker-based end-to-end harness

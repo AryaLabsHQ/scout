@@ -197,10 +197,13 @@ lets `ubuntu` start, stop, restart and reload an allowlist of host units: `caddy
 
 | Works as `ubuntu` | Fails with `permission-denied` |
 |-------------------|--------------------------------|
-| Collecting system service units (`systemctl list-units`, `show`) | Actions on units outside the polkit allowlist (`k3s`, `tailscaled`, `ssh`, `postgresql`, ...) |
+| Collecting system services and timers (`systemctl list-units`, `list-timers`, `show`) | Actions on units outside the polkit allowlist (`k3s`, `tailscaled`, `ssh`, `postgresql`, ...) |
 | start, stop, restart, reload of allowlisted units | enable and disable of any system unit |
-| Unit logs (`journalctl -u`; `ubuntu` is in `adm`) | `daemon-reload` |
-| Reading unit files under `/etc` and `/usr/lib` | Writing unit files to system paths |
+| Collecting and managing `ubuntu`'s user units (`systemctl --user`) | `daemon-reload` |
+| Unit logs (`journalctl -u`; `ubuntu` is in `adm`) | Writing unit files to system paths |
+| Reading unit files under `/etc` and `/usr/lib` | |
 
-The plugin manages system units only; user units such as `scout-hub.service` are not
-collected. Use a host shell with sudo for everything outside the allowlist.
+Use a host shell with sudo for everything outside the allowlist. User units (`scout-*`, T3 Code,
+the Codex app-server, OpenCode) belong to `ubuntu`'s own manager, so their actions run
+`systemctl --user` and need no polkit grant. Restarting `scout-agent` or `scout-hub` from Scout cuts
+Scout's own connection until the unit is back. The journal stream covers system units only.

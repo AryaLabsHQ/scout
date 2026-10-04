@@ -27,8 +27,14 @@ import {
   SYSTEMD_FEATURES,
   SYSTEMD_METRIC_IDS,
   SYSTEMD_PLUGIN_ID,
+  SYSTEMD_SERVICE_KINDS,
   SYSTEMD_STREAM_IDS,
+  SYSTEMD_TIMER_KINDS,
   SYSTEMD_UNIT_KIND,
+  SYSTEMD_USER_UNIT_KIND,
+  type SystemdScope,
+  type SystemdTimerState,
+  type SystemdUnitState,
   UnitFileSchema,
   UnitFileWriteInputSchema,
   UnitLogsInputSchema,
@@ -73,8 +79,49 @@ export interface SystemdUnitMetrics {
   readonly cpuUsageNs: number | null
 }
 
-const MAX_ACTIVE_SERVICES = 50
+/** One row of `systemctl list-timers --all --output=json`; times are epoch microseconds. */
+export interface SystemctlTimer {
+  readonly unit: string
+  readonly activates: string
+  readonly nextUs: number | null
+  readonly lastUs: number | null
+}
+
+/** What `systemctl show` reports about a service beyond list-units. */
+export interface SystemdServiceDetails {
+  readonly pid: number | null
+  readonly memoryBytes: number | null
+  readonly cpuUsageNs: number | null
+  readonly unitFileState: string | null
+  readonly result: string | null
+  readonly execMainStatus: number | null
+  readonly execMainExitAt: number | null
+  readonly activeEnterAt: number | null
+  readonly restarts: number | null
+}
+
 const DEFAULT_LOG_TAIL = 200
+
+/**
+ * `systemctl show` properties read in one batched call per scope. A property a
+ * unit type does not have is simply absent from that unit's block.
+ */
+export const SHOW_PROPERTIES = [
+  "Id",
+  "ActiveState",
+  "MainPID",
+  "MemoryCurrent",
+  "CPUUsageNSec",
+  "Result",
+  "ExecMainStatus",
+  "ExecMainExitTimestamp",
+  "ActiveEnterTimestamp",
+  "NRestarts",
+  "UnitFileState",
+  "Unit",
+  "NextElapseUSecRealtime",
+  "LastTriggerUSec",
+] as const
 
 export const validateUnit = (unit: string): boolean => {
   if (!unit || unit.length === 0 || unit.length > 256) return false
@@ -103,35 +150,130 @@ export const parseSystemctlListUnits = (json: string): ReadonlyArray<SystemdUnit
   }))
 }
 
+const toFields = (block: string): Record<string, string> => {
+  const fields: Record<string, string> = {}
+  for (const line of block.split("\n")) {
+    const separator = line.indexOf("=")
+    if (separator === -1) continue
+    fields[line.slice(0, separator).trim()] = line.slice(separator + 1).trim()
+  }
+  return fields
+}
+
+/** Present, non-negative integer properties; `[not set]`, `n/a`, and blanks are null. */
+const integerField = (value: string | undefined): number | null => {
+  if (value === undefined || !/^\d+$/.test(value)) return null
+  const number = Number(value)
+  return Number.isSafeInteger(number) ? number : null
+}
+
+const stringField = (value: string | undefined): string | null =>
+  value === undefined || value.length === 0 ? null : value
+
 export const parseSystemctlShow = (output: string): {
   readonly pid: number | null
   readonly memoryBytes: number | null
   readonly cpuUsageNs: number | null
 } => {
-  const fields: Record<string, string> = {}
-  for (const line of output.split("\n")) {
-    const separator = line.indexOf("=")
-    if (separator === -1) continue
-    const key = line.slice(0, separator).trim()
-    const value = line.slice(separator + 1).trim()
-    fields[key] = value
-  }
-
-  const rawPid = fields["MainPID"]
-  const rawMemory = fields["MemoryCurrent"]
-  const rawCpu = fields["CPUUsageNSec"]
-
+  const fields = toFields(output)
+  const pid = integerField(fields["MainPID"])
+  const cpu = integerField(fields["CPUUsageNSec"])
   return {
-    pid: rawPid && rawPid !== "0" ? Number(rawPid) : null,
-    memoryBytes:
-      rawMemory && rawMemory !== "[not set]" && !Number.isNaN(Number(rawMemory))
-        ? Number(rawMemory)
-        : null,
-    cpuUsageNs:
-      rawCpu && rawCpu !== "[not set]" && Number(rawCpu) > 0 && !Number.isNaN(Number(rawCpu))
-        ? Number(rawCpu)
-        : null,
+    pid: pid === 0 ? null : pid,
+    memoryBytes: integerField(fields["MemoryCurrent"]),
+    cpuUsageNs: cpu === 0 ? null : cpu,
   }
+}
+
+/**
+ * A systemd timestamp property as epoch milliseconds. Reads the
+ * `--timestamp=us+utc` form (`Sun 2026-10-04 03:34:24.354113 UTC`) and the
+ * `--timestamp=unix` form (`@1791084864`); blank or `n/a` means never.
+ */
+export const parseSystemdTimestamp = (value: string | undefined): number | null => {
+  if (value === undefined) return null
+  const unix = /^@(\d+)$/.exec(value)
+  if (unix) return Number(unix[1]) * 1000
+  const utc = /(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))? UTC$/.exec(value)
+  if (!utc) return null
+  const [, year, month, day, hour, minute, second, fraction = "0"] = utc
+  return (
+    Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)) +
+    Math.floor(Number(fraction.padEnd(6, "0")) / 1000)
+  )
+}
+
+/**
+ * Split batched `systemctl show <unit>...` output into per-unit property maps
+ * keyed by `Id`. systemd separates the units' blocks with a blank line.
+ */
+export const parseSystemctlShowBatch = (output: string): ReadonlyMap<string, Record<string, string>> => {
+  const units = new Map<string, Record<string, string>>()
+  for (const block of output.split(/\n\s*\n/)) {
+    const fields = toFields(block)
+    const id = fields["Id"]
+    if (id !== undefined && id.length > 0) units.set(id, fields)
+  }
+  return units
+}
+
+export const serviceDetails = (fields: Record<string, string> | undefined): SystemdServiceDetails => {
+  const resources = parseSystemctlShow(
+    fields === undefined
+      ? ""
+      : `MainPID=${fields["MainPID"] ?? ""}\nMemoryCurrent=${fields["MemoryCurrent"] ?? ""}\nCPUUsageNSec=${fields["CPUUsageNSec"] ?? ""}`,
+  )
+  const exitTimestamp = fields?.["ExecMainExitTimestamp"]
+  const execMainExitAt = parseSystemdTimestamp(exitTimestamp)
+  return {
+    ...resources,
+    unitFileState: stringField(fields?.["UnitFileState"]),
+    result: stringField(fields?.["Result"]),
+    // ExecMainStatus reads 0 before the main process ever exits; it only means
+    // something once there is an exit timestamp. Gate on the raw property, not
+    // the parsed time: a local-time timestamp from an older systemctl reads as
+    // unknown but still marks an exit.
+    execMainStatus:
+      exitTimestamp === undefined || exitTimestamp.length === 0 || exitTimestamp === "n/a"
+        ? null
+        : integerField(fields?.["ExecMainStatus"]),
+    execMainExitAt,
+    activeEnterAt: parseSystemdTimestamp(fields?.["ActiveEnterTimestamp"]),
+    restarts: integerField(fields?.["NRestarts"]),
+  }
+}
+
+interface SystemctlTimerJson {
+  readonly unit?: unknown
+  readonly activates?: unknown
+  readonly next?: unknown
+  readonly last?: unknown
+}
+
+const positiveMicros = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null
+
+/** Parse `systemctl list-timers --all --output=json`. `next`/`last` are null or 0 when unknown. */
+export const parseSystemctlListTimers = (json: string): ReadonlyArray<SystemctlTimer> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  return (parsed as ReadonlyArray<SystemctlTimerJson>).flatMap((entry) =>
+    typeof entry.unit === "string" && entry.unit.length > 0
+      ? [
+          {
+            unit: entry.unit,
+            activates: typeof entry.activates === "string" ? entry.activates : "",
+            nextUs: positiveMicros(entry.next),
+            lastUs: positiveMicros(entry.last),
+          },
+        ]
+      : [],
+  )
 }
 
 const normalizeLoadState = (value: string | undefined): SystemdUnitMetrics["loadState"] => {
@@ -177,12 +319,15 @@ const failExecution = (
     ...(opts?.streamId !== undefined && { streamId: opts.streamId }),
   })
 
-const entityRef = (nodeId: string, unit: string) => ({
+const entityRef = (nodeId: string, kind: string, unit: string) => ({
   pluginId: SYSTEMD_PLUGIN_ID,
-  kind: SYSTEMD_UNIT_KIND,
+  kind,
   nodeId,
   id: unit,
 }) as const
+
+/** `systemctl` arguments that select the manager for a scope. */
+const scopeArgs = (scope: SystemdScope): ReadonlyArray<string> => (scope === "user" ? ["--user"] : [])
 
 const getTargetUnit = (
   target: ActionTarget,
@@ -196,6 +341,24 @@ const getTargetUnit = (
   }
   return Effect.succeed(unit)
 }
+
+/** The target unit plus the manager that owns it, from the target entity's kind. */
+const getTargetService = (
+  target: ActionTarget,
+  actionId: string,
+): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> =>
+  getTargetUnit(target, { actionId }).pipe(
+    Effect.flatMap((unit): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> => {
+      const kind = target.entity?.kind
+      if (kind === SYSTEMD_UNIT_KIND) return Effect.succeed({ unit, scope: "system" })
+      if (kind === SYSTEMD_USER_UNIT_KIND) return Effect.succeed({ unit, scope: "user" })
+      return Effect.fail(
+        failExecution("invalid-target", `Systemd unit actions do not apply to ${String(kind)} entities`, {
+          actionId,
+        }),
+      )
+    }),
+  )
 
 const makeDefaultDependencies = (): SystemdDependencies => ({
   exec: (command, args) =>
@@ -279,7 +442,10 @@ const runChecked = (
     ),
   )
 
-/** Read-only systemctl queries; these work for any user on the system bus. */
+/**
+ * Read-only systemctl queries. System-scope reads work for any user on the
+ * system bus; user-scope reads (`--user`) reach the agent user's own manager.
+ */
 const runSystemctl = (
   deps: SystemdDependencies,
   args: ReadonlyArray<string>,
@@ -298,7 +464,8 @@ const permissionDenied = (operation: string, actionId: string) =>
 /**
  * State-changing systemctl calls. `--no-ask-password` makes polkit refuse
  * immediately instead of waiting for an interactive password, and a refusal
- * surfaces as a `permission-denied` execution error.
+ * surfaces as a `permission-denied` execution error. User-scope calls pass
+ * `--user` and go to the agent user's own manager, which needs no polkit grant.
  */
 const runSystemctlMutation = (
   deps: SystemdDependencies,
@@ -323,9 +490,10 @@ const runSystemctlMutation = (
 const getUnitFilePath = (
   deps: SystemdDependencies,
   unit: string,
+  scope: SystemdScope,
   actionId: string,
 ): Effect.Effect<string, PluginExecutionError> =>
-  runSystemctl(deps, ["show", "-p", "FragmentPath", unit]).pipe(
+  runSystemctl(deps, [...scopeArgs(scope), "show", "-p", "FragmentPath", unit]).pipe(
     Effect.flatMap((output) => {
       const match = output.match(/^FragmentPath=(.+)$/m)
       const path = match?.[1]?.trim() ?? ""
@@ -337,74 +505,174 @@ const getUnitFilePath = (
     }),
   )
 
-const collectEntities = (
+/** What one systemd manager (system or user) reported in one collection. */
+export interface ScopeSnapshot {
+  readonly scope: SystemdScope
+  readonly services: ReadonlyArray<SystemdUnitMetrics>
+  readonly timers: ReadonlyArray<SystemdUnitMetrics>
+  readonly schedule: ReadonlyArray<SystemctlTimer>
+  readonly details: ReadonlyMap<string, Record<string, string>>
+  /** False when `details` is a previous read reused after this one failed. */
+  readonly detailsFresh: boolean
+}
+
+const microsToMillis = (micros: number | null): number | null =>
+  micros === null ? null : Math.floor(micros / 1000)
+
+const unitEntity = (
   nodeId: string,
   ts: number,
-  units: ReadonlyArray<SystemdUnitMetrics>,
-): PluginCollectionResult => {
-  const entities = units.map((unit) => ({
-    ref: entityRef(nodeId, unit.unit),
+  scope: SystemdScope,
+  unit: SystemdUnitMetrics,
+  details: SystemdServiceDetails,
+) => {
+  const state: SystemdUnitState = {
+    scope,
+    description: unit.description,
+    loadState: unit.loadState,
+    activeState: unit.activeState,
+    subState: unit.subState,
+    unitFileState: details.unitFileState,
+    result: details.result,
+    execMainStatus: details.execMainStatus,
+    execMainExitAt: details.execMainExitAt,
+    activeEnterAt: details.activeEnterAt,
+    restarts: details.restarts,
+    pid: details.pid,
+    memoryBytes: details.memoryBytes,
+    cpuUsageNs: details.cpuUsageNs,
+  }
+  return {
+    ref: entityRef(nodeId, SYSTEMD_SERVICE_KINDS[scope], unit.unit),
     ts,
     displayName: unit.description.length > 0 ? unit.description : unit.unit,
     status: unit.activeState,
     labels: {
+      scope,
       loadState: unit.loadState,
       subState: unit.subState,
     },
-    state: {
-      description: unit.description,
-      loadState: unit.loadState,
-      activeState: unit.activeState,
-      subState: unit.subState,
-      pid: unit.pid,
-      memoryBytes: unit.memoryBytes,
-      cpuUsageNs: unit.cpuUsageNs,
+    state,
+  }
+}
+
+const timerEntity = (nodeId: string, ts: number, snapshot: ScopeSnapshot, timer: SystemdUnitMetrics) => {
+  const schedule = snapshot.schedule.find((entry) => entry.unit === timer.unit)
+  const fields = snapshot.details.get(timer.unit)
+  const activates = schedule?.activates || fields?.["Unit"] || ""
+  const activatedFields = activates.length > 0 ? snapshot.details.get(activates) : undefined
+  const cached = activatedFields === undefined ? null : serviceDetails(activatedFields)
+  const lastTriggerAt = schedule
+    ? microsToMillis(schedule.lastUs)
+    : parseSystemdTimestamp(fields?.["LastTriggerUSec"])
+  // Reused details can predate the timer's latest trigger; their result then
+  // belongs to an earlier run, so the last run reads as unknown rather than
+  // pairing the new trigger with an old outcome.
+  const activated =
+    !snapshot.detailsFresh &&
+    cached?.execMainExitAt != null &&
+    lastTriggerAt !== null &&
+    cached.execMainExitAt < lastTriggerAt
+      ? null
+      : cached
+  const state: SystemdTimerState = {
+    scope: snapshot.scope,
+    description: timer.description,
+    activeState: timer.activeState,
+    subState: timer.subState,
+    unitFileState: stringField(fields?.["UnitFileState"]),
+    activates,
+    // list-timers folds monotonic triggers (OnBootSec, OnUnitActiveSec) into
+    // `next`; NextElapseUSecRealtime only covers calendar triggers.
+    nextRunAt: schedule
+      ? microsToMillis(schedule.nextUs)
+      : parseSystemdTimestamp(fields?.["NextElapseUSecRealtime"]),
+    lastTriggerAt,
+    activatesState: stringField(activatedFields?.["ActiveState"]),
+    lastResult: activated?.result ?? null,
+    lastExitStatus: activated?.execMainStatus ?? null,
+    lastExitAt: activated?.execMainExitAt ?? null,
+  }
+  const lastRunFailed = state.lastResult !== null && state.lastResult !== "success"
+  return {
+    ref: entityRef(nodeId, SYSTEMD_TIMER_KINDS[snapshot.scope], timer.unit),
+    ts,
+    displayName: timer.description.length > 0 ? timer.description : timer.unit,
+    status: lastRunFailed ? "failed" : timer.activeState,
+    labels: {
+      scope: snapshot.scope,
+      activates,
     },
-  }))
+    state,
+  }
+}
+
+export const buildCollection = (
+  nodeId: string,
+  ts: number,
+  snapshots: ReadonlyArray<ScopeSnapshot>,
+): PluginCollectionResult => {
+  const services = snapshots.flatMap((snapshot) =>
+    snapshot.services.map((unit) => ({
+      scope: snapshot.scope,
+      unit,
+      details: serviceDetails(snapshot.details.get(unit.unit)),
+    })),
+  )
+  const timers = snapshots.flatMap((snapshot) =>
+    snapshot.timers.map((timer) => timerEntity(nodeId, ts, snapshot, timer)),
+  )
+  // The unit totals (and the unit.failed alert) keep meaning system services.
+  const systemServices = services.filter((service) => service.scope === "system")
+
+  const entities = [
+    ...services.map(({ scope, unit, details }) => unitEntity(nodeId, ts, scope, unit, details)),
+    ...timers,
+  ]
 
   const metrics = [
     {
       pluginId: SYSTEMD_PLUGIN_ID,
       metricId: SYSTEMD_METRIC_IDS.totalUnits,
       ts,
-      value: units.length,
+      value: systemServices.length,
       unit: "count",
     },
     {
       pluginId: SYSTEMD_PLUGIN_ID,
       metricId: SYSTEMD_METRIC_IDS.activeUnits,
       ts,
-      value: units.filter((unit) => unit.activeState === "active").length,
+      value: systemServices.filter(({ unit }) => unit.activeState === "active").length,
       unit: "count",
     },
     {
       pluginId: SYSTEMD_PLUGIN_ID,
       metricId: SYSTEMD_METRIC_IDS.failedUnits,
       ts,
-      value: units.filter((unit) => unit.activeState === "failed").length,
+      value: systemServices.filter(({ unit }) => unit.activeState === "failed").length,
       unit: "count",
     },
-    ...units.flatMap((unit) => {
-      const ref = entityRef(nodeId, unit.unit)
+    ...services.flatMap(({ scope, unit, details }) => {
+      const ref = entityRef(nodeId, SYSTEMD_SERVICE_KINDS[scope], unit.unit)
       return [
-        ...(unit.memoryBytes === null
+        ...(details.memoryBytes === null
           ? []
           : [{
               pluginId: SYSTEMD_PLUGIN_ID,
               metricId: SYSTEMD_METRIC_IDS.unitMemoryBytes,
               ts,
               entity: ref,
-              value: unit.memoryBytes,
+              value: details.memoryBytes,
               unit: "bytes",
             }]),
-        ...(unit.cpuUsageNs === null
+        ...(details.cpuUsageNs === null
           ? []
           : [{
               pluginId: SYSTEMD_PLUGIN_ID,
               metricId: SYSTEMD_METRIC_IDS.unitCpuUsageNs,
               ts,
               entity: ref,
-              value: unit.cpuUsageNs,
+              value: details.cpuUsageNs,
               unit: "ns",
             }]),
       ]
@@ -431,52 +699,101 @@ export const createSystemdAgentPlugin = (
       Effect.mapError((error) => failExecution("detect-failed", String(error))),
     )
 
-  const collect = (ctx: { readonly nodeId: string; readonly now: number }) =>
-    runSystemctl(deps, [
-      "list-units",
-      "--type=service",
-      "--all",
-      "--output=json",
-    ]).pipe(
+  const listUnits = (scope: SystemdScope, type: "service" | "timer") =>
+    runSystemctl(deps, [...scopeArgs(scope), "list-units", `--type=${type}`, "--all", "--output=json"]).pipe(
       Effect.map(parseSystemctlListUnits),
-      Effect.flatMap((units) => {
-        const enrichedUnits = new Set(
-          units
-            .filter((unit) => unit.activeState === "active")
-            .slice(0, MAX_ACTIVE_SERVICES)
-            .map((unit) => unit.unit),
-        )
-
-        return Effect.forEach(
-          units,
-          (unit) =>
-            !enrichedUnits.has(unit.unit)
-              ? Effect.succeed(unit)
-              : runSystemctl(deps, [
-                  "show",
-                  unit.unit,
-                  "--property=MainPID,MemoryCurrent,CPUUsageNSec",
-                ]).pipe(
-                  Effect.map((output) => {
-                    const resources = parseSystemctlShow(output)
-                    return {
-                      ...unit,
-                      pid: resources.pid,
-                      memoryBytes: resources.memoryBytes,
-                      cpuUsageNs: resources.cpuUsageNs,
-                    }
-                  }),
-                  Effect.orElseSucceed(() => unit),
-                ),
-          { concurrency: 8 },
-        )
-      }),
-      Effect.map((units) => collectEntities(ctx.nodeId, ctx.now, units)),
     )
 
+  /** Each manager's last successful detail read, reused when a later read fails. */
+  const lastDetails = new Map<SystemdScope, ReadonlyMap<string, Record<string, string>>>()
+
+  /**
+   * Every property in SHOW_PROPERTIES for `units`, in one systemctl call.
+   * `--timestamp=us+utc` (systemd 248+) makes timestamps parseable without the
+   * agent's locale or timezone; an older systemctl rejects it, so retry bare
+   * (its local-time timestamps then read as unknown).
+   *
+   * If both attempts fail, the scope keeps its last good details, so one
+   * manager's transient failure neither strips its units nor holds back the
+   * other manager's fresh data. Only a failure before any successful read
+   * fails the collection.
+   */
+  const showUnits = (scope: SystemdScope, units: ReadonlyArray<string>) => {
+    if (units.length === 0) {
+      return Effect.succeed({ details: new Map<string, Record<string, string>>() as ReadonlyMap<string, Record<string, string>>, fresh: true })
+    }
+    const args = [...scopeArgs(scope), "show", `--property=${SHOW_PROPERTIES.join(",")}`, ...units]
+    return runSystemctl(deps, [...args, "--timestamp=us+utc"]).pipe(
+      Effect.catch(() => runSystemctl(deps, args)),
+      Effect.map(parseSystemctlShowBatch),
+      Effect.tap((details) => Effect.sync(() => lastDetails.set(scope, details))),
+      Effect.map((details) => ({ details, fresh: true })),
+      Effect.catch((error) => {
+        const previous = lastDetails.get(scope)
+        return previous === undefined ? Effect.fail(error) : Effect.succeed({ details: previous, fresh: false })
+      }),
+    )
+  }
+
+  const emptyScope = (scope: SystemdScope): ScopeSnapshot => ({
+    scope,
+    services: [],
+    timers: [],
+    schedule: [],
+    details: new Map(),
+    detailsFresh: true,
+  })
+
+  /**
+   * One manager's units, timers, and details. Only a failed service listing of
+   * the user manager means "no user manager" (e.g. an agent run as a system
+   * service without a login session) and yields an empty scope; a failed
+   * detail read falls back as `showUnits` describes.
+   */
+  const collectScope = (scope: SystemdScope): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
+    listUnits(scope, "service").pipe(
+      Effect.map((services): ReadonlyArray<SystemdUnitMetrics> | null => services),
+      Effect.catch((error) => (scope === "user" ? Effect.succeed(null) : Effect.fail(error))),
+      Effect.flatMap((services) =>
+        services === null ? Effect.succeed(emptyScope(scope)) : collectListedScope(scope, services),
+      ),
+    )
+
+  const collectListedScope = (
+    scope: SystemdScope,
+    services: ReadonlyArray<SystemdUnitMetrics>,
+  ): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
+    Effect.all(
+      [
+        listUnits(scope, "timer").pipe(Effect.orElseSucceed(() => [])),
+        runSystemctl(deps, [...scopeArgs(scope), "list-timers", "--all", "--output=json"]).pipe(
+          Effect.map(parseSystemctlListTimers),
+          Effect.orElseSucceed(() => []),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    ).pipe(
+      Effect.flatMap(([timers, schedule]) =>
+        showUnits(scope, [
+          ...new Set([
+            ...services.map((unit) => unit.unit),
+            ...timers.map((timer) => timer.unit),
+            // A timer's service may not be loaded, so list-units can miss it.
+            ...schedule.map((entry) => entry.activates).filter((unit) => unit.length > 0),
+          ]),
+        ]).pipe(Effect.map(({ details, fresh }) => ({ scope, services, timers, schedule, details, detailsFresh: fresh }))),
+      ),
+    )
+
+  const collect = (ctx: { readonly nodeId: string; readonly now: number }) =>
+    Effect.all(
+      [collectScope("system"), collectScope("user")],
+      { concurrency: "unbounded" },
+    ).pipe(Effect.map((snapshots) => buildCollection(ctx.nodeId, ctx.now, snapshots)))
+
   const executeUnitAction = (verb: string, actionId: string, target: ActionTarget) =>
-    getTargetUnit(target, { actionId }).pipe(
-      Effect.flatMap((unit) => runSystemctlMutation(deps, [verb, unit], actionId)),
+    getTargetService(target, actionId).pipe(
+      Effect.flatMap(({ unit, scope }) => runSystemctlMutation(deps, [...scopeArgs(scope), verb, unit], actionId)),
       Effect.as({}),
     )
 
@@ -528,9 +845,9 @@ export const createSystemdAgentPlugin = (
       inputSchema: EmptyInputSchema,
       outputSchema: UnitFileSchema,
       execute: (_ctx, target: ActionTarget, _input: unknown) =>
-        getTargetUnit(target, { actionId: SYSTEMD_ACTION_IDS.readUnitFile }).pipe(
-          Effect.flatMap((unit) =>
-            getUnitFilePath(deps, unit, SYSTEMD_ACTION_IDS.readUnitFile).pipe(
+        getTargetService(target, SYSTEMD_ACTION_IDS.readUnitFile).pipe(
+          Effect.flatMap(({ unit, scope }) =>
+            getUnitFilePath(deps, unit, scope, SYSTEMD_ACTION_IDS.readUnitFile).pipe(
               Effect.flatMap((path) =>
                 deps.readFile(path).pipe(
                   Effect.map((content) => ({ path, content })),
@@ -550,9 +867,9 @@ export const createSystemdAgentPlugin = (
       inputSchema: UnitFileWriteInputSchema,
       outputSchema: EmptyInputSchema,
       execute: (_ctx, target: ActionTarget, input: unknown) =>
-        getTargetUnit(target, { actionId: SYSTEMD_ACTION_IDS.writeUnitFile }).pipe(
-          Effect.flatMap((unit) =>
-            getUnitFilePath(deps, unit, SYSTEMD_ACTION_IDS.writeUnitFile).pipe(
+        getTargetService(target, SYSTEMD_ACTION_IDS.writeUnitFile).pipe(
+          Effect.flatMap(({ unit, scope }) =>
+            getUnitFilePath(deps, unit, scope, SYSTEMD_ACTION_IDS.writeUnitFile).pipe(
               Effect.flatMap((targetPath) => {
                 const tempPath = deps.makeTempPath("scout-systemd-unit")
                 const { content } = input as { content: string }
@@ -576,7 +893,11 @@ export const createSystemdAgentPlugin = (
                     ),
                   ),
                   Effect.flatMap(() =>
-                    runSystemctlMutation(deps, ["daemon-reload"], SYSTEMD_ACTION_IDS.writeUnitFile),
+                    runSystemctlMutation(
+                      deps,
+                      [...scopeArgs(scope), "daemon-reload"],
+                      SYSTEMD_ACTION_IDS.writeUnitFile,
+                    ),
                   ),
                   Effect.as({}),
                   Effect.ensuring(deps.unlink(tempPath)),
