@@ -7,13 +7,14 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { EntitySnapshot, EventRecord } from "@scout/plugin-sdk"
 import type { Alert, OperatorSessionSummary, SystemMetricsSample } from "@scout/shared"
 import { K8S_PLUGIN_ID } from "@scout/plugin-k8s/contracts"
-import { SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND } from "@scout/plugin-systemd/contracts"
+import { EDGE_PLUGIN_ID } from "@scout/plugin-edge/contracts"
+import { SYSTEMD_PLUGIN_ID } from "@scout/plugin-systemd/contracts"
 import { HubClient } from "@/rpc/client"
 import { fetchSystemDetail, fetchSystemMetrics } from "@/server/systems"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import { useHydrated } from "@/hooks/use-hydrated"
 import { usePins } from "@/hooks/use-pins"
-import { usePluginEntities, usePluginEvents } from "@/hooks/use-plugin-data"
+import { pluginCapability, usePluginEntities, usePluginEvents } from "@/hooks/use-plugin-data"
 import { useUnitAction } from "@/hooks/use-unit-action"
 import { useConfirm } from "@/providers/confirm-provider"
 import { useTerminalPanel } from "@/providers/terminal-provider"
@@ -22,12 +23,23 @@ import { EmptyRow, GroupLabel, Page, PageHeader, Section } from "@/components/se
 import { Sparkline } from "@/components/sparkline"
 import { TimeAgo } from "@/components/time-ago"
 import { StatusDot, type StatusTone } from "@/components/status-dot"
+import { TimersTable } from "@/components/timers-table"
 import { UnitsTable } from "@/components/units-table"
 import { pluginUnavailable } from "@/components/plugin-status"
 import { formatBytes, formatBytesPerSec, formatDuration } from "@/lib/format"
 import { HEALTH_METRICS, METRIC_LABELS, formatMetricValue, ruleTone } from "@/lib/health"
 import { summarizeNamespaces, uniqueEvents } from "@/lib/k8s"
-import { byFailedThenName, unitState } from "@/lib/systemd"
+import { edgeSummary, edgeTone, isProxy, isTunnel } from "@/lib/edge"
+import {
+  byFailedThenName,
+  byTimerPriority,
+  isServiceEntity,
+  isTimerEntity,
+  pinKey,
+  timerFailed,
+  timerState,
+  unitState,
+} from "@/lib/systemd"
 import { getAvailablePluginCapabilities } from "@/lib/system-capabilities"
 import { toast } from "sonner"
 
@@ -149,14 +161,15 @@ function healthCells(
 // ── Services ─────────────────────────────────────────────────────────────────
 
 function ServicesSection({ systemId, hostname, system }: { systemId: string; hostname: string; system: Parameters<typeof pluginUnavailable>[0] }) {
-  const units = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND)
+  const entities = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID)
+  const units = { loading: entities.loading, items: entities.items.filter(isServiceEntity) }
   const { pins, isPinned, toggle } = usePins(systemId)
   const { run } = useUnitAction(systemId, hostname)
   const unavailable = pluginUnavailable(system, SYSTEMD_PLUGIN_ID, "systemd")
   const failed = units.items.filter((unit) => unitState(unit).activeState === "failed").sort(byFailedThenName)
   const active = units.items.filter((unit) => unitState(unit).activeState === "active").length
   const pinned = pins
-    .map((id) => units.items.find((unit) => unit.ref.id === id))
+    .map((key) => units.items.find((unit) => pinKey(unitState(unit).scope, unit.ref.id) === key))
     .filter((unit): unit is EntitySnapshot => unit !== undefined && !failed.includes(unit))
 
   return (
@@ -283,6 +296,95 @@ function ClusterSection({ systemId, system }: { systemId: string; system: Parame
             )}
           </>
         ))}
+    </Section>
+  )
+}
+
+// ── Ingress ──────────────────────────────────────────────────────────────────
+
+/** cloudflared tunnels and Caddy from the edge plugin; renders nothing until the plugin reports. */
+function IngressSection({ systemId, system }: { systemId: string; system: Parameters<typeof pluginUnavailable>[0] }) {
+  const entities = usePluginEntities(systemId, EDGE_PLUGIN_ID)
+  const capability = pluginCapability(system, EDGE_PLUGIN_ID)
+  // Tunnels first, then proxies; each kind in name order.
+  const rows = [...entities.items.filter(isTunnel), ...entities.items.filter(isProxy)]
+  if (capability === null || capability.status === "unsupported" || rows.length === 0) return null
+
+  return (
+    <Section
+      title="Ingress"
+      aside={
+        <>
+          <span>tunnel + proxy</span>
+          <Link
+            to="/systems/$systemId/plugins/$pluginId"
+            params={{ systemId, pluginId: EDGE_PLUGIN_ID }}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            View all →
+          </Link>
+        </>
+      }
+    >
+      <table className="w-full table-fixed text-left text-[13px]">
+        <tbody>
+          {rows.map((entity) => (
+            <tr key={`${entity.ref.kind}/${entity.ref.id}`} className="border-t border-border first:border-t-0">
+              <td className="w-[34%] truncate px-4 py-2.5">
+                <span className="flex items-center gap-2.5">
+                  <StatusDot tone={edgeTone(entity)} label={entity.status} />
+                  <span className="truncate font-mono" title={entity.ref.id}>
+                    {entity.ref.id}
+                  </span>
+                </span>
+              </td>
+              <td className="truncate px-4 py-2.5 text-muted-foreground">{edgeSummary(entity)}</td>
+              <td className="w-24 px-4 py-2.5 text-right text-subtle">{entity.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Section>
+  )
+}
+
+// ── Backups & timers ─────────────────────────────────────────────────────────
+
+const OVERVIEW_TIMERS = 5
+
+/** systemd timers, failed and backups first; renders nothing until the plugin reports timers. */
+function BackupsSection({ systemId }: { systemId: string }) {
+  const entities = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID)
+  const timers = entities.items.filter(isTimerEntity).sort(byTimerPriority)
+  if (timers.length === 0) return null
+  const failed = timers.filter((timer) => timerFailed(timerState(timer))).length
+
+  return (
+    <Section
+      title="Backups & timers"
+      aside={
+        <>
+          <span>
+            systemd timers · <span className="tabular">{timers.length}</span>
+            {failed > 0 ? (
+              <>
+                {" "}
+                · <span className="text-err tabular">{failed}</span> failed
+              </>
+            ) : null}
+          </span>
+          <Link
+            to="/systems/$systemId/services"
+            params={{ systemId }}
+            hash="timers"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            View all →
+          </Link>
+        </>
+      }
+    >
+      <TimersTable systemId={systemId} timers={timers.slice(0, OVERVIEW_TIMERS)} />
     </Section>
   )
 }
@@ -543,6 +645,8 @@ function MachineOverviewPage() {
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <ServicesSection systemId={systemId} hostname={system.hostname} system={system} />
         <ClusterSection systemId={systemId} system={system} />
+        <IngressSection systemId={systemId} system={system} />
+        <BackupsSection systemId={systemId} />
         <ActivitySection systemId={systemId} alerts={alerts} sessions={sessions} events={k8sEvents.items} />
       </div>
     </Page>
