@@ -1,13 +1,16 @@
 import { useCallback } from "react"
 import { useAtomSet } from "@effect/atom-react"
 import { toast } from "sonner"
-import { SYSTEMD_ACTION_IDS, SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND } from "@scout/plugin-systemd/contracts"
+import { SYSTEMD_ACTION_IDS, SYSTEMD_PLUGIN_ID, SYSTEMD_SERVICE_KINDS } from "@scout/plugin-systemd/contracts"
 import { HubClient } from "@/rpc/client"
 import { useConfirm } from "@/providers/confirm-provider"
-import { UNIT_ACTIONS, type UnitActionKind } from "@/lib/systemd"
+import { UNIT_ACTIONS, systemctlFor, type SystemdScope, type UnitActionKind } from "@/lib/systemd"
 
 const PERMISSION_NOTE =
   "The agent runs systemctl with --no-ask-password, so a unit change it is not permitted to make fails right away instead of waiting for a password."
+
+const USER_SCOPE_NOTE =
+  "This is a user unit: the agent changes it through its own user manager (systemctl --user), which needs no polkit grant."
 
 const errorMessage = (error: unknown): string => {
   if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
@@ -25,15 +28,15 @@ export function useUnitAction(systemId: string, hostname: string) {
   const runAction = useAtomSet(HubClient.mutation("plugins.runAction"), { mode: "promise" })
 
   const run = useCallback(
-    async (kind: UnitActionKind, unitId: string) => {
+    async (kind: UnitActionKind, unitId: string, scope: SystemdScope = "system") => {
       const action = UNIT_ACTIONS[kind]
       const confirmed = await confirm({
-        title: `${action.verb} ${unitId} on ${hostname}?`,
+        title: `${action.verb} ${scope === "user" ? "user unit " : ""}${unitId} on ${hostname}?`,
         description: `${action.effect} Scout records this action in the hub audit log under your identity.`,
-        command: `systemctl ${kind} ${unitId}`,
+        command: `${systemctlFor(scope)} ${kind} ${unitId}`,
         confirmLabel: action.verb,
         destructive: action.destructive,
-        note: PERMISSION_NOTE,
+        note: scope === "user" ? USER_SCOPE_NOTE : PERMISSION_NOTE,
       })
       if (!confirmed) return
       try {
@@ -42,7 +45,7 @@ export function useUnitAction(systemId: string, hostname: string) {
             agentId: systemId,
             pluginId: SYSTEMD_PLUGIN_ID,
             actionId: action.actionId,
-            entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_UNIT_KIND, id: unitId },
+            entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_SERVICE_KINDS[scope], id: unitId },
           },
         })
         if (result.success) toast.success(result.summary ?? `${action.verb} ${unitId}: done`)

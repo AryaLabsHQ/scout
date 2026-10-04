@@ -2,7 +2,8 @@ import { useMemo } from "react"
 import { lastValue } from "@/lib/async-result"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useAtomValue } from "@effect/atom-react"
-import { SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND } from "@scout/plugin-systemd/contracts"
+import type { EntitySnapshot } from "@scout/plugin-sdk"
+import { SYSTEMD_PLUGIN_ID } from "@scout/plugin-systemd/contracts"
 import { HubClient } from "@/rpc/client"
 import { fetchSystemDetail } from "@/server/systems"
 import { usePins } from "@/hooks/use-pins"
@@ -10,10 +11,19 @@ import { usePluginEntities } from "@/hooks/use-plugin-data"
 import { useUnitAction } from "@/hooks/use-unit-action"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { EmptyRow, Page, PageHeader, Section } from "@/components/section"
+import { EmptyRow, GroupLabel, Page, PageHeader, Section } from "@/components/section"
+import { TimersTable } from "@/components/timers-table"
 import { UnitsTable } from "@/components/units-table"
 import { pluginUnavailable } from "@/components/plugin-status"
-import { unitState } from "@/lib/systemd"
+import {
+  byTimerPriority,
+  isServiceEntity,
+  isTimerEntity,
+  pinKey,
+  timerFailed,
+  timerState,
+  unitState,
+} from "@/lib/systemd"
 import { cn } from "@/lib/utils"
 
 const FILTERS = ["all", "failed", "active", "inactive", "pinned"] as const
@@ -33,6 +43,9 @@ export const Route = createFileRoute("/systems_/$systemId/services")({
   component: ServicesPage,
 })
 
+const isUnitPinned = (pins: ReadonlyArray<string>, unit: EntitySnapshot): boolean =>
+  pins.includes(pinKey(unitState(unit).scope, unit.ref.id))
+
 function ServicesPage() {
   const { systemId } = Route.useParams()
   const { q = "", state: filter = "all" } = Route.useSearch()
@@ -41,38 +54,75 @@ function ServicesPage() {
   const systemResult = useAtomValue(HubClient.query("systems.get", { id: systemId }))
   const system = lastValue(systemResult, null) ?? detail
   const hostname = system?.hostname ?? systemId
-  const units = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID, SYSTEMD_UNIT_KIND)
+  const entities = usePluginEntities(systemId, SYSTEMD_PLUGIN_ID)
+  const units = useMemo(() => entities.items.filter(isServiceEntity), [entities.items])
+  const timers = useMemo(() => entities.items.filter(isTimerEntity), [entities.items])
   const { pins, isPinned, toggle } = usePins(systemId)
   const { run, daemonReload } = useUnitAction(systemId, hostname)
   const unavailable = pluginUnavailable(system, SYSTEMD_PLUGIN_ID, "systemd")
 
   const counts = useMemo(() => {
-    const states = units.items.map((unit) => unitState(unit).activeState)
+    const states = units.map((unit) => unitState(unit).activeState)
     return {
       all: states.length,
       failed: states.filter((state) => state === "failed").length,
       active: states.filter((state) => state === "active").length,
       inactive: states.filter((state) => state === "inactive").length,
-      pinned: units.items.filter((unit) => pins.includes(unit.ref.id)).length,
+      pinned: units.filter((unit) => isUnitPinned(pins, unit)).length,
     } satisfies Record<Filter, number>
-  }, [pins, units.items])
+  }, [pins, units])
 
   const rows = useMemo(() => {
     const needle = q.toLowerCase()
-    return units.items
+    return units
       .filter((unit) => {
         const state = unitState(unit)
-        if (filter === "pinned" && !pins.includes(unit.ref.id)) return false
+        if (filter === "pinned" && !isUnitPinned(pins, unit)) return false
         if (filter !== "all" && filter !== "pinned" && state.activeState !== filter) return false
         return needle.length === 0 || `${unit.ref.id} ${state.description}`.toLowerCase().includes(needle)
       })
       .sort(
         (a, b) =>
           Number(unitState(b).activeState === "failed") - Number(unitState(a).activeState === "failed") ||
-          Number(pins.includes(b.ref.id)) - Number(pins.includes(a.ref.id)) ||
+          Number(isUnitPinned(pins, b)) - Number(isUnitPinned(pins, a)) ||
           a.ref.id.localeCompare(b.ref.id),
       )
-  }, [filter, pins, q, units.items])
+  }, [filter, pins, q, units])
+  const systemRows = rows.filter((unit) => unitState(unit).scope === "system")
+  const userRows = rows.filter((unit) => unitState(unit).scope === "user")
+
+  // Timers follow the text filter, and the failed / active / inactive chips by
+  // their own state; pins are for units only.
+  const timerRows = useMemo(() => {
+    const needle = q.toLowerCase()
+    return timers
+      .filter((timer) => {
+        const state = timerState(timer)
+        if (filter === "pinned") return false
+        if (filter === "failed" && !timerFailed(state)) return false
+        if ((filter === "active" || filter === "inactive") && state.activeState !== filter) return false
+        return needle.length === 0 || `${timer.ref.id} ${state.activates} ${state.description}`.toLowerCase().includes(needle)
+      })
+      .sort(byTimerPriority)
+  }, [filter, q, timers])
+
+  const unitGroup = (label: string, aside: string, group: typeof rows, empty: string) => (
+    <>
+      <GroupLabel aside={<span className="tabular">{aside}</span>}>{label}</GroupLabel>
+      {group.length > 0 ? (
+        <UnitsTable
+          systemId={systemId}
+          units={group}
+          isPinned={isPinned}
+          onTogglePin={toggle}
+          onAction={run}
+          showHeader
+        />
+      ) : (
+        <EmptyRow>{empty}</EmptyRow>
+      )}
+    </>
+  )
 
   const setSearch = (next: ServicesSearch) =>
     void navigate({ search: (previous: ServicesSearch) => ({ ...previous, ...next }), replace: true })
@@ -90,7 +140,12 @@ function ServicesPage() {
           </>
         }
         title="Services"
-        meta={<span>systemd system units on {hostname} · ☆ pins a unit to the overview (stored in this browser)</span>}
+        meta={
+          <span>
+            systemd system and user units, and timers, on {hostname} · ☆ pins a unit to the overview (stored in this
+            browser)
+          </span>
+        }
         actions={
           <Button size="sm" variant="outline" onClick={() => void daemonReload()} disabled={unavailable !== null}>
             Reload systemd
@@ -129,21 +184,34 @@ function ServicesPage() {
 
       <Section className="mt-4">
         {unavailable ??
-          (units.loading ? (
+          (entities.loading ? (
             <EmptyRow>Loading units…</EmptyRow>
-          ) : rows.length === 0 ? (
-            <EmptyRow>{units.items.length === 0 ? "No units reported yet." : "No units match this filter."}</EmptyRow>
+          ) : units.length === 0 ? (
+            <EmptyRow>No units reported yet.</EmptyRow>
           ) : (
-            <UnitsTable
-              systemId={systemId}
-              units={rows}
-              isPinned={isPinned}
-              onTogglePin={toggle}
-              onAction={run}
-              showHeader
-            />
+            <>
+              {unitGroup("SYSTEM · systemctl", String(systemRows.length), systemRows, "No system units match this filter.")}
+              {units.some((unit) => unitState(unit).scope === "user")
+                ? unitGroup(
+                    "USER · systemctl --user",
+                    String(userRows.length),
+                    userRows,
+                    "No user units match this filter.",
+                  )
+                : null}
+            </>
           ))}
       </Section>
+
+      {unavailable === null && timers.length > 0 ? (
+        <Section id="timers" className="mt-6" title="Timers" aside={<span>next and last run of each timer</span>}>
+          {timerRows.length > 0 ? (
+            <TimersTable systemId={systemId} timers={timerRows} />
+          ) : (
+            <EmptyRow>No timers match this filter.</EmptyRow>
+          )}
+        </Section>
+      ) : null}
     </Page>
   )
 }

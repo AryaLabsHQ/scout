@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { StatusDot } from "@/components/status-dot"
-import { shortUnitName, unitState, unitTone, type UnitActionKind } from "@/lib/systemd"
+import { pinKey, shortUnitName, unitState, unitTone, type SystemdScope, type UnitActionKind } from "@/lib/systemd"
 import { cn } from "@/lib/utils"
 
 export function PinButton({ pinned, onToggle, className }: { pinned: boolean; onToggle: () => void; className?: string }) {
@@ -85,6 +85,7 @@ export function UnitActionsMenu({
 /**
  * systemd units as compact rows: optional pin star, status dot, unit name,
  * description, sub-state, and an optional ⋯ menu. Rows open the unit page.
+ * Units of either manager can share a table; pins and actions carry the scope.
  */
 export function UnitsTable({
   systemId,
@@ -96,14 +97,19 @@ export function UnitsTable({
 }: {
   systemId: string
   units: ReadonlyArray<EntitySnapshot>
-  isPinned: (unitId: string) => boolean
-  onTogglePin?: (unitId: string) => void
-  onAction?: (kind: UnitActionKind, unitId: string) => void
+  /** Takes a pin key (`pinKey`), not a bare unit id. */
+  isPinned: (key: string) => boolean
+  onTogglePin?: (key: string) => void
+  onAction?: (kind: UnitActionKind, unitId: string, scope: SystemdScope) => void
   showHeader?: boolean
 }) {
   const navigate = useNavigate()
-  const open = (unitId: string) =>
-    void navigate({ to: "/systems/$systemId/services/$unitId", params: { systemId, unitId } })
+  const open = (unitId: string, scope: SystemdScope) =>
+    void navigate({
+      to: "/systems/$systemId/services/$unitId",
+      params: { systemId, unitId },
+      search: scope === "user" ? { scope } : {},
+    })
 
   return (
     <table className="w-full table-fixed text-left text-[13px]">
@@ -122,22 +128,24 @@ export function UnitsTable({
         {units.map((unit) => {
           const state = unitState(unit)
           const id = unit.ref.id
-          const pinned = isPinned(id)
+          const key = pinKey(state.scope, id)
+          const pinned = isPinned(key)
           return (
             <tr
-              key={id}
-              onClick={() => open(id)}
+              key={`${unit.ref.kind}/${id}`}
+              onClick={() => open(id, state.scope)}
               className="cursor-pointer border-t border-border first:border-t-0 hover:bg-raised"
             >
               {onTogglePin ? (
                 <td className="w-11 px-2 py-1.5">
-                  <PinButton pinned={pinned} onToggle={() => onTogglePin(id)} />
+                  <PinButton pinned={pinned} onToggle={() => onTogglePin(key)} />
                 </td>
               ) : null}
               <td className={cn("truncate px-4 py-2.5", showHeader ? "w-[34%]" : "w-[46%]")}>
                 <span className="flex items-center gap-2.5">
                   <StatusDot tone={unitTone(state)} label={state.activeState} />
                   <span className="truncate font-mono text-[13px]">{shortUnitName(id)}</span>
+                  {state.scope === "user" ? <span className="shrink-0 text-xs text-subtle">user</span> : null}
                 </span>
               </td>
               <td className="truncate px-4 py-2.5 text-muted-foreground">{state.description}</td>
@@ -154,9 +162,9 @@ export function UnitsTable({
                   <UnitActionsMenu
                     unitId={id}
                     pinned={pinned}
-                    onAction={(kind) => onAction(kind, id)}
-                    onTogglePin={() => onTogglePin?.(id)}
-                    onOpen={() => open(id)}
+                    onAction={(kind) => onAction(kind, id, state.scope)}
+                    onTogglePin={() => onTogglePin?.(key)}
+                    onOpen={() => open(id, state.scope)}
                   />
                 </td>
               ) : null}
