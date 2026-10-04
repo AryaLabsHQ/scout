@@ -4,11 +4,12 @@
  * Implements the shared `ClientAuthMiddleware` for `ClientHubRpcs`. The
  * websocket upgrade already passed `HttpAuthGate`; the RPC server copies the
  * upgrade request's headers onto every RPC, so each call re-verifies the
- * Access JWT (rejecting calls once it expires), provides `CurrentIdentity` to
- * the handler, and logs who invoked every RPC that can change state.
+ * Access JWT, provides `CurrentIdentity` to the handler, and logs who invoked
+ * every RPC that can change state. A call still running when its JWT expires
+ * (typically a live subscription) fails with `Unauthorized` at that moment.
  */
 
-import { Effect, Layer } from "effect"
+import { Clock, Duration, Effect, Layer } from "effect"
 import type * as Rpc from "effect/rpc/Rpc"
 import type * as RpcGroup from "effect/rpc/RpcGroup"
 import {
@@ -82,7 +83,7 @@ export const ClientAuthMiddlewareLive = Layer.effect(
 
     return ClientAuthMiddleware.of((effect, { rpc, payload, headers }) =>
       Effect.gen(function* () {
-        const identity = yield* browserAuth.authenticate(headers).pipe(
+        const { identity, expiresAt } = yield* browserAuth.authenticate(headers).pipe(
           Effect.mapError((error) => new Unauthorized({ message: error.message })),
         )
         const actor = actorOf(identity)
@@ -98,9 +99,18 @@ export const ClientAuthMiddlewareLive = Layer.effect(
           )
         }
 
-        return yield* effect.pipe(
+        const handled = effect.pipe(
           Effect.provideService(CurrentIdentity, identity),
           Effect.annotateLogs({ actor }),
+        )
+        if (expiresAt === null) return yield* handled
+
+        const remaining = expiresAt - (yield* Clock.currentTimeMillis)
+        return yield* Effect.raceFirst(
+          handled,
+          Effect.sleep(Duration.millis(Math.max(0, remaining))).pipe(
+            Effect.andThen(Effect.fail(new Unauthorized({ message: "Cloudflare Access session expired" }))),
+          ),
         )
       }),
     )

@@ -199,7 +199,13 @@ const decodeJsonSegment = (segment: string): Record<string, unknown> | null => {
 const nonEmptyString = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null
 
-export type AccessJwtVerifier = (token: string) => Effect.Effect<Identity, AccessJwtError>
+/** A verified caller and when its credential stops being valid (epoch ms; `null` = never). */
+export interface Authenticated {
+  readonly identity: Identity
+  readonly expiresAt: number | null
+}
+
+export type AccessJwtVerifier = (token: string) => Effect.Effect<Authenticated, AccessJwtError>
 
 export const makeAccessJwtVerifier = (options: AccessJwtVerifierOptions): AccessJwtVerifier => {
   const skewSeconds = Duration.toSeconds(Duration.fromInputUnsafe(options.clockSkew ?? "30 seconds"))
@@ -257,9 +263,9 @@ export const makeAccessJwtVerifier = (options: AccessJwtVerifierOptions): Access
       if (subject === null) return yield* reject("missing-subject", "Access JWT has no subject")
 
       return {
-        source: "cloudflare-access",
-        subject,
-        email: nonEmptyString(claims.email),
-      } satisfies Identity
+        identity: { source: "cloudflare-access", subject, email: nonEmptyString(claims.email) },
+        // The same leeway the `exp` check above grants.
+        expiresAt: (claims.exp + skewSeconds) * 1000,
+      } satisfies Authenticated
     })
 }

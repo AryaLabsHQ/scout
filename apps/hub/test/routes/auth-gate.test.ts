@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Exit, Layer, Redacted, Stream } from "effect"
 import { BunHttpServer } from "@effect/platform-bun"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -79,7 +79,8 @@ const systemFor = (hostname: string): System => ({
   createdAt: 0,
 })
 
-// Only `systems.list` is exercised; it echoes the caller's identity.
+// `systems.list` echoes the caller's identity; `systems.subscribe` never ends
+// on its own, standing in for a live subscription.
 const StubClientHandlers = ClientHubRpcs.toLayer(
   Effect.succeed({
     ...Object.fromEntries(
@@ -87,6 +88,7 @@ const StubClientHandlers = ClientHubRpcs.toLayer(
     ),
     "systems.list": () =>
       CurrentIdentity.use((identity) => Effect.succeed([systemFor(identity.email ?? identity.subject)])),
+    "systems.subscribe": () => Stream.never,
   } as never),
 )
 
@@ -141,6 +143,25 @@ const upgradeOutcome = (url: string, headers: Record<string, string>) =>
         socket.addEventListener("close", () => resolve("rejected"))
       }),
   )
+
+const connectRpc = (token: string) =>
+  Effect.gen(function* () {
+    const url = yield* wsUrl
+    const socket = yield* Socket.makeWebSocket(url).pipe(
+      Effect.provideService(
+        Socket.WebSocketConstructor,
+        (target) => new globalThis.WebSocket(target, { headers: { "cf-access-jwt-assertion": token } }),
+      ),
+    )
+    // Build the protocol in the caller's scope so its socket outlives `make`.
+    const protocol = yield* Layer.build(
+      RpcClient.layerProtocolSocket().pipe(
+        Layer.provide(Layer.succeed(Socket.Socket)(socket)),
+        Layer.provide(RpcSerialization.layerNdjson),
+      ),
+    )
+    return yield* RpcClient.make(ClientHubRpcs).pipe(Effect.provide(protocol))
+  })
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -202,24 +223,7 @@ describe("HttpAuthGate", () => {
 
   it.live("serves RPCs over an authenticated /ws/rpc and provides the identity", () =>
     Effect.gen(function* () {
-      const url = yield* wsUrl
-      const token = yield* Effect.promise(validToken)
-
-      const socket = yield* Socket.makeWebSocket(url).pipe(
-        Effect.provideService(
-          Socket.WebSocketConstructor,
-          (target) => new globalThis.WebSocket(target, { headers: { "cf-access-jwt-assertion": token } }),
-        ),
-      )
-      // Build the protocol in the test scope so its socket outlives `make`.
-      const protocol = yield* Layer.build(
-        RpcClient.layerProtocolSocket().pipe(
-          Layer.provide(Layer.succeed(Socket.Socket)(socket)),
-          Layer.provide(RpcSerialization.layerNdjson),
-        ),
-      )
-      const client = yield* RpcClient.make(ClientHubRpcs).pipe(Effect.provide(protocol))
-
+      const client = yield* connectRpc(yield* Effect.promise(validToken))
       const systems = yield* client["systems.list"]().pipe(Effect.timeout("5 seconds"))
       expect(systems.map((system) => system.hostname)).toEqual([TEST_EMAIL])
     }).pipe(
@@ -227,5 +231,23 @@ describe("HttpAuthGate", () => {
       Effect.scoped,
       Effect.provide(ServeHub),
     ),
+  )
+
+  it.live("ends a live subscription when its JWT expires", () =>
+    Effect.gen(function* () {
+      // Accepted thanks to the 30 s clock-skew leeway, which runs out ~2 s from now.
+      const token = yield* Effect.promise(() =>
+        signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 28 })),
+      )
+      const client = yield* connectRpc(token)
+      const exit = yield* client["systems.subscribe"]().pipe(
+        Stream.runDrain,
+        Effect.timeout("10 seconds"),
+        Effect.exit,
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
+    }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+    15_000,
   )
 })

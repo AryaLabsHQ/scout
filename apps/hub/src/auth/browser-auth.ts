@@ -20,6 +20,7 @@ import {
   makeAccessJwtVerifier,
   makeAccessKeyStore,
   type AccessJwtVerifier,
+  type Authenticated,
   type FetchJwks,
 } from "./access-jwt.js"
 
@@ -45,7 +46,7 @@ export const accessTokenFromHeaders = (headers: Headers.Headers): string | null 
 }
 
 export interface BrowserAuthShape {
-  readonly authenticate: (headers: Headers.Headers) => Effect.Effect<Identity, AccessJwtError>
+  readonly authenticate: (headers: Headers.Headers) => Effect.Effect<Authenticated, AccessJwtError>
 }
 
 export class BrowserAuth extends Context.Service<BrowserAuth, BrowserAuthShape>()("@scout/BrowserAuth") {
@@ -65,7 +66,7 @@ export class BrowserAuth extends Context.Service<BrowserAuth, BrowserAuthShape>(
   })
 
   static readonly disabled: BrowserAuthShape = {
-    authenticate: () => Effect.succeed(LOCAL_DEV_IDENTITY),
+    authenticate: () => Effect.succeed({ identity: LOCAL_DEV_IDENTITY, expiresAt: null }),
   }
 
   /** Requires `HubConfig` and, in Access mode, an `HttpClient` for the JWKS. */

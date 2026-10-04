@@ -51,9 +51,12 @@ describe("Access JWT verification", () => {
       const { verify } = yield* makeHarness([signerA])
       const identity = yield* verify(yield* sign(signerA))
       expect(identity).toEqual({
-        source: "cloudflare-access",
-        subject: "7335d417-61da-459d-899c-0a01c76a2f94",
-        email: TEST_EMAIL,
+        identity: {
+          source: "cloudflare-access",
+          subject: "7335d417-61da-459d-899c-0a01c76a2f94",
+          email: TEST_EMAIL,
+        },
+        expiresAt: (3600 + 30) * 1000,
       })
     }),
   )
@@ -64,7 +67,7 @@ describe("Access JWT verification", () => {
       const identity = yield* verify(
         yield* sign(signerA, { sub: "", email: undefined, common_name: "client-id.access" }),
       )
-      expect(identity).toEqual({ source: "cloudflare-access", subject: "client-id.access", email: null })
+      expect(identity.identity).toEqual({ source: "cloudflare-access", subject: "client-id.access", email: null })
     }),
   )
 
@@ -137,7 +140,7 @@ describe("Access JWT verification", () => {
 
       yield* TestClock.adjust("31 seconds")
       const identity = yield* verify(rotated)
-      expect(identity.email).toBe(TEST_EMAIL)
+      expect(identity.identity.email).toBe(TEST_EMAIL)
       expect(yield* Ref.get(fetches)).toBe(2)
 
       // Known kids are served from the cache.
@@ -174,7 +177,7 @@ describe("BrowserAuth token extraction", () => {
       const { verify } = yield* makeHarness([signerA])
       const auth = BrowserAuth.fromVerifier(verify)
       const identity = yield* auth.authenticate(Headers.fromInput({ "cf-access-jwt-assertion": yield* sign(signerA) }))
-      expect(identity.email).toBe(TEST_EMAIL)
+      expect(identity.identity.email).toBe(TEST_EMAIL)
     }),
   )
 
@@ -184,7 +187,7 @@ describe("BrowserAuth token extraction", () => {
       const auth = BrowserAuth.fromVerifier(verify)
       const token = yield* sign(signerA)
       const identity = yield* auth.authenticate(Headers.fromInput({ cookie: `theme=dark; CF_Authorization=${token}` }))
-      expect(identity.email).toBe(TEST_EMAIL)
+      expect(identity.identity.email).toBe(TEST_EMAIL)
     }),
   )
 
@@ -204,7 +207,10 @@ describe("BrowserAuth token extraction", () => {
 
   it.effect("disabled mode returns the local development identity", () =>
     Effect.gen(function* () {
-      expect(yield* BrowserAuth.disabled.authenticate(Headers.fromInput({}))).toEqual(LOCAL_DEV_IDENTITY)
+      expect(yield* BrowserAuth.disabled.authenticate(Headers.fromInput({}))).toEqual({
+        identity: LOCAL_DEV_IDENTITY,
+        expiresAt: null,
+      })
     }),
   )
 })
