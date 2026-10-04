@@ -16,7 +16,7 @@ import {
 } from "../../src/rpc/handlers.js"
 import { HubAgentRpcs, ManagementError } from "@scout/shared"
 import * as RpcMessage from "effect/rpc/RpcMessage"
-import { AgentPluginHost } from "../../src/services/plugin-host.js"
+import { AgentPluginHost, PluginHostError } from "../../src/services/plugin-host.js"
 import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
 import type { TerminalOutput } from "@scout/shared"
 
@@ -158,6 +158,27 @@ describe("generic plugin handler delegation", () => {
     expect(actionCalls).toHaveLength(1)
     expect(actionCalls[0]?.["pluginId"]).toBe("systemd")
     expect(actionCalls[0]?.["actionId"]).toBe("unit.restart")
+  })
+
+  it("plugins.runAction keeps the plugin's error code and explanation", async () => {
+    const result = await Effect.runPromise(
+      callHandler(
+        "plugins.runAction",
+        {
+          pluginId: "systemd",
+          actionId: "unit.stop",
+          entity: { pluginId: "systemd", kind: "systemd.unit", id: "nginx.service" },
+        },
+        {
+          runAction: () =>
+            Effect.fail(new PluginHostError("permission-denied", "systemctl stop nginx.service requires root")),
+        },
+      ),
+    )
+
+    expect(result).toMatchObject({
+      err: { code: "permission-denied", message: "systemctl stop nginx.service requires root" },
+    })
   })
 
   it("plugins.logs delegates through the plugin host", async () => {
