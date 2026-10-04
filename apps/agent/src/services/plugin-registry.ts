@@ -13,14 +13,13 @@ export interface LoadedAgentPlugin extends LoadedScoutPlugin {
   readonly agent: ScoutAgentPlugin
 }
 
-const isDirectoryReadable = (path: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      await access(path, fsConstants.R_OK)
-      return true
-    },
-    catch: () => false,
-  })
+const isDirectoryReadable = (path: string): Effect.Effect<boolean> =>
+  Effect.promise(() =>
+    access(path, fsConstants.R_OK).then(
+      () => true,
+      () => false,
+    ),
+  )
 
 const hasAgentRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedAgentPlugin =>
   plugin.agent !== undefined

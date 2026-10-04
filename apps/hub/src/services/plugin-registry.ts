@@ -26,14 +26,13 @@ export interface LoadedOperatorPlugin extends LoadedScoutPlugin {
   readonly operator: ScoutOperatorSurface
 }
 
-const isDirectoryReadable = (path: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      await access(path, fsConstants.R_OK)
-      return true
-    },
-    catch: () => false,
-  })
+const isDirectoryReadable = (path: string): Effect.Effect<boolean> =>
+  Effect.promise(() =>
+    access(path, fsConstants.R_OK).then(
+      () => true,
+      () => false,
+    ),
+  )
 
 const hasHubRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedHubPlugin =>
   plugin.hub !== undefined
