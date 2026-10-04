@@ -346,10 +346,15 @@ export const HubAgentHandlersLive = HubAgentRpcs.toLayer(
               }),
             },
             ...(input !== undefined && { input }),
-          }).pipe(Effect.mapError(mapPluginHostError)),
-        ).pipe(
-          Stream.map((chunk): LogBatch => ({ lines: [...chunk.lines], timestamp: chunk.ts })),
-          Stream.mapError(mapPluginHostError),
+          }).pipe(
+            Effect.mapError(mapPluginHostError),
+            Effect.map((stream) =>
+              stream.pipe(
+                Stream.map((chunk): LogBatch => ({ lines: [...chunk.lines], timestamp: chunk.ts })),
+                Stream.mapError(mapPluginHostError),
+              ),
+            ),
+          ),
         ),
     })
   }),

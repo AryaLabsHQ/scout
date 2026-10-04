@@ -214,6 +214,31 @@ describe("generic plugin handler delegation", () => {
     expect(streamCalls[0]?.["streamId"]).toBe("unit.logs")
   })
 
+  it("plugins.logs keeps the plugin host's error code when the stream cannot open", async () => {
+    const exit = await Effect.runPromiseExit(
+      provideHandlers(
+        Effect.gen(function* () {
+          const handler = yield* HubAgentRpcs.accessHandler("plugins.logs")
+          return yield* Stream.runDrain(
+            handler(
+              { pluginId: "missing", streamId: "logs" },
+              testOptions as never,
+            ) as Stream.Stream<LogBatch, ManagementError>,
+          )
+        }),
+        {
+          openLogStream: () =>
+            Effect.fail(new PluginHostError("plugin-not-loaded", "Requested plugin is not loaded")),
+        },
+      ),
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag !== "Failure") return
+    const failure = Cause.findErrorOption(exit.cause)
+    expect(Option.getOrUndefined(failure)).toMatchObject({ code: "plugin-not-loaded" })
+  })
+
   it("plugins.logs releases the plugin stream when the request is interrupted", async () => {
     let released = false
 
