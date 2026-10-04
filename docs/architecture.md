@@ -318,8 +318,8 @@ These architectural decisions are locked and should not be revisited without exp
 | Type strategy | Schema-first at platform boundaries, TS inferred from Effect Schema |
 | Report interval | 15 seconds |
 | React | React 19 + shadcn/ui v4 + @effect/atom-react |
-| Client <-> hub protocol | @effect/rpc over WebSocket (NDJSON), AtomRpc.Service |
-| Hub <-> agent protocol | @effect/rpc over one WebSocket, DuplexRpcSocket adapter |
+| Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service |
+| Hub <-> agent protocol | effect/rpc over one WebSocket, DuplexRpcSocket adapter |
 | Auth | Shared static token (Tailscale network) |
 | Network metrics | Total rx/tx bytes only |
 | K8s scope | Full workload (Pods, Deployments, Services, Ingress, Jobs) |

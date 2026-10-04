@@ -13,14 +13,14 @@
  * on any socket error or disconnect.
  */
 
-import { Cause, Duration, Effect, Layer, Ref, Schedule } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
-import * as Socket from "effect/unstable/socket/Socket"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
+import { Cause, Data, Duration, Effect, Layer, Ref, Schedule } from "effect"
+import * as Context from "effect/Context"
+import * as Socket from "effect/socket/Socket"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcGroup from "effect/rpc/RpcGroup"
+import * as RpcServer from "effect/rpc/RpcServer"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
   AgentHubRpcs,
   HubAgentRpcs,
@@ -43,15 +43,17 @@ export type HubAgentRpcClient = RpcClient.RpcClient<
  * (agent.connect, agent.report). Available after the connection is
  * established and agent.connect succeeds.
  */
-export class HubClient extends ServiceMap.Service<HubClient, HubAgentRpcClient>()(
+export class HubClient extends Context.Service<HubClient, HubAgentRpcClient>()(
   "@scout/HubClient",
 ) {}
+
+class HubSocketClosed extends Data.TaggedError("HubSocketClosed")<{}> {}
 
 // ── Backoff schedule ──────────────────────────────────────────────────────────
 
 const reconnectSchedule = Schedule.exponential("1 second").pipe(
-  Schedule.modifyDelay((_, delay) => {
-    const millis = Duration.toMillis(Duration.fromInputUnsafe(delay))
+  Schedule.modifyDelay(({ duration }) => {
+    const millis = Duration.toMillis(duration)
     const capped = Math.min(millis, 30_000)
     const jitter = capped * 0.2 * (Math.random() * 2 - 1)
     return Effect.succeed(Duration.millis(Math.max(100, capped + jitter)))
@@ -78,19 +80,22 @@ const makeConnectOnce = (
     yield* Effect.logInfo("HubConnection: connecting", { url: wsUrl })
 
     // Build a WebSocket socket using globalThis.WebSocket (available in Bun)
-    const socket = yield* Socket.makeWebSocket(Effect.succeed(wsUrl)).pipe(
-      Effect.provide(
-        Layer.succeed(Socket.WebSocketConstructor)(
-          (url, protocols) => new globalThis.WebSocket(url, protocols),
-        ),
-      ),
+    const socket = yield* Socket.makeWebSocket(wsUrl).pipe(
+      Effect.provide(Socket.layerWebSocketConstructorGlobal),
     )
 
     // All per-connection work runs in a scoped region so finalizers clean up
     yield* Effect.scoped(
       Effect.gen(function* () {
         // Build dual-direction protocols over the single socket
-        const { serverProtocol, clientProtocol } = yield* makeDuplexRpcProtocols(socket)
+        const { serverProtocol, clientProtocol, closed } =
+          yield* makeDuplexRpcProtocols(socket)
+
+        // Writes suspend while the socket is down, so end this attempt (and
+        // let the reconnect schedule retry) as soon as the socket stops.
+        const failOnClose = closed.pipe(
+          Effect.andThen(Effect.fail(new HubSocketClosed())),
+        )
 
         // ── RPC client (agent → hub) ──────────────────────────────────────────
         const agentHubClient = yield* RpcClient.make(AgentHubRpcs).pipe(
@@ -105,7 +110,7 @@ const makeConnectOnce = (
           platform: process.platform,
           capabilities,
           pluginCapabilities,
-        })
+        }).pipe(Effect.raceFirst(failOnClose))
 
         yield* Effect.logInfo("HubConnection: connected", {
           hostname: config.hostname,
@@ -126,6 +131,7 @@ const makeConnectOnce = (
             ),
           ),
           Effect.provide(serverProtocol),
+          Effect.raceFirst(failOnClose),
         )
       }).pipe(
         Effect.provide(RpcSerialization.layerNdjson),
@@ -160,7 +166,7 @@ export const HubConnectionLayer = Layer.effect(
 
     // Fork the reconnect loop as a detached fiber
     yield* makeConnectOnce(wsUrl, clientRef).pipe(
-      Effect.catchCause((cause) =>
+      Effect.tapCause((cause) =>
         Effect.logWarning(
           "HubConnection: attempt failed, will retry",
           { error: Cause.pretty(cause) },

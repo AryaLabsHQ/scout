@@ -1,7 +1,7 @@
 # Hub Services
 
 ## OVERVIEW
-Services are composed via `Layer` in `apps/hub/src/app.ts`. Each service uses `ServiceMap.Service` from Effect v4.
+Services are composed via `Layer` in `apps/hub/src/app.ts`. Each service uses `Context.Service` from Effect v4.
 
 ## STRUCTURE
 | Service | File | Dependencies | Purpose |

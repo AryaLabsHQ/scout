@@ -1,4 +1,4 @@
-import type { AsyncResult, Atom } from "effect/unstable/reactivity"
+import type { AsyncResult, Atom } from "effect/reactivity"
 import { useAtomValue, useAtomMount } from "@effect/atom-react"
 
 /**

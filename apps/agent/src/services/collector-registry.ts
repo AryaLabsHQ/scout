@@ -1,5 +1,5 @@
 import { Cause, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type {
   AgentCapabilities,
   CollectorPlugin,
@@ -35,7 +35,7 @@ const ALL_COLLECTORS: CoreCollectorPlugin[] = [
 ]
 
 // Auto-discovers available collectors and manages their lifecycle.
-export class CollectorRegistry extends ServiceMap.Service<CollectorRegistry, {
+export class CollectorRegistry extends Context.Service<CollectorRegistry, {
   /**
    * Probe all registered collectors and return which capabilities are available.
    */

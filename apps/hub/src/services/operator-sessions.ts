@@ -1,6 +1,6 @@
 import { Effect, Layer, PubSub, Queue } from "effect"
 import type { Scope } from "effect/Scope"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { desc, eq, ne } from "drizzle-orm"
 import type {
   OperatorApprovalRequest,
@@ -217,7 +217,7 @@ const eventToSessionUpdates = (
 const operatorManagementError = (code: string, message: string): ManagementError =>
   new ManagementError({ code, message })
 
-export class OperatorSessions extends ServiceMap.Service<
+export class OperatorSessions extends Context.Service<
   OperatorSessions,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorSessionSummary>>

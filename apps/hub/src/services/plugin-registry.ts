@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs"
 import { access } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { Config, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import {
   getLoadedPluginRuntimes,
   loadPluginsFromDirectory,
@@ -26,14 +26,13 @@ export interface LoadedOperatorPlugin extends LoadedScoutPlugin {
   readonly operator: ScoutOperatorSurface
 }
 
-const isDirectoryReadable = (path: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      await access(path, fsConstants.R_OK)
-      return true
-    },
-    catch: () => false,
-  })
+const isDirectoryReadable = (path: string): Effect.Effect<boolean> =>
+  Effect.promise(() =>
+    access(path, fsConstants.R_OK).then(
+      () => true,
+      () => false,
+    ),
+  )
 
 const hasHubRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedHubPlugin =>
   plugin.hub !== undefined
@@ -44,7 +43,7 @@ const hasWebRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedWebPlugin =>
 const hasOperatorRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedOperatorPlugin =>
   plugin.operator !== undefined
 
-export class PluginRegistry extends ServiceMap.Service<
+export class PluginRegistry extends Context.Service<
   PluginRegistry,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>
@@ -59,7 +58,7 @@ export class PluginRegistry extends ServiceMap.Service<
   {
     make: Effect.gen(function* () {
       const pluginDir = yield* Config.withDefault(
-        Config.string("SCOUT_PLUGIN_DIR"),
+        Config.String("SCOUT_PLUGIN_DIR"),
         DEFAULT_PLUGIN_DIR,
       )
       const hasDirectory = yield* isDirectoryReadable(pluginDir)

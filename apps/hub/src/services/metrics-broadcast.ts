@@ -1,6 +1,6 @@
 import { Effect, Layer, PubSub, Queue, Ref, Schedule } from "effect"
 import type * as Scope from "effect/Scope"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type { Alert, SystemMetricsSample } from "@scout/shared"
 
 // PubSub fan-out for real-time metrics and alerts.
@@ -18,7 +18,7 @@ export interface BroadcastEvent {
   readonly data?: unknown
 }
 
-export class MetricsBroadcast extends ServiceMap.Service<MetricsBroadcast, {
+export class MetricsBroadcast extends Context.Service<MetricsBroadcast, {
   /**
    * Enqueue a core metrics sample for coalesced broadcast.
    * Samples are batched over 100ms and published as a single event.

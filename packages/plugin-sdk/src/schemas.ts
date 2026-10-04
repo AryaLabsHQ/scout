@@ -287,7 +287,7 @@ export const PluginUiScreenSchema = Schema.Struct({
   spec: PluginUiSpecSchema,
 })
 
-export class PluginExecutionError extends Schema.ErrorClass<PluginExecutionError>(
+export class PluginExecutionError extends Schema.Error<PluginExecutionError>(
   "PluginExecutionError",
 )({
   code: Schema.String,
@@ -297,7 +297,7 @@ export class PluginExecutionError extends Schema.ErrorClass<PluginExecutionError
   streamId: Schema.optionalKey(Schema.String),
 }) {}
 
-export class PluginLoadError extends Schema.ErrorClass<PluginLoadError>(
+export class PluginLoadError extends Schema.Error<PluginLoadError>(
   "PluginLoadError",
 )({
   code: Schema.String,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type { Alert, SystemMetricsSample } from "@scout/shared"
 import { AlertEngine } from "../../src/services/alert-engine.js"
 import { alertMetricSamplesFromCoreMetrics } from "../../src/services/alert-metrics.js"
@@ -68,7 +68,7 @@ function makeTestLayer(rules?: RuleSpec[]) {
     Layer.provide(configLayer),
     Layer.tap((ctx) =>
       Effect.sync(() => {
-        const db = ServiceMap.get(ctx, Database)
+        const db = Context.get(ctx, Database)
         db.$client.exec(DDL)
 
         if (rules !== undefined) {

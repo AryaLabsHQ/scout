@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { and, desc, eq, gte } from "drizzle-orm"
 import type { CoreMetricsPayload, SystemMetricsSample } from "@scout/shared"
 import { CoreMetricsPayloadSchema } from "@scout/shared"
@@ -122,7 +122,7 @@ const persistPluginCollection = (
     .run()
 }
 
-export class MetricsIngestion extends ServiceMap.Service<MetricsIngestion, {
+export class MetricsIngestion extends Context.Service<MetricsIngestion, {
   readonly ingest: (payload: CoreMetricsPayload) => Effect.Effect<number>
   readonly ingestRaw: (raw: unknown) => Effect.Effect<number, SchemaValidationError>
   readonly ingestPluginCollection: (

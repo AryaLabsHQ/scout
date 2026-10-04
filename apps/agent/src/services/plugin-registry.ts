@@ -1,7 +1,7 @@
 import { constants as fsConstants } from "node:fs"
 import { access } from "node:fs/promises"
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import {
   loadPluginsFromDirectory,
   type LoadedScoutPlugin,
@@ -13,19 +13,18 @@ export interface LoadedAgentPlugin extends LoadedScoutPlugin {
   readonly agent: ScoutAgentPlugin
 }
 
-const isDirectoryReadable = (path: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      await access(path, fsConstants.R_OK)
-      return true
-    },
-    catch: () => false,
-  })
+const isDirectoryReadable = (path: string): Effect.Effect<boolean> =>
+  Effect.promise(() =>
+    access(path, fsConstants.R_OK).then(
+      () => true,
+      () => false,
+    ),
+  )
 
 const hasAgentRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedAgentPlugin =>
   plugin.agent !== undefined
 
-export class AgentPluginRegistry extends ServiceMap.Service<
+export class AgentPluginRegistry extends Context.Service<
   AgentPluginRegistry,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>

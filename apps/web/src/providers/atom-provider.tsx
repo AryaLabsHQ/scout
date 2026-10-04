@@ -1,6 +1,6 @@
 import * as React from "react"
 import { RegistryProvider, useAtomValue, useAtomInitialValues } from "@effect/atom-react"
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { Alert, System } from "@scout/shared"
 import { HubClient } from "@/rpc/client"
 

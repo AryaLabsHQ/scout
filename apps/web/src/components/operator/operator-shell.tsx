@@ -46,7 +46,10 @@ export function OperatorShell({
 
   const systems = systemsResult._tag === "Success" ? systemsResult.value : []
   const onlineSystems = systems.filter((system) => system.status === "online")
-  const persistedSessions = sessionsResult._tag === "Success" ? sessionsResult.value : []
+  const persistedSessions = useMemo(
+    () => (sessionsResult._tag === "Success" ? sessionsResult.value : []),
+    [sessionsResult],
+  )
 
   const sessions = useMemo(() => {
     if (!optimisticSession) return persistedSessions

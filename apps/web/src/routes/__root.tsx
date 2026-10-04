@@ -155,8 +155,10 @@ function OperatorSidebarSection() {
     mode: "promise",
   })
 
-  const persistedSessions: ReadonlyArray<OperatorSessionSummary> =
-    sessionsResult._tag === "Success" ? sessionsResult.value : []
+  const persistedSessions: ReadonlyArray<OperatorSessionSummary> = useMemo(
+    () => (sessionsResult._tag === "Success" ? sessionsResult.value : []),
+    [sessionsResult],
+  )
 
   const [hiddenSessionIds, setHiddenSessionIds] = useState<ReadonlySet<string>>(new Set())
 

@@ -14,21 +14,21 @@
     "db:push": "bun --bun drizzle-kit push"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.43",
+    "@effect/platform-bun": "4.0.0",
     "@mariozechner/pi-agent-core": "^0.65.0",
     "@mariozechner/pi-ai": "^0.65.0",
     "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
     "@xterm/headless": "^6.0.0",
     "drizzle-orm": "^1.0.0-beta.20",
-    "effect": "4.0.0-beta.43"
+    "effect": "4.0.0"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-beta.43",
+    "@effect/vitest": "4.0.0",
     "@types/node": "^25.1.0",
-    "bun-types": "^1.3.11",
+    "bun-types": "^1.4.2",
     "drizzle-kit": "^1.0.0-beta.1",
     "typescript": "^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.3"
   }
 }

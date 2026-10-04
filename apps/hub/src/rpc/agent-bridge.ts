@@ -17,14 +17,14 @@
  */
 
 import { Config, Effect, Fiber, Layer, Ref } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { eq } from "drizzle-orm"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcGroup from "effect/rpc/RpcGroup"
+import * as RpcServer from "effect/rpc/RpcServer"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import type { RpcClientError } from "effect/rpc/RpcClientError"
 import {
   AgentConnectError,
   AgentHubRpcs,
@@ -69,7 +69,7 @@ interface AgentEntry {
  * disconnect) AND the typed RPC client used by hub-initiated management
  * calls.
  */
-export class AgentRegistry extends ServiceMap.Service<
+export class AgentRegistry extends Context.Service<
   AgentRegistry,
   {
     /**
@@ -86,11 +86,12 @@ export class AgentRegistry extends ServiceMap.Service<
     ) => Effect.Effect<System>
 
     /**
-     * Mark an agent as disconnected. Removes from in-memory state and
-     * forks a 5-second grace fiber; if no re-register arrives by then,
-     * the `systems` row is marked "offline".
+     * Mark an agent connection as disconnected. Removes it from in-memory
+     * state and forks a 5-second grace fiber; if no re-register arrives by
+     * then, the `systems` row is marked "offline". No-op when `client` is
+     * not the agent's current connection (it already reconnected).
      */
-    readonly unregister: (agentId: string) => Effect.Effect<void>
+    readonly unregister: (agentId: string, client: HubAgentClient) => Effect.Effect<void>
 
     /** List all currently connected agents. */
     readonly listConnected: () => Effect.Effect<ReadonlyArray<ConnectedAgent>>
@@ -106,6 +107,9 @@ export class AgentRegistry extends ServiceMap.Service<
   {
     make: Effect.gen(function* () {
       const db = yield* Database
+      // Grace fibers outlive the connection fiber that calls `unregister`, so
+      // they run in the registry's own scope rather than as its children.
+      const registryScope = yield* Effect.scope
       const entries = yield* Ref.make(new Map<string, AgentEntry>())
       const graceFibers = yield* Ref.make(new Map<string, Fiber.Fiber<void, never>>())
 
@@ -190,21 +194,22 @@ export class AgentRegistry extends ServiceMap.Service<
           return system
         })
 
-      const unregister = (agentId: string): Effect.Effect<void> =>
+      const unregister = (agentId: string, client: HubAgentClient): Effect.Effect<void> =>
         Effect.gen(function* () {
           // Pop the entry first so listConnected immediately reflects the
           // disconnect. The grace fiber will mark the DB row offline if the
-          // agent doesn't reconnect within 5 s.
+          // agent doesn't reconnect within 5 s. A superseded connection
+          // closing after its replacement registered leaves the entry alone.
           const existed = yield* Ref.modify(entries, (m) => {
-            const had = m.has(agentId)
+            if (m.get(agentId)?.client !== client) return [false, m] as const
             const next = new Map(m)
             next.delete(agentId)
-            return [had, next] as const
+            return [true, next] as const
           })
 
           if (!existed) return
 
-          const graceFiber = yield* Effect.forkChild(
+          const graceFiber = yield* Effect.forkIn(
             Effect.gen(function* () {
               yield* Effect.sleep("5 seconds")
               const stillGone = yield* Ref.get(entries).pipe(
@@ -224,6 +229,7 @@ export class AgentRegistry extends ServiceMap.Service<
                 return next
               })
             }),
+            registryScope,
           )
 
           yield* Ref.update(graceFibers, (m) =>
@@ -282,7 +288,7 @@ export class AgentRegistry extends ServiceMap.Service<
  * decoded info + capabilities from the RPC payload; the bridge closure
  * has already captured the typed HubAgentClient for this socket.
  */
-export class RegisterAgent extends ServiceMap.Service<
+export class RegisterAgent extends Context.Service<
   RegisterAgent,
   (
     info: AgentInfo,
@@ -309,7 +315,7 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.connect",
   Effect.gen(function* () {
     const registerFn = yield* RegisterAgent
-    const expectedToken = yield* Config.string("SCOUT_TOKEN")
+    const expectedToken = yield* Config.String("SCOUT_TOKEN")
 
     return ({ token, hostname, version, platform, capabilities, pluginCapabilities }) =>
       Effect.gen(function* () {
@@ -348,11 +354,14 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
   const socket = yield* Effect.orDie(request.upgrade)
 
   // Per-connection slot — set by the agent.connect handler below
-  const agentIdRef = yield* Ref.make<string | null>(null)
+  const registeredRef = yield* Ref.make<{
+    readonly agentId: string
+    readonly client: HubAgentClient
+  } | null>(null)
 
   yield* Effect.scoped(
     Effect.gen(function* () {
-      const { serverProtocol, clientProtocol } =
+      const { serverProtocol, clientProtocol, closed } =
         yield* makeDuplexRpcProtocols(socket)
 
       // Build the hub→agent typed RPC client on this socket
@@ -368,7 +377,7 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         pluginCapabilities: ReadonlyArray<PluginCapability>,
       ): Effect.Effect<{ readonly systemId: string }> =>
         Effect.gen(function* () {
-          yield* Ref.set(agentIdRef, info.systemId)
+          yield* Ref.set(registeredRef, { agentId: info.systemId, client: hubAgentClient })
           yield* registry.register(info, capabilities, pluginCapabilities, hubAgentClient)
           return { systemId: info.systemId }
         })
@@ -387,15 +396,18 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         Effect.provide(Layer.fresh(AgentConnectHandlerLive)),
         Effect.provide(RegisterAgentLive),
         Effect.provide(serverProtocol),
+        // The session ends when the agent's socket closes, which runs the
+        // unregister finalizer below.
+        Effect.raceFirst(closed),
       )
     }).pipe(
       Effect.provide(RpcSerialization.layerNdjson),
       Effect.ensuring(
         Effect.gen(function* () {
-          const agentId = yield* Ref.get(agentIdRef)
-          if (agentId !== null) {
-            yield* registry.unregister(agentId)
-            yield* Effect.logInfo("agent unregistered", { agentId })
+          const registered = yield* Ref.get(registeredRef)
+          if (registered !== null) {
+            yield* registry.unregister(registered.agentId, registered.client)
+            yield* Effect.logInfo("agent unregistered", { agentId: registered.agentId })
           }
         }),
       ),

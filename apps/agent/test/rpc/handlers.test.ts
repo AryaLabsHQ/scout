@@ -6,7 +6,7 @@
  *   - Terminal handler behavior
  */
 
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { Cause, Effect, Layer, Option, Ref, Stream } from "effect"
 import {
   HubAgentHandlersLive,
@@ -15,7 +15,7 @@ import {
   startTerminalSession,
 } from "../../src/rpc/handlers.js"
 import { HubAgentRpcs, ManagementError } from "@scout/shared"
-import * as RpcMessage from "effect/unstable/rpc/RpcMessage"
+import * as RpcMessage from "effect/rpc/RpcMessage"
 import { AgentPluginHost } from "../../src/services/plugin-host.js"
 import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
 import type { TerminalOutput } from "@scout/shared"
@@ -24,7 +24,7 @@ import type { TerminalOutput } from "@scout/shared"
 
 const testOptions = {
   clientId: 0 as number,
-  requestId: RpcMessage.RequestId(1n),
+  requestId: RpcMessage.RequestId(1),
   headers: {} as never,
 }
 
@@ -239,17 +239,25 @@ describe("terminal session management", () => {
   })
 
   it("terminal.open spawn path exits when the shell receives exit", async () => {
-    const proc = await Effect.runPromise(
-      spawnInteractiveTerminalProcess({
-        cols: 80,
-        rows: 24,
-      }),
-    )
+    // Pin the interactive shell: the spawn path otherwise runs the developer's
+    // $SHELL with its full interactive rc (prompt frameworks, plugins), which
+    // can swallow or never reach the scripted `exit`.
+    vi.stubEnv("SHELL", "/bin/sh")
+    try {
+      const proc = await Effect.runPromise(
+        spawnInteractiveTerminalProcess({
+          cols: 80,
+          rows: 24,
+        }),
+      )
 
-    const stdin = proc.stdin as { write(data: Uint8Array): number }
-    stdin.write(Buffer.from("exit\n", "utf8"))
+      const stdin = proc.stdin as { write(data: Uint8Array): number }
+      stdin.write(Buffer.from("exit\n", "utf8"))
 
-    expect(await proc.exited).toBe(0)
+      expect(await proc.exited).toBe(0)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("terminal.input fails with session-not-found for unknown sessionId", async () => {

@@ -1,4 +1,4 @@
-import { AtomRpc } from "effect/unstable/reactivity"
+import { AtomRpc } from "effect/reactivity"
 import { ClientHubRpcs } from "@scout/shared"
 import { HubProtocolLayer } from "./protocol.js"
 

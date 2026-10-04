@@ -37,17 +37,17 @@ scout/
 
 ## WHY EFFECT V4
 Effect is the primary application framework here, not a helper library.
-Services are built with `ServiceMap.Service`, dependencies are composed with `Layer`, shared contracts use `Schema`, browser reactivity uses `AtomRpc`/`@effect/atom-react`, and long-running processes are launched through Effect runtimes.
+Services are built with `Context.Service`, dependencies are composed with `Layer`, shared contracts use `Schema`, browser reactivity uses `AtomRpc`/`@effect/atom-react`, and long-running processes are launched through Effect runtimes.
 
 ## QUICK REFERENCE
 | DO | DON'T |
 |---|---|
-| Use `ServiceMap.Service` plus `static readonly layer` for services | Introduce ad-hoc singletons or app-local service registries |
+| Use `Context.Service` plus `static readonly layer` for services | Introduce ad-hoc singletons or app-local service registries |
 | Define cross-runtime contracts in `packages/shared` or `packages/plugin-sdk` | Re-declare payload/result shapes inside apps |
 | Compose infra with `Layer.provide`, `Layer.provideMerge`, and `Layer.mergeAll` | Hand-wire dependencies inside route handlers or React components |
 | Use `apps/web/src/server/*` for SSR/bootstrap fetches and `HubClient` for live RPC | Scatter raw hub fetches throughout route components |
 | Treat plugin `manifest.ts` + `contracts.ts` as the canonical public surface | Duplicate plugin ids, actions, streams, or permission names across files |
-| Follow the current Effect import style: `effect`, `effect/unstable/*`, `@effect/*` | Hide architectural decisions behind barrel-only indirection |
+| Follow the current Effect import style: `effect`, `effect/<Module>`, `effect/{http,rpc,reactivity,socket}/*`, `@effect/*` | Hide architectural decisions behind barrel-only indirection |
 
 ## KEY PATTERNS
 - `apps/agent/src/main.ts` and `apps/hub/src/app.ts` are the layer-composition entry points; start there before changing service wiring.
@@ -77,6 +77,8 @@ Services are built with `ServiceMap.Service`, dependencies are composed with `La
 
 ## CONVENTIONS
 - Root `README.md` is still a template stub. Treat workspace source plus `e2e/README.md` as ground truth instead.
+- Effect and every `@effect/*` package are pinned to the same exact stable version in every workspace; bump them together.
+- `bunfig.toml` turns off Bun's global install store: `bun-types` and several React libraries import undeclared type packages (`undici-types`, `@types/react`), which only resolve from the per-repo `node_modules/.bun` store.
 - This is a Bun workspace repo with Turbo orchestration. Root scripts cover `dev`, `build`, `typecheck`, and formatting/linting; most tests run from workspace roots.
 - `.scratchpad/` is active working memory and research, not shipped code. Do not rely on it for product behavior.
 - New shared system, alert, terminal, or plugin contracts belong in `packages/shared` first, then consumers update from there.

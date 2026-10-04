@@ -10,10 +10,10 @@
  */
 
 import { Effect, Layer } from "effect"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
+import * as HttpRouter from "effect/http/HttpRouter"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import * as RpcServer from "effect/rpc/RpcServer"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import { ClientHubRpcs } from "@scout/shared"
 import { AuthMiddlewareLive } from "./auth.js"
 import { ClientHandlersLive } from "./client-handlers.js"

@@ -1,7 +1,7 @@
 import { Config, Effect, Layer } from "effect"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+import * as HttpRouter from "effect/http/HttpRouter"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { desc, gte, or, eq, count } from "drizzle-orm"
 import { getLoadedPluginRuntimes } from "@scout/plugin-sdk"
 import type { SystemMetricsSample } from "@scout/shared"
@@ -45,7 +45,7 @@ export const HealthRoute = HttpRouter.add(
     })
 
     // Get DB file size from config
-    const dbPath = yield* Config.withDefault(Config.string("SCOUT_DB_PATH"), "./scout.db")
+    const dbPath = yield* Config.withDefault(Config.String("SCOUT_DB_PATH"), "./scout.db")
     const dbSizeBytes = yield* Effect.sync(() => {
       try {
         return Bun.file(dbPath).size

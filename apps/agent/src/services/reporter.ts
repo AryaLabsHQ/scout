@@ -1,12 +1,12 @@
 import { Cause, Duration, Effect, Layer, Schedule } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { AgentConfig } from "../config.js"
 import { HubClient } from "../rpc/connection.js"
 import { CollectorRegistry } from "./collector-registry.js"
 import { AgentPluginHost } from "./plugin-host.js"
 
 // Runs on a schedule (every N seconds), collects all metrics, sends to hub.
-export class Reporter extends ServiceMap.Service<Reporter, {
+export class Reporter extends Context.Service<Reporter, {
   /**
    * Long-running fiber: collect metrics on the configured interval and send
    * each core metrics sample plus plugin collections to the hub.

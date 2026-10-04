@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import { BunHttpServer } from "@effect/platform-bun"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpRouter from "effect/unstable/http/HttpRouter"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpRouter from "effect/http/HttpRouter"
 import { AgentRegistry } from "../../src/rpc/agent-bridge.js"
 import { MetricsIngestion } from "../../src/services/metrics-ingestion.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
@@ -113,7 +113,7 @@ describe("GET /api/systems/:id/plugins/:pluginId/*", () => {
       expect(entitiesResponse.status).toBe(200)
       const entities = (yield* entitiesResponse.json) as Array<Record<string, unknown>>
       expect(entities).toHaveLength(1)
-      expect((entities[0]?.["ref"] as Record<string, unknown>)["id"]).toBe("nginx.service")
+      expect(entities[0]?.["ref"]).toMatchObject({ id: "nginx.service" })
 
       const metricsResponse = yield* HttpClient.get(
         "/api/systems/plugin-route-systemd/plugins/systemd/metrics?metricId=units.total&hours=24",

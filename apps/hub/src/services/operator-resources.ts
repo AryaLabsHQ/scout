@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import type { OperatorResource } from "@scout/shared"
 import { PluginRegistry } from "./plugin-registry.js"
 
@@ -17,7 +17,7 @@ const BUILTIN_RESOURCES: ReadonlyArray<OperatorResource> = [
   },
 ]
 
-export class OperatorResources extends ServiceMap.Service<
+export class OperatorResources extends Context.Service<
   OperatorResources,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<OperatorResource>>

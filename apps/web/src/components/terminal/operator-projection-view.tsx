@@ -18,6 +18,12 @@ export function OperatorProjectionView({
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<any>(null)
   const writtenCountRef = useRef(0)
+  // Latest committed chunks for the async terminal init, which mounts once
+  // and must not replay from the stale first-render closure.
+  const chunksRef = useRef(base64Chunks)
+  useEffect(() => {
+    chunksRef.current = base64Chunks
+  }, [base64Chunks])
 
   // Load Ghostty WASM and create read-only terminal
   useEffect(() => {
@@ -66,7 +72,8 @@ export function OperatorProjectionView({
       termRef.current = term
 
       // Write any chunks that arrived before terminal was ready
-      for (const chunk of base64Chunks) {
+      const pendingChunks = chunksRef.current
+      for (const chunk of pendingChunks) {
         try {
           const bytes = Uint8Array.from(atob(chunk), (c) => c.charCodeAt(0))
           term.write(bytes)
@@ -74,7 +81,7 @@ export function OperatorProjectionView({
           // skip invalid base64
         }
       }
-      writtenCountRef.current = base64Chunks.length
+      writtenCountRef.current = pendingChunks.length
 
       // Observe container resize
       const observer = new ResizeObserver(() => {

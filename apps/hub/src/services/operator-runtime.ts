@@ -1,5 +1,5 @@
 import { Effect, Layer, Option, Ref, Stream } from "effect"
-import * as ServiceMap from "effect/ServiceMap"
+import * as Context from "effect/Context"
 import { Terminal as HeadlessTerminal } from "@xterm/headless"
 import {
   Agent,
@@ -1155,7 +1155,7 @@ const toolNodeIds = (
   return [...sessionNodeIds]
 }
 
-export class OperatorRuntime extends ServiceMap.Service<
+export class OperatorRuntime extends Context.Service<
   OperatorRuntime,
   {
     readonly ensureSession: (sessionId: string) => Effect.Effect<void, ManagementError>
