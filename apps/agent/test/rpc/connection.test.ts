@@ -8,17 +8,24 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Exit, Layer, Scope } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import * as RpcClient from "effect/rpc/RpcClient"
+import type { RpcClientError } from "effect/rpc/RpcClientError"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as RpcServer from "effect/rpc/RpcServer"
 import * as NetAddress from "effect/net/NetAddress"
 import * as Socket from "effect/socket/Socket"
 import { BunHttpServer } from "@effect/platform-bun"
-import { AgentHubRpcs, makeDuplexRpcProtocols } from "@scout/shared"
+import { AgentHubRpcs, HubAgentRpcs, makeDuplexRpcProtocols } from "@scout/shared"
 import type { AgentCapabilities } from "@scout/shared"
-import type { PluginCapability, PluginCollectionResult } from "@scout/plugin-sdk"
+import {
+  followProcessLines,
+  type LogChunk,
+  type PluginCapability,
+  type PluginCollectionResult,
+} from "@scout/plugin-sdk"
 import {
   HubClient,
   type HubConnectionTiming,
@@ -39,6 +46,8 @@ interface FakeHubState {
    * unanswered while the socket stays open. Bump it to freeze open sessions.
    */
   freezeEpoch: number
+  /** Client for hub → agent calls on the latest session. */
+  agent?: RpcClient.FromGroup<typeof HubAgentRpcs, RpcClientError>
 }
 
 /** Pulls stop returning, without closing the socket, once the session is frozen. */
@@ -75,9 +84,10 @@ const agentSocketApp = (state: FakeHubState) =>
     const socket = yield* Effect.orDie(request.upgrade)
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const { serverProtocol, closed } = yield* makeDuplexRpcProtocols(
+        const { serverProtocol, clientProtocol, closed } = yield* makeDuplexRpcProtocols(
           freezable(socket, state),
         )
+        state.agent = yield* RpcClient.make(HubAgentRpcs).pipe(Effect.provide(clientProtocol))
         yield* RpcServer.make(AgentHubRpcs).pipe(
           Effect.provide(handlers(state)),
           Effect.provide(serverProtocol),
@@ -128,7 +138,13 @@ const capabilities: AgentCapabilities = {
   smart: false,
 }
 
-const agentLayer = (port: number, overrides?: Partial<HubConnectionTiming>) =>
+type OpenLogStream = (typeof AgentPluginHost.Service)["openLogStream"]
+
+const agentLayer = (
+  port: number,
+  overrides?: Partial<HubConnectionTiming>,
+  openLogStream: OpenLogStream = () => Effect.die("openLogStream is not used by this test"),
+) =>
   makeHubConnectionLayer({ ...timing, ...overrides }).pipe(
     Layer.provide(
       Layer.succeed(CollectorRegistry)({
@@ -141,7 +157,7 @@ const agentLayer = (port: number, overrides?: Partial<HubConnectionTiming>) =>
         listCapabilities: () => Effect.succeed([] as ReadonlyArray<PluginCapability>),
         collectCollections: () => Effect.succeed([] as ReadonlyArray<PluginCollectionResult>),
         runAction: () => Effect.die("runAction is not used by the connection"),
-        openLogStream: () => Effect.die("openLogStream is not used by the connection"),
+        openLogStream,
       }),
     ),
     Layer.provide(
@@ -291,4 +307,129 @@ describe("HubConnectionLayer", () => {
     // Two heartbeat intervals (400ms) plus one retry at most.
     expect(detectMs).toBeLessThan(1_500)
   }, 15_000)
+
+  describe("plugin log streams", () => {
+    /** A quiet follower that reports its pid, like `journalctl -f` on an idle unit. */
+    const followQuietChild: OpenLogStream = () =>
+      Effect.succeed(followProcessLines("sh", ["-c", "echo $$; exec sleep 600"]))
+
+    /** `kill(pid, 0)` still succeeds for an unreaped zombie, so this proves reaping too. */
+    const isRunning = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    const openLogs = (state: FakeHubState) => {
+      const agent = state.agent
+      if (agent === undefined) throw new Error("the agent has no hub session")
+      return agent["plugins.logs"]({ pluginId: "test", streamId: "logs" })
+    }
+
+    it("kills and reaps the child when the hub cancels the stream", async () => {
+      const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
+
+      const program = Effect.gen(function* () {
+        const hub = yield* startHub(state, 0)
+        const agentScope = yield* Scope.make()
+        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(
+          Scope.provide(agentScope),
+        )
+        yield* waitUntil("registration", () => state.connects.length === 1, 3_000)
+
+        // Taking one batch cancels the stream, as a closed browser view does.
+        const first = yield* Stream.runHead(openLogs(state)).pipe(Effect.timeout("3 seconds"))
+        if (first._tag !== "Some") return yield* Effect.die(new Error("no log batch"))
+        const pid = Number(first.value.lines[0])
+        yield* waitUntil("the child to exit", () => !isRunning(pid), 3_000)
+
+        yield* Scope.close(agentScope, Exit.void)
+        yield* Scope.close(hub.scope, Exit.void)
+        return pid
+      })
+
+      const pid = await Effect.runPromise(Effect.scoped(program))
+      expect(isRunning(pid)).toBe(false)
+    }, 15_000)
+
+    it("kills and reaps the child when the hub connection drops", async () => {
+      const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
+
+      const program = Effect.gen(function* () {
+        const hub = yield* startHub(state, 0)
+        const agentScope = yield* Scope.make()
+        yield* Layer.build(agentLayer(hub.port, undefined, followQuietChild)).pipe(
+          Scope.provide(agentScope),
+        )
+        yield* waitUntil("registration", () => state.connects.length === 1, 3_000)
+
+        let pid: number | undefined
+        const reader = yield* Stream.runForEach(openLogs(state), (batch) =>
+          Effect.sync(() => {
+            pid ??= Number(batch.lines[0])
+          }),
+        ).pipe(Effect.ignore, Effect.forkChild)
+        yield* waitUntil("the first batch", () => pid !== undefined, 3_000)
+
+        // The hub goes away while the stream is open and idle.
+        yield* Scope.close(hub.scope, Exit.void)
+        yield* waitUntil("the child to exit", () => !isRunning(pid!), 3_000)
+
+        yield* Fiber.interrupt(reader)
+        yield* Scope.close(agentScope, Exit.void)
+        return pid!
+      })
+
+      const pid = await Effect.runPromise(Effect.scoped(program))
+      expect(isRunning(pid)).toBe(false)
+    }, 15_000)
+
+    it("reconnects even when a plugin stream never finishes releasing", async () => {
+      const state: FakeHubState = { connects: [], reports: 0, freezeEpoch: 0 }
+      const stuckStream: OpenLogStream = () =>
+        Effect.succeed(
+          Stream.concat(
+            Stream.succeed<LogChunk>({ lines: ["stuck"], ts: 0 }),
+            Stream.never,
+          ).pipe(Stream.ensuring(Effect.never)),
+        )
+
+      const program = Effect.gen(function* () {
+        const first = yield* startHub(state, 0)
+        const port = first.port
+        const agentScope = yield* Scope.make()
+        yield* Layer.build(agentLayer(port, undefined, stuckStream)).pipe(
+          Scope.provide(agentScope),
+        )
+        yield* waitUntil("first registration", () => state.connects.length === 1, 3_000)
+
+        let received = false
+        const reader = yield* Stream.runForEach(openLogs(state), () =>
+          Effect.sync(() => {
+            received = true
+          }),
+        ).pipe(Effect.ignore, Effect.forkChild)
+        yield* waitUntil("the first batch", () => received, 3_000)
+
+        yield* Scope.close(first.scope, Exit.void)
+        yield* Fiber.interrupt(reader)
+        const second = yield* startHub(state, port)
+        // Bounded by the 1s teardown timeout plus a retry.
+        yield* waitUntil(
+          "registration with the restarted hub",
+          () => state.connects.length === 2,
+          4_000,
+        )
+
+        yield* Scope.close(agentScope, Exit.void)
+        yield* Scope.close(second.scope, Exit.void)
+      })
+
+      await Effect.runPromise(Effect.scoped(program))
+      expect(state.connects).toEqual(["test-agent", "test-agent"])
+    }, 15_000)
+  })
 })
