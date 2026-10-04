@@ -131,6 +131,19 @@
         "vitest": "^5.0.3",
       },
     },
+    "packages/plugin-edge": {
+      "name": "@scout/plugin-edge",
+      "version": "0.0.1",
+      "dependencies": {
+        "@scout/plugin-sdk": "workspace:*",
+        "effect": "4.0.0",
+      },
+      "devDependencies": {
+        "@types/node": "^24.6.0",
+        "typescript": "7.0.2",
+        "vitest": "^5.0.3",
+      },
+    },
     "packages/plugin-k8s": {
       "name": "@scout/plugin-k8s",
       "version": "0.0.1",
@@ -679,6 +692,8 @@
     "@scout/hub": ["@scout/hub@workspace:apps/hub"],
 
     "@scout/plugin-docker": ["@scout/plugin-docker@workspace:packages/plugin-docker"],
+
+    "@scout/plugin-edge": ["@scout/plugin-edge@workspace:packages/plugin-edge"],
 
     "@scout/plugin-k8s": ["@scout/plugin-k8s@workspace:packages/plugin-k8s"],
 
@@ -2420,6 +2435,8 @@
 
     "@scout/plugin-docker/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
 
+    "@scout/plugin-edge/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
+
     "@scout/plugin-k8s/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
 
     "@scout/plugin-systemd/@types/node": ["@types/node@24.12.2", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g=="],
@@ -2613,6 +2630,8 @@
     "@earendil-works/chord/esbuild/@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
 
     "@scout/plugin-docker/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
+
+    "@scout/plugin-edge/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
 
     "@scout/plugin-k8s/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
 

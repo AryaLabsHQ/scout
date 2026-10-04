@@ -1,0 +1,22 @@
+{
+  "name": "@scout/plugin-edge",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@scout/plugin-sdk": "workspace:*",
+    "effect": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
