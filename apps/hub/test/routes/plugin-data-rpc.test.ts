@@ -74,9 +74,9 @@ const connectRpc = Effect.gen(function* () {
   return yield* RpcClient.make(ClientHubRpcs).pipe(Effect.provide(protocol))
 })
 
-const unit = (id: string, status: string) => ({
+const unit = (id: string, status: string, ts = Date.now()) => ({
   ref: { pluginId: "systemd", kind: "systemd.unit", nodeId: "node-a", id },
-  ts: Date.now(),
+  ts,
   displayName: id,
   status,
   labels: { subState: status === "active" ? "running" : "dead" },
@@ -129,6 +129,11 @@ describe("plugin data RPCs", () => {
 
       const events = yield* client["plugins.events"]({ systemId: "node-a", pluginId: "systemd", hours: 24 })
       expect(events.map((event) => event.eventId)).toEqual(["unit.failed"])
+
+      // A later collection without restic-backup means the unit is gone from the node.
+      yield* ingestion.ingestPluginCollection("node-a", { entities: [unit("caddy.service", "active", now + 15_000)] })
+      const current = yield* client["plugins.entities"]({ systemId: "node-a", pluginId: "systemd" })
+      expect(current.map((entity) => entity.ref.id)).toEqual(["caddy.service"])
     }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "operator.sqlite")))),
     20_000,
   )

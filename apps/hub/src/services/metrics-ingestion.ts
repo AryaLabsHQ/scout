@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect"
 import * as Context from "effect/Context"
-import { and, desc, eq, gte } from "drizzle-orm"
+import { and, desc, eq, gte, max } from "drizzle-orm"
 import type { CoreMetricsPayload, SystemMetricsSample } from "@scout/shared"
 import { CoreMetricsPayloadSchema } from "@scout/shared"
 import { Schema } from "effect"
@@ -247,20 +247,32 @@ export class MetricsIngestion extends Context.Service<MetricsIngestion, {
         kind?: string,
       ): Effect.Effect<ReadonlyArray<EntitySnapshot>> =>
         Effect.sync(() => {
+          // A collection reports every entity the plugin currently sees, all with the
+          // collection's timestamp, and rows are upserted, never deleted. Only rows
+          // from the plugin's latest collection still exist on the node; older rows
+          // are units, pods, or containers that have since disappeared.
+          const latest = db
+            .select({ observedAt: max(schema.pluginEntities.observedAt) })
+            .from(schema.pluginEntities)
+            .where(
+              and(
+                eq(schema.pluginEntities.systemId, systemId),
+                eq(schema.pluginEntities.pluginId, pluginId),
+              ),
+            )
+            .get()?.observedAt
+          if (latest === null || latest === undefined) return []
+
           const rows = db
             .select()
             .from(schema.pluginEntities)
             .where(
-              kind === undefined
-                ? and(
-                    eq(schema.pluginEntities.systemId, systemId),
-                    eq(schema.pluginEntities.pluginId, pluginId),
-                  )
-                : and(
-                    eq(schema.pluginEntities.systemId, systemId),
-                    eq(schema.pluginEntities.pluginId, pluginId),
-                    eq(schema.pluginEntities.kind, kind),
-                  ),
+              and(
+                eq(schema.pluginEntities.systemId, systemId),
+                eq(schema.pluginEntities.pluginId, pluginId),
+                gte(schema.pluginEntities.observedAt, latest),
+                ...(kind === undefined ? [] : [eq(schema.pluginEntities.kind, kind)]),
+              ),
             )
             .all()
 
