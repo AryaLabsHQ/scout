@@ -8,6 +8,8 @@ The operator is a persistent chat interface backed by an LLM (via pi-durable, a 
 
 Sessions are durable: the conversation, running tool calls, and pending approvals survive a hub restart, and the operator continues where it stopped.
 
+The operator is behind the same Cloudflare Access login as the rest of Scout. Every operator action is recorded in the hub's audit log with who did it, and approval cards show who approved or rejected each call.
+
 The operator runs entirely on the hub. When it needs to inspect or act on a node, it issues the same typed RPC calls that the dashboard uses. There is no separate agent sidecar or SSH connection.
 
 ## Creating Sessions

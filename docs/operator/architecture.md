@@ -82,7 +82,7 @@ intent is stored. Approvals therefore live inside the tool's `execute()`:
 2. **Wait.** If the record is pending, the tool watches the document until a decision lands. The session shows
    `waiting_for_user`.
 3. **Decide.** `operator.approvals.resolve` commits `approved`/`rejected`, the optional `answer` (clarifications),
-   and the optional `actor`.
+   and the `actor`: the email (else subject) of the identity `ClientAuthMiddleware` verified for the call.
 4. **Claim.** An approved (or ungated) side-effecting call claims its single execution with a durable task memo
    (`scout.execution`) holding a fresh token, then executes.
 
@@ -144,12 +144,30 @@ one. pi-durable commits partial answers and tool output at most every 100 ms.
 | `operator.skills.list` / `operator.models.list` | Query |
 | `operator.sessions.watch` | Stream |
 
+## Access and Audit
+
+Operator RPCs are part of `ClientHubRpcs`, so every call runs behind `ClientAuthMiddleware` (see
+`apps/hub/src/rpc/auth.ts` and `docs/architecture.md`): the Cloudflare Access JWT on the `/ws/rpc` upgrade is
+re-verified per RPC and the identity is provided as `CurrentIdentity`.
+
+- Read-only operator RPCs (`operator.sessions.list` / `get`, `operator.skills.list`, `operator.models.list`,
+  `operator.sessions.watch`) are in `UNAUDITED_RPCS`. Every other operator RPC (create, prompt, abort, fork,
+  approvals, mode and skill changes, archive, delete) is audit-logged with the actor and identifier fields
+  (`sessionId`, `approvalId`, `decision`, ...); prompt text and answers are never logged.
+- Approval decisions store the actor durably in `scout.operator.approvals` and show it in the UI.
+- `operator.sessions.watch` is a stream RPC: when the caller's Access JWT expires it fails with `Unauthorized`
+  ("Cloudflare Access session expired"), and its view subscriptions are released. The browser reconnects with a
+  fresh credential. Durable work (runs, approval waits) is unaffected.
+- With `SCOUT_AUTH=disabled` (loopback only) the actor is the local development identity.
+
+`test/routes/operator-rpc-auth.test.ts` covers the actor and the watch expiry over a real server with a test
+JWKS.
+
 ## Limits
 
 - The timeline shows the active transcript; entries before a compaction are summarized away from it.
 - Deleted sessions stay in the operator SQLite file.
 - No LLM-generated titles or summaries; the UI titles a session from its first prompt.
-- `actor` on approvals is wired once the RPC context carries a verified identity.
 
 ## Extension Points
 
