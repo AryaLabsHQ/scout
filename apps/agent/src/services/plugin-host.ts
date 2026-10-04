@@ -19,11 +19,13 @@ import {
 const isPluginDetected = (capability: PluginCapability): boolean =>
   capability.status === "available" || capability.status === "degraded"
 
+// "invalid-input" is a sentinel the RPC handlers map to their own error code;
+// every other failure keeps the plugin's explanation for the operator.
 const mapExecutionError = (error: PluginExecutionError) =>
   new Error(
     error.code === "invalid-target"
       ? "invalid-input"
-      : error.code,
+      : `${error.code}: ${error.message}`,
   )
 
 export class AgentPluginHost extends Context.Service<
