@@ -108,7 +108,8 @@ export function TopBar() {
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 md:px-5">
-      <Link to="/" className="text-[15px] font-semibold tracking-tight">
+      <Link to="/" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+        <img src="/logo192.png" alt="" width={22} height={22} className="size-[22px]" />
         Scout
       </Link>
       <span className="text-xl font-light text-border-strong" aria-hidden>

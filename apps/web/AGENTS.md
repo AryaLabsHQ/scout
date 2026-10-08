@@ -47,7 +47,7 @@ apps/web/
 - Overview sections backed by optional collectors (Ingress from the edge plugin, Backups & timers from systemd timers) render nothing until their data exists.
 - Every state-changing action asks `useConfirm()` first, naming the action, its target, and the machine, and showing the exact command when there is one. Read-only actions (reading a unit file) run without a confirm.
 - Read query results with `lastValue()` (`src/lib/async-result.ts`) so a failed refresh, such as after the Access session expires, keeps the last good data on screen.
-- Colour only for status: `StatusDot` and the `ok` / `warn` / `err` / `off` tokens in `styles.css`. A health value turns amber or red only when it breaches an enabled alert rule (`src/lib/health.ts`).
+- Colour only for status: `StatusDot` and the `ok` / `warn` / `err` / `off` tokens in `styles.css`. The one exception is the brand icon in the top bar (`public/logo192.png`; `public/` also holds the favicon and app icons). A health value turns amber or red only when it breaches an enabled alert rule (`src/lib/health.ts`).
 - Pinned units live in this browser's `localStorage` (`usePins`, one list per system); the hub knows nothing about them.
 - Relative future times ("next in 19h") use `TimeUntil` from the same module as `TimeAgo`.
 - Relative times use `TimeAgo`, which tolerates the server render and hydration straddling a minute.

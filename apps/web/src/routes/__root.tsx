@@ -142,7 +142,12 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Scout" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.json" },
+    ],
   }),
   /**
    * SSR loader — fetch initial systems + alerts via the hub's REST API so

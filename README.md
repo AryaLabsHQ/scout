@@ -1,3 +1,5 @@
+<img src="./docs/assets/scout-icon.png" alt="" width="64" height="64">
+
 # Scout
 
 [![CI](https://github.com/AryaLabsHQ/scout/actions/workflows/ci.yml/badge.svg)](https://github.com/AryaLabsHQ/scout/actions/workflows/ci.yml)
