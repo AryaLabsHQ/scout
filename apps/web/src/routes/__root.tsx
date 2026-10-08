@@ -146,7 +146,8 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
-      { rel: "manifest", href: "/manifest.json" },
+      // Manifest fetches omit cookies unless asked; behind an auth proxy they would get a login page.
+      { rel: "manifest", href: "/manifest.json", crossOrigin: "use-credentials" },
     ],
   }),
   /**
