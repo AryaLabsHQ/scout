@@ -115,8 +115,18 @@ variable.
 Agents on other hosts reach the hub over a private network, never through the public dashboard
 site. The optional second site in `caddy/Caddyfile.example` routes only `/ws/rpc/agent`, only from
 private addresses, on its own port. Merge it on the hub host, adjust the host name and address
-ranges, and reload Caddy. Over Tailscale, Caddy can serve the `*.ts.net` certificate for the hub's
-tailnet name, so agents connect with `wss://`.
+ranges, and reload Caddy. Agents then need a certificate they trust for that host name:
+
+- **Tailscale**: use the hub's tailnet name (`<host>.<tailnet>.ts.net:3902`). Caddy gets its
+  certificate from tailscaled (allow it with `TS_PERMIT_CERT_UID=caddy` in tailscaled's
+  environment), and agents trust it without extra setup.
+- **Other private networks** (WireGuard, a LAN): add `tls internal` to the listener site, so Caddy
+  issues the certificate from its local CA. Copy that CA's root certificate (by default
+  `/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt` when Caddy runs as the `caddy`
+  user) to each agent host as `~/.config/scout/hub-ca.crt`, and set
+  `NODE_EXTRA_CA_CERTS=/home/<user>/.config/scout/hub-ca.crt` in its `agent.env` so Bun trusts it.
+
+Agents connect with `SCOUT_HUB_URL=wss://<host name>:3902`.
 
 For each new host:
 
