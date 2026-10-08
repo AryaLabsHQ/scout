@@ -34,7 +34,7 @@ const makeDeps = (exec: Exec): SystemdDependencies => ({
   followJournal: () => Stream.empty,
 })
 
-// Captured from `systemctl show --timestamp=us+utc` on Agni (systemd 259).
+// Captured from `systemctl show --timestamp=us+utc` on a production host (systemd 259).
 const SYSTEM_SHOW = [
   "Id=restic-backup.timer",
   "ActiveState=active",
@@ -183,7 +183,7 @@ const fakeSystemctl =
   }
 
 const collect = (exec: Exec) =>
-  Effect.runPromise(createSystemdAgentPlugin(makeDeps(exec)).collect!({ nodeId: "agni", now: 42 }))
+  Effect.runPromise(createSystemdAgentPlugin(makeDeps(exec)).collect!({ nodeId: "node-1", now: 42 }))
 
 describe("systemd parsers", () => {
   it("reads systemd timestamps as epoch milliseconds", () => {
@@ -330,7 +330,7 @@ describe("systemd collection", () => {
   it("fails the collection instead of publishing units without details", async () => {
     const exit = await Effect.runPromiseExit(
       createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { show: "fail" }))).collect!({
-        nodeId: "agni",
+        nodeId: "node-1",
         now: 42,
       }),
     )
@@ -345,10 +345,10 @@ describe("systemd collection", () => {
       makeDeps((command, args) => (failUserShow ? failing : healthy)(command, args)),
     )
 
-    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+    await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 1 }))
     failUserShow = true
     // The user read fails: system data still updates, and user units keep their details.
-    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 2 }))
     const userDbus = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_USER_UNIT_KIND)
     expect(userDbus).toMatchObject({ ts: 2, state: { pid: 2201 } })
     expect(
@@ -364,11 +364,11 @@ describe("systemd collection", () => {
   it("reports a timer's last run as unknown when reused details predate its latest trigger", async () => {
     let next: Exec = fakeSystemctl([])
     const plugin = createSystemdAgentPlugin(makeDeps((command, args) => next(command, args)))
-    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+    await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 1 }))
 
     // A day later the timer fired again, but the detail read fails.
     next = fakeSystemctl([], { show: "fail", lastUs: 1791171264354113 })
-    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 2 }))
     const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)!
     expect(timer.state).toMatchObject({
       lastTriggerAt: 1791171264354,
@@ -382,9 +382,9 @@ describe("systemd collection", () => {
   it("keeps a reused timer result that still describes the latest run", async () => {
     let next: Exec = fakeSystemctl([])
     const plugin = createSystemdAgentPlugin(makeDeps((command, args) => next(command, args)))
-    await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 1 }))
+    await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 1 }))
     next = fakeSystemctl([], { show: "fail" })
-    const result = await Effect.runPromise(plugin.collect!({ nodeId: "agni", now: 2 }))
+    const result = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 2 }))
     const timer = result.entities!.find((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)!
     expect(timer.state).toMatchObject({ lastResult: "exit-code", lastExitStatus: 3 })
   })
@@ -392,7 +392,7 @@ describe("systemd collection", () => {
   it("fails the collection when a manager's first detail read fails", async () => {
     const exit = await Effect.runPromiseExit(
       createSystemdAgentPlugin(makeDeps(fakeSystemctl([], { userShow: "fail" }))).collect!({
-        nodeId: "agni",
+        nodeId: "node-1",
         now: 42,
       }),
     )
@@ -405,7 +405,7 @@ describe("systemd collection", () => {
         makeDeps(() =>
           Effect.succeed({ stdout: "", stderr: "System has not been booted with systemd", exitCode: 1 }),
         ),
-      ).collect!({ nodeId: "agni", now: 42 }),
+      ).collect!({ nodeId: "node-1", now: 42 }),
     )
     expect(Exit.isFailure(exit)).toBe(true)
   })
@@ -416,11 +416,11 @@ describe("user-scope unit actions", () => {
     Effect.runPromiseExit(
       executePluginAction(
         { manifest, agent: createSystemdAgentPlugin(makeDeps(exec)) },
-        { nodeId: "agni", permissions: new Set(["node:systemd", "node:spawn-process", "node:read-files"]) },
+        { nodeId: "node-1", permissions: new Set(["node:systemd", "node:spawn-process", "node:read-files"]) },
         {
           pluginId: SYSTEMD_PLUGIN_ID,
           actionId,
-          target: { nodeId: "agni", entity: { pluginId: SYSTEMD_PLUGIN_ID, kind, nodeId: "agni", id } },
+          target: { nodeId: "node-1", entity: { pluginId: SYSTEMD_PLUGIN_ID, kind, nodeId: "node-1", id } },
           input: {},
         },
       ),
@@ -446,7 +446,7 @@ describe("user-scope unit actions", () => {
     const exit = await run(
       (command, args) => {
         calls.push(`${command} ${args.join(" ")}`)
-        return ok("FragmentPath=/home/ubuntu/.config/systemd/user/t3code.service\n")
+        return ok("FragmentPath=/home/scout/.config/systemd/user/t3code.service\n")
       },
       SYSTEMD_ACTION_IDS.readUnitFile,
       SYSTEMD_USER_UNIT_KIND,

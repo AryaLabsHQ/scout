@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/alert-dialog"
 
 export interface ConfirmOptions {
-  /** A question naming the action and its target, e.g. "Restart caddy.service on agni?" */
+  /** A question naming the action and its target, e.g. "Restart caddy.service on node-1?" */
   readonly title: string
   readonly description?: ReactNode
   /** The confirm button's verb, e.g. "Restart". */

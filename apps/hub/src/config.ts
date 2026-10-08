@@ -14,7 +14,7 @@ import * as Context from "effect/Context"
 export type BrowserAuthConfig =
   | {
       readonly _tag: "Access"
-      /** Cloudflare Access team domain, e.g. `aryalabs.cloudflareaccess.com`. */
+      /** Cloudflare Access team domain, e.g. `your-team.cloudflareaccess.com`. */
       readonly teamDomain: string
       /** Application Audience (AUD) tag of the Access application. */
       readonly audience: string

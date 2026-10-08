@@ -179,9 +179,9 @@ This keeps the Operator runtime stable while allowing plugin-defined domain inte
 
 The existing first-party plugins already follow the right direction:
 
-- Docker operator guidance in [packages/plugin-docker/src/operator.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-docker/src/operator.ts)
-- Kubernetes operator guidance in [packages/plugin-k8s/src/operator.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-k8s/src/operator.ts)
-- Systemd operator guidance in [packages/plugin-systemd/src/operator.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-systemd/src/operator.ts)
+- Docker operator guidance in [packages/plugin-docker/src/operator.ts](../../packages/plugin-docker/src/operator.ts)
+- Kubernetes operator guidance in [packages/plugin-k8s/src/operator.ts](../../packages/plugin-k8s/src/operator.ts)
+- Systemd operator guidance in [packages/plugin-systemd/src/operator.ts](../../packages/plugin-systemd/src/operator.ts)
 
 Right now they contribute mostly resources and skills. That is a good starting point.
 
