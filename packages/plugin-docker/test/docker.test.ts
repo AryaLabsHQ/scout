@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   decodePluginManifest,
@@ -6,6 +6,7 @@ import {
   executePluginAction,
   openPluginStream,
 } from "@scout/plugin-sdk"
+import { AgentPluginCollectionPayload } from "@scout/shared"
 import { agent } from "../src/agent.js"
 import {
   DOCKER_ACTION_IDS,
@@ -555,6 +556,83 @@ describe("docker plugin", () => {
         }),
       ]),
     )
+  })
+
+  it("omits missing optional Docker fields so the collection encodes as RPC JSON", async () => {
+    // Mirrors a host using the containerd image store: images have no `Parent`,
+    // and containers can lack health, exit code, mount, and network fields.
+    const plugin = createDockerAgentPlugin(
+      makeDeps({
+        "docker info --format {{json .}}": {
+          stdout: JSON.stringify({ ID: "daemon-1" }),
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker container ls --all --quiet --no-trunc": {
+          stdout: "cont-app\n",
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker image ls --quiet --no-trunc": {
+          stdout: "sha256:img-app\n",
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker volume ls --quiet": { stdout: "data\n", stderr: "", exitCode: 0 },
+        "docker network ls --quiet --no-trunc": { stdout: "net-app\n", stderr: "", exitCode: 0 },
+        "docker container inspect cont-app": {
+          stdout: JSON.stringify([
+            {
+              Id: "cont-app",
+              Name: "/app",
+              Image: "sha256:img-app",
+              State: { Status: "created" },
+              Mounts: [{ Type: "bind", Destination: "/data" }],
+              NetworkSettings: { Networks: { "app-net": {} } },
+            },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker image inspect sha256:img-app": {
+          stdout: JSON.stringify([{ Id: "sha256:img-app", RepoTags: ["acme/app:latest"] }]),
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker volume inspect data": {
+          stdout: JSON.stringify([{ Name: "data" }]),
+          stderr: "",
+          exitCode: 0,
+        },
+        "docker network inspect net-app": {
+          stdout: JSON.stringify([{ Id: "net-app" }]),
+          stderr: "",
+          exitCode: 0,
+        },
+      }),
+    )
+
+    const collection = await Effect.runPromise(plugin.collect!({ nodeId: "node-1", now: 42 }))
+
+    expect(collection.entities).toHaveLength(5)
+    expect(() =>
+      Schema.encodeUnknownSync(Schema.toCodecJson(AgentPluginCollectionPayload))({
+        systemId: "system-1",
+        collection,
+      }),
+    ).not.toThrow()
+
+    const image = collection.entities?.find((entity) => entity.ref.kind === DOCKER_ENTITY_KINDS.image)
+    const container = collection.entities?.find((entity) => entity.ref.kind === DOCKER_ENTITY_KINDS.container)
+    expect(image?.spec).toStrictEqual({ repoTags: ["acme/app:latest"], repoDigests: [] })
+    expect(container?.state).toStrictEqual({
+      running: false,
+      paused: false,
+      restarting: false,
+      oomKilled: false,
+      dead: false,
+      networks: [{ name: "app-net", aliases: [] }],
+    })
   })
 
   it("returns an empty inventory on non-Docker hosts", async () => {

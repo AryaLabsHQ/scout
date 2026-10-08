@@ -127,6 +127,7 @@
         "effect": "4.0.0",
       },
       "devDependencies": {
+        "@scout/shared": "workspace:*",
         "@types/node": "^24.6.0",
         "typescript": "7.0.2",
         "vitest": "^5.0.3",
