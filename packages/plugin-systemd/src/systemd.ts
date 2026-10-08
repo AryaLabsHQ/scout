@@ -510,6 +510,12 @@ const getUnitFilePath = (
 /** What one systemd manager (system or user) reported in one collection. */
 export interface ScopeSnapshot {
   readonly scope: SystemdScope
+  /**
+   * False when the manager's services could not be listed (no reachable user
+   * manager). Such a scope reports no units and no totals, so a failed read is
+   * never mistaken for "zero failed units".
+   */
+  readonly listed: boolean
   readonly services: ReadonlyArray<SystemdUnitMetrics>
   readonly timers: ReadonlyArray<SystemdUnitMetrics>
   readonly schedule: ReadonlyArray<SystemctlTimer>
@@ -629,8 +635,11 @@ export const buildCollection = (
     ...timers,
   ]
 
-  // Each scope gets its own totals so a failed user unit alerts separately from a system one.
+  // Each scope gets its own totals so a failed user unit alerts separately from
+  // a system one. An unlisted scope reports none: a zero would resolve an open
+  // alert without a read showing the unit recovered.
   const scopeTotals = (scope: SystemdScope, ids: { total: string; active: string; failed: string }) => {
+    if (!snapshots.some((snapshot) => snapshot.scope === scope && snapshot.listed)) return []
     const scoped = services.filter((service) => service.scope === scope)
     return [
       { metricId: ids.total, value: scoped.length },
@@ -742,8 +751,9 @@ export const createSystemdAgentPlugin = (
     )
   }
 
-  const emptyScope = (scope: SystemdScope): ScopeSnapshot => ({
+  const unlistedScope = (scope: SystemdScope): ScopeSnapshot => ({
     scope,
+    listed: false,
     services: [],
     timers: [],
     schedule: [],
@@ -754,15 +764,16 @@ export const createSystemdAgentPlugin = (
   /**
    * One manager's units, timers, and details. Only a failed service listing of
    * the user manager means "no user manager" (e.g. an agent run as a system
-   * service without a login session) and yields an empty scope; a failed
-   * detail read falls back as `showUnits` describes.
+   * service without a login session, or a manager that did not answer) and
+   * yields an unlisted scope; a failed detail read falls back as `showUnits`
+   * describes.
    */
   const collectScope = (scope: SystemdScope): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
     listUnits(scope, "service").pipe(
       Effect.map((services): ReadonlyArray<SystemdUnitMetrics> | null => services),
       Effect.catch((error) => (scope === "user" ? Effect.succeed(null) : Effect.fail(error))),
       Effect.flatMap((services) =>
-        services === null ? Effect.succeed(emptyScope(scope)) : collectListedScope(scope, services),
+        services === null ? Effect.succeed(unlistedScope(scope)) : collectListedScope(scope, services),
       ),
     )
 
@@ -791,6 +802,7 @@ export const createSystemdAgentPlugin = (
         ]).pipe(
           Effect.map(({ details, fresh }) => ({
             scope,
+            listed: true,
             services,
             timers,
             schedule,

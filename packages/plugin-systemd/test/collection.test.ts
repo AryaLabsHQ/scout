@@ -334,6 +334,10 @@ describe("systemd collection", () => {
     expect(result.entities!.some((entity) => entity.ref.kind === SYSTEMD_USER_UNIT_KIND)).toBe(false)
     expect(result.entities!.some((entity) => entity.ref.kind === SYSTEMD_USER_TIMER_KIND)).toBe(false)
     expect(result.entities!.some((entity) => entity.ref.kind === SYSTEMD_TIMER_KIND)).toBe(true)
+    // An unread user manager reports no user totals, so a zero never resolves an open alert.
+    const metricIds = new Set(result.metrics!.map((point) => point.metricId))
+    expect(metricIds.has("units.failed")).toBe(true)
+    expect([...metricIds].filter((metricId) => metricId.startsWith("user-units."))).toEqual([])
   })
 
   it("retries show without --timestamp on an older systemctl", async () => {
