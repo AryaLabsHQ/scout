@@ -10,7 +10,12 @@ import { join } from "node:path"
 import { Deferred, Effect, Fiber, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { openPluginStream, type StreamChunk } from "@scout/plugin-sdk"
-import { SYSTEMD_PLUGIN_ID, SYSTEMD_STREAM_IDS, SYSTEMD_UNIT_KIND } from "../src/contracts.js"
+import {
+  SYSTEMD_PLUGIN_ID,
+  SYSTEMD_STREAM_IDS,
+  SYSTEMD_UNIT_KIND,
+  SYSTEMD_USER_UNIT_KIND,
+} from "../src/contracts.js"
 import { manifest } from "../src/manifest.js"
 import { createSystemdAgentPlugin } from "../src/systemd.js"
 
@@ -31,27 +36,30 @@ afterAll(() => {
   rmSync(binDir, { recursive: true, force: true })
 })
 
-const openUnitLogs = openPluginStream(
-  { manifest, agent: createSystemdAgentPlugin() },
-  {
-    nodeId: "node-1",
-    permissions: new Set(["node:systemd", "node:stream-logs", "node:spawn-process"]),
-  },
-  {
-    pluginId: SYSTEMD_PLUGIN_ID,
-    streamId: SYSTEMD_STREAM_IDS.unitLogs,
-    target: {
+const openLogs = (kind: string) =>
+  openPluginStream(
+    { manifest, agent: createSystemdAgentPlugin() },
+    {
       nodeId: "node-1",
-      entity: {
-        pluginId: SYSTEMD_PLUGIN_ID,
-        kind: SYSTEMD_UNIT_KIND,
-        nodeId: "node-1",
-        id: "cron.service",
-      },
+      permissions: new Set(["node:systemd", "node:stream-logs", "node:spawn-process"]),
     },
-    input: { tail: 5 },
-  },
-)
+    {
+      pluginId: SYSTEMD_PLUGIN_ID,
+      streamId: SYSTEMD_STREAM_IDS.unitLogs,
+      target: {
+        nodeId: "node-1",
+        entity: {
+          pluginId: SYSTEMD_PLUGIN_ID,
+          kind,
+          nodeId: "node-1",
+          id: "cron.service",
+        },
+      },
+      input: { tail: 5 },
+    },
+  )
+
+const openUnitLogs = openLogs(SYSTEMD_UNIT_KIND)
 
 const pidOf = (chunk: StreamChunk): number => {
   if (!("lines" in chunk)) throw new Error(`not a log chunk: ${JSON.stringify(chunk)}`)
@@ -87,6 +95,18 @@ describe("systemd unit log stream", () => {
       lines: expect.arrayContaining(["args -f -u cron.service -n 5 --output=short-iso"]),
     })
     expect(isRunning(pidOf(first.value))).toBe(false)
+  })
+
+  it("reads a user unit from the agent user's journal", async () => {
+    const first = await runWithDeadline(
+      openLogs(SYSTEMD_USER_UNIT_KIND).pipe(Effect.flatMap((stream) => Stream.runHead(stream))),
+    )
+
+    expect(first._tag).toBe("Some")
+    if (first._tag !== "Some") return
+    expect(first.value).toMatchObject({
+      lines: expect.arrayContaining(["args --user -f -u cron.service -n 5 --output=short-iso"]),
+    })
   })
 
   it("kills and reaps journalctl when the stream is interrupted while idle", async () => {

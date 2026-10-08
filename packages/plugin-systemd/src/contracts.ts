@@ -94,10 +94,17 @@ export const SystemdTimerStateSchema = Schema.Struct({
 export type SystemdUnitState = typeof SystemdUnitStateSchema.Type
 export type SystemdTimerState = typeof SystemdTimerStateSchema.Type
 
+/**
+ * `units.*` count services of the system manager and `user-units.*` count
+ * services of the agent user's manager, so each scope can alert on its own.
+ */
 export const SYSTEMD_METRIC_IDS = {
   totalUnits: "units.total",
   activeUnits: "units.active",
   failedUnits: "units.failed",
+  totalUserUnits: "user-units.total",
+  activeUserUnits: "user-units.active",
+  failedUserUnits: "user-units.failed",
   unitMemoryBytes: "unit.memory.bytes",
   unitCpuUsageNs: "unit.cpu.usage.ns",
 } as const

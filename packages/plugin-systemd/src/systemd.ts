@@ -54,7 +54,7 @@ export interface SystemdDependencies {
   readonly writeFile: (path: string, content: string) => Effect.Effect<void, Error>
   readonly unlink: (path: string) => Effect.Effect<void>
   readonly makeTempPath: (prefix: string) => string
-  readonly followJournal: (unit: string, tail: number) => Stream.Stream<LogChunk, Error>
+  readonly followJournal: (unit: string, tail: number, scope: SystemdScope) => Stream.Stream<LogChunk, Error>
 }
 
 interface SystemctlUnit {
@@ -339,9 +339,9 @@ const getTargetUnit = (
 /** The target unit plus the manager that owns it, from the target entity's kind. */
 const getTargetService = (
   target: ActionTarget,
-  actionId: string,
+  opts: { actionId?: string; streamId?: string },
 ): Effect.Effect<{ readonly unit: string; readonly scope: SystemdScope }, PluginExecutionError> =>
-  getTargetUnit(target, { actionId }).pipe(
+  getTargetUnit(target, opts).pipe(
     Effect.flatMap(
       (
         unit,
@@ -350,9 +350,11 @@ const getTargetService = (
         if (kind === SYSTEMD_UNIT_KIND) return Effect.succeed({ unit, scope: "system" })
         if (kind === SYSTEMD_USER_UNIT_KIND) return Effect.succeed({ unit, scope: "user" })
         return Effect.fail(
-          failExecution("invalid-target", `Systemd unit actions do not apply to ${String(kind)} entities`, {
-            actionId,
-          }),
+          failExecution(
+            "invalid-target",
+            `Systemd unit actions do not apply to ${String(kind)} entities`,
+            opts,
+          ),
         )
       },
     ),
@@ -404,9 +406,18 @@ const makeDefaultDependencies = (): SystemdDependencies => ({
     }).pipe(Effect.orElseSucceed(() => undefined)),
   makeTempPath: (prefix) => join(tmpdir(), `${prefix}-${randomUUID()}.tmp`),
   // Unprivileged agents read system unit logs through journal group
-  // membership (`adm` or `systemd-journal`).
-  followJournal: (unit, tail) =>
-    followProcessLines("journalctl", ["-f", "-u", unit, "-n", String(tail), "--output=short-iso"]),
+  // membership (`adm` or `systemd-journal`); the agent user always reads
+  // its own user journal.
+  followJournal: (unit, tail, scope) =>
+    followProcessLines("journalctl", [
+      ...scopeArgs(scope),
+      "-f",
+      "-u",
+      unit,
+      "-n",
+      String(tail),
+      "--output=short-iso",
+    ]),
 })
 
 const runChecked = (
@@ -499,6 +510,12 @@ const getUnitFilePath = (
 /** What one systemd manager (system or user) reported in one collection. */
 export interface ScopeSnapshot {
   readonly scope: SystemdScope
+  /**
+   * False when the manager's services could not be listed (no reachable user
+   * manager). Such a scope reports no units and no totals, so a failed read is
+   * never mistaken for "zero failed units".
+   */
+  readonly listed: boolean
   readonly services: ReadonlyArray<SystemdUnitMetrics>
   readonly timers: ReadonlyArray<SystemdUnitMetrics>
   readonly schedule: ReadonlyArray<SystemctlTimer>
@@ -613,36 +630,35 @@ export const buildCollection = (
   const timers = snapshots.flatMap((snapshot) =>
     snapshot.timers.map((timer) => timerEntity(nodeId, ts, snapshot, timer)),
   )
-  // The unit totals (and the unit.failed alert) keep meaning system services.
-  const systemServices = services.filter((service) => service.scope === "system")
-
   const entities = [
     ...services.map(({ scope, unit, details }) => unitEntity(nodeId, ts, scope, unit, details)),
     ...timers,
   ]
 
+  // Each scope gets its own totals so a failed user unit alerts separately from
+  // a system one. An unlisted scope reports none: a zero would resolve an open
+  // alert without a read showing the unit recovered.
+  const scopeTotals = (scope: SystemdScope, ids: { total: string; active: string; failed: string }) => {
+    if (!snapshots.some((snapshot) => snapshot.scope === scope && snapshot.listed)) return []
+    const scoped = services.filter((service) => service.scope === scope)
+    return [
+      { metricId: ids.total, value: scoped.length },
+      { metricId: ids.active, value: scoped.filter(({ unit }) => unit.activeState === "active").length },
+      { metricId: ids.failed, value: scoped.filter(({ unit }) => unit.activeState === "failed").length },
+    ].map(({ metricId, value }) => ({ pluginId: SYSTEMD_PLUGIN_ID, metricId, ts, value, unit: "count" }))
+  }
+
   const metrics = [
-    {
-      pluginId: SYSTEMD_PLUGIN_ID,
-      metricId: SYSTEMD_METRIC_IDS.totalUnits,
-      ts,
-      value: systemServices.length,
-      unit: "count",
-    },
-    {
-      pluginId: SYSTEMD_PLUGIN_ID,
-      metricId: SYSTEMD_METRIC_IDS.activeUnits,
-      ts,
-      value: systemServices.filter(({ unit }) => unit.activeState === "active").length,
-      unit: "count",
-    },
-    {
-      pluginId: SYSTEMD_PLUGIN_ID,
-      metricId: SYSTEMD_METRIC_IDS.failedUnits,
-      ts,
-      value: systemServices.filter(({ unit }) => unit.activeState === "failed").length,
-      unit: "count",
-    },
+    ...scopeTotals("system", {
+      total: SYSTEMD_METRIC_IDS.totalUnits,
+      active: SYSTEMD_METRIC_IDS.activeUnits,
+      failed: SYSTEMD_METRIC_IDS.failedUnits,
+    }),
+    ...scopeTotals("user", {
+      total: SYSTEMD_METRIC_IDS.totalUserUnits,
+      active: SYSTEMD_METRIC_IDS.activeUserUnits,
+      failed: SYSTEMD_METRIC_IDS.failedUserUnits,
+    }),
     ...services.flatMap(({ scope, unit, details }) => {
       const ref = entityRef(nodeId, SYSTEMD_SERVICE_KINDS[scope], unit.unit)
       return [
@@ -735,8 +751,9 @@ export const createSystemdAgentPlugin = (
     )
   }
 
-  const emptyScope = (scope: SystemdScope): ScopeSnapshot => ({
+  const unlistedScope = (scope: SystemdScope): ScopeSnapshot => ({
     scope,
+    listed: false,
     services: [],
     timers: [],
     schedule: [],
@@ -747,15 +764,16 @@ export const createSystemdAgentPlugin = (
   /**
    * One manager's units, timers, and details. Only a failed service listing of
    * the user manager means "no user manager" (e.g. an agent run as a system
-   * service without a login session) and yields an empty scope; a failed
-   * detail read falls back as `showUnits` describes.
+   * service without a login session, or a manager that did not answer) and
+   * yields an unlisted scope; a failed detail read falls back as `showUnits`
+   * describes.
    */
   const collectScope = (scope: SystemdScope): Effect.Effect<ScopeSnapshot, PluginExecutionError> =>
     listUnits(scope, "service").pipe(
       Effect.map((services): ReadonlyArray<SystemdUnitMetrics> | null => services),
       Effect.catch((error) => (scope === "user" ? Effect.succeed(null) : Effect.fail(error))),
       Effect.flatMap((services) =>
-        services === null ? Effect.succeed(emptyScope(scope)) : collectListedScope(scope, services),
+        services === null ? Effect.succeed(unlistedScope(scope)) : collectListedScope(scope, services),
       ),
     )
 
@@ -784,6 +802,7 @@ export const createSystemdAgentPlugin = (
         ]).pipe(
           Effect.map(({ details, fresh }) => ({
             scope,
+            listed: true,
             services,
             timers,
             schedule,
@@ -800,7 +819,7 @@ export const createSystemdAgentPlugin = (
     )
 
   const executeUnitAction = (verb: string, actionId: string, target: ActionTarget) =>
-    getTargetService(target, actionId).pipe(
+    getTargetService(target, { actionId }).pipe(
       Effect.flatMap(({ unit, scope }) =>
         runSystemctlMutation(deps, [...scopeArgs(scope), verb, unit], actionId),
       ),
@@ -855,7 +874,7 @@ export const createSystemdAgentPlugin = (
       inputSchema: EmptyInputSchema,
       outputSchema: UnitFileSchema,
       execute: (_ctx, target: ActionTarget, _input: unknown) =>
-        getTargetService(target, SYSTEMD_ACTION_IDS.readUnitFile).pipe(
+        getTargetService(target, { actionId: SYSTEMD_ACTION_IDS.readUnitFile }).pipe(
           Effect.flatMap(({ unit, scope }) =>
             getUnitFilePath(deps, unit, scope, SYSTEMD_ACTION_IDS.readUnitFile).pipe(
               Effect.flatMap((path) =>
@@ -877,7 +896,7 @@ export const createSystemdAgentPlugin = (
       inputSchema: UnitFileWriteInputSchema,
       outputSchema: EmptyInputSchema,
       execute: (_ctx, target: ActionTarget, input: unknown) =>
-        getTargetService(target, SYSTEMD_ACTION_IDS.writeUnitFile).pipe(
+        getTargetService(target, { actionId: SYSTEMD_ACTION_IDS.writeUnitFile }).pipe(
           Effect.flatMap(({ unit, scope }) =>
             getUnitFilePath(deps, unit, scope, SYSTEMD_ACTION_IDS.writeUnitFile).pipe(
               Effect.flatMap((targetPath) => {
@@ -935,9 +954,9 @@ export const createSystemdAgentPlugin = (
       chunkSchema: LogChunkSchema,
       open: (_ctx, target: ActionTarget, input: unknown) =>
         Stream.unwrap(
-          getTargetUnit(target, { streamId: SYSTEMD_STREAM_IDS.unitLogs }).pipe(
-            Effect.map((unit) =>
-              deps.followJournal(unit, (input as { tail?: number }).tail ?? DEFAULT_LOG_TAIL).pipe(
+          getTargetService(target, { streamId: SYSTEMD_STREAM_IDS.unitLogs }).pipe(
+            Effect.map(({ unit, scope }) =>
+              deps.followJournal(unit, (input as { tail?: number }).tail ?? DEFAULT_LOG_TAIL, scope).pipe(
                 Stream.mapError((error) =>
                   error instanceof PluginExecutionError
                     ? error

@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import * as Context from "effect/Context"
 import type { Alert, SystemMetricsSample } from "@scout/shared"
-import { AlertEngine } from "../../src/services/alert-engine.js"
+import { AlertEngine, DEFAULT_ALERT_RULES } from "../../src/services/alert-engine.js"
 import { alertMetricSamplesFromCoreMetrics } from "../../src/services/alert-metrics.js"
 import { Database } from "../../src/services/database.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
@@ -59,7 +59,12 @@ type RuleSpec = {
   enabled: boolean
 }
 
-function makeTestLayer(rules?: RuleSpec[]) {
+/**
+ * With `rules`, the database holds exactly those rules plus every default rule
+ * disabled, so only the given rules fire. `withDefaults` leaves the defaults
+ * out of the fixture, so startup seeding adds them as it would on an existing hub.
+ */
+function makeTestLayer(rules?: RuleSpec[], { withDefaults = false } = {}) {
   const configLayer = ConfigProvider.layer(ConfigProvider.fromUnknown({ SCOUT_DB_PATH: ":memory:" }))
 
   const dbLayer = Database.layer.pipe(
@@ -71,11 +76,18 @@ function makeTestLayer(rules?: RuleSpec[]) {
 
         if (rules !== undefined) {
           const now = Date.now()
-          db.$client.exec(
-            `INSERT OR IGNORE INTO alert_rules (id, metric, operator, threshold, consecutive_count, severity, enabled, created_at)
-             VALUES ('__sentinel__', 'cpu.usage', '>', 999, 99, 'warning', 0, ${now})`,
-          )
-          for (const rule of rules) {
+          const disabledDefaults = withDefaults
+            ? []
+            : DEFAULT_ALERT_RULES.map((rule) => ({
+                id: rule.id,
+                metric: rule.metric,
+                operator: rule.operator as RuleSpec["operator"],
+                threshold: rule.threshold,
+                consecutiveCount: rule.consecutiveCount ?? 3,
+                severity: rule.severity,
+                enabled: false,
+              }))
+          for (const rule of [...disabledDefaults, ...rules]) {
             db.$client.exec(
               `INSERT OR REPLACE INTO alert_rules (id, metric, operator, threshold, consecutive_count, severity, enabled, created_at)
                VALUES ('${rule.id}', '${rule.metric}', '${rule.operator}', ${rule.threshold}, ${rule.consecutiveCount}, '${rule.severity}', ${rule.enabled ? 1 : 0}, ${now})`,
@@ -89,8 +101,12 @@ function makeTestLayer(rules?: RuleSpec[]) {
   return AlertEngine.layer.pipe(Layer.provide(Layer.merge(dbLayer, MetricsBroadcast.layer)))
 }
 
-function withEngine<A, E>(eff: Effect.Effect<A, E, AlertEngine>, rules?: RuleSpec[]) {
-  return eff.pipe(Effect.provide(makeTestLayer(rules)))
+function withEngine<A, E>(
+  eff: Effect.Effect<A, E, AlertEngine>,
+  rules?: RuleSpec[],
+  opts?: { withDefaults?: boolean },
+) {
+  return eff.pipe(Effect.provide(makeTestLayer(rules, opts)))
 }
 
 const BASE_SAMPLE = makeSystemMetricsSample({
@@ -377,6 +393,54 @@ describe("AlertEngine", () => {
         expect(alerts).toHaveLength(1)
         expect(alerts[0]!.metric).toBe("cpu.usage")
       }),
+    ),
+  )
+
+  it.effect("adds missing default rules to a database that already has rules", () =>
+    withEngine(
+      Effect.gen(function* () {
+        const engine = yield* AlertEngine
+        const failed = [
+          { metric: "systemd.units.failed", value: 1 },
+          { metric: "systemd.user-units.failed", value: 2 },
+        ]
+
+        const first = yield* engine.evaluate("sys-1", failed)
+        expect(first).toHaveLength(0)
+        const second = yield* engine.evaluate("sys-1", failed)
+        expect(second.map((alert) => [alert.ruleId, alert.severity, alert.value])).toEqual([
+          ["default-systemd-failed-units", "critical", 1],
+          ["default-systemd-failed-user-units", "warning", 2],
+        ])
+      }),
+      [CPU_RULE],
+      { withDefaults: true },
+    ),
+  )
+
+  it.effect("leaves a disabled default rule disabled", () =>
+    withEngine(
+      Effect.gen(function* () {
+        const engine = yield* AlertEngine
+        const failed = [{ metric: "systemd.user-units.failed", value: 1 }]
+
+        yield* engine.evaluate("sys-1", failed)
+        yield* engine.evaluate("sys-1", failed)
+        const third = yield* engine.evaluate("sys-1", failed)
+        expect(third).toHaveLength(0)
+      }),
+      [
+        {
+          id: "default-systemd-failed-user-units",
+          metric: "systemd.user-units.failed",
+          operator: ">",
+          threshold: 0,
+          consecutiveCount: 2,
+          severity: "warning",
+          enabled: false,
+        },
+      ],
+      { withDefaults: true },
     ),
   )
 })

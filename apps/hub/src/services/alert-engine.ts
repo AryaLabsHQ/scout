@@ -9,7 +9,7 @@ import * as schema from "../../drizzle/schema.js"
 
 // ── Default seed rules ────────────────────────────────────────────────────────
 
-const DEFAULT_RULES: Omit<typeof schema.alertRules.$inferInsert, "createdAt">[] = [
+export const DEFAULT_ALERT_RULES: Omit<typeof schema.alertRules.$inferInsert, "createdAt">[] = [
   {
     id: "default-cpu-usage",
     metric: "cpu.usage",
@@ -53,6 +53,25 @@ const DEFAULT_RULES: Omit<typeof schema.alertRules.$inferInsert, "createdAt">[] 
     threshold: 1,
     consecutiveCount: 1,
     severity: "critical",
+    enabled: true,
+  },
+  // Plugin metrics reach the engine as `<pluginId>.<metricId>` (see alert-metrics.ts).
+  {
+    id: "default-systemd-failed-units",
+    metric: "systemd.units.failed",
+    operator: ">",
+    threshold: 0,
+    consecutiveCount: 2,
+    severity: "critical",
+    enabled: true,
+  },
+  {
+    id: "default-systemd-failed-user-units",
+    metric: "systemd.user-units.failed",
+    operator: ">",
+    threshold: 0,
+    consecutiveCount: 2,
+    severity: "warning",
     enabled: true,
   },
 ]
@@ -135,16 +154,16 @@ export class AlertEngine extends Context.Service<
     const recoveryCounts = yield* Ref.make(new Map<string, number>())
 
     // ── Seed default rules ─────────────────────────────────────────────────
+    // Every start adds default rules the database lacks, so an existing hub picks
+    // up new defaults. Rules can be edited but not deleted, so an existing row,
+    // including a disabled one, is left as the operator set it.
     yield* Effect.sync(() => {
-      const existing = db.select().from(schema.alertRules).limit(1).all()
-      if (existing.length === 0) {
-        const now = new Date()
-        for (const rule of DEFAULT_RULES) {
-          db.insert(schema.alertRules)
-            .values({ ...rule, createdAt: now })
-            .onConflictDoNothing()
-            .run()
-        }
+      const now = new Date()
+      for (const rule of DEFAULT_ALERT_RULES) {
+        db.insert(schema.alertRules)
+          .values({ ...rule, createdAt: now })
+          .onConflictDoNothing()
+          .run()
       }
     })
 

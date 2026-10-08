@@ -80,6 +80,24 @@ export const manifest = {
       unit: "count",
     },
     {
+      id: SYSTEMD_METRIC_IDS.totalUserUnits,
+      displayName: "Total User Units",
+      kind: "gauge",
+      unit: "count",
+    },
+    {
+      id: SYSTEMD_METRIC_IDS.activeUserUnits,
+      displayName: "Active User Units",
+      kind: "gauge",
+      unit: "count",
+    },
+    {
+      id: SYSTEMD_METRIC_IDS.failedUserUnits,
+      displayName: "Failed User Units",
+      kind: "gauge",
+      unit: "count",
+    },
+    {
       id: SYSTEMD_METRIC_IDS.unitMemoryBytes,
       displayName: "Unit Memory",
       kind: "gauge",
@@ -157,7 +175,7 @@ export const manifest = {
       id: SYSTEMD_STREAM_IDS.unitLogs,
       displayName: "Unit Logs",
       kind: "logs",
-      targetKinds: [SYSTEMD_UNIT_KIND],
+      targetKinds: SERVICE_KINDS,
       permissions: ["node:systemd", "node:stream-logs", "node:spawn-process"],
     },
   ],
@@ -165,10 +183,18 @@ export const manifest = {
     {
       id: "unit.failed",
       displayName: "Failed unit",
-      description: "A systemd unit entered the failed state.",
+      description: "A system service unit entered the failed state.",
       severity: "critical",
       entityKinds: [SYSTEMD_UNIT_KIND],
       metricIds: [SYSTEMD_METRIC_IDS.failedUnits],
+    },
+    {
+      id: "user-unit.failed",
+      displayName: "Failed user unit",
+      description: "A service unit of the agent user's manager entered the failed state.",
+      severity: "warning",
+      entityKinds: [SYSTEMD_USER_UNIT_KIND],
+      metricIds: [SYSTEMD_METRIC_IDS.failedUserUnits],
     },
   ],
 } satisfies PluginManifest
