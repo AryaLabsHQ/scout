@@ -26,7 +26,6 @@ x-node-common: &node-common # systemd needs these
   # Host-level env defaults — per-service env adds hostname
   environment: &node-env
     SCOUT_HUB_URL: ws://host.docker.internal:3001
-    SCOUT_TOKEN: test-token-123
     SCOUT_INTERVAL: "15"
 
 services:
@@ -52,6 +51,7 @@ services:
     environment:
       <<: *node-env
       SCOUT_HOSTNAME: node-server
+      SCOUT_TOKEN: test-token-server
 
   # ── node-k3s: single-node k3s ──────────────────────────────────────────────
   node-k3s:
@@ -65,6 +65,7 @@ services:
     environment:
       <<: *node-env
       SCOUT_HOSTNAME: node-k3s
+      SCOUT_TOKEN: test-token-k3s
       # Point the agent's k8s collector at k3s's kubeconfig
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     # k3s needs its own volume; overrides the shared volumes block
@@ -86,6 +87,7 @@ services:
     environment:
       <<: *node-env
       SCOUT_HOSTNAME: node-docker
+      SCOUT_TOKEN: test-token-docker
 
   # ── node-minimal: bare Ubuntu, no extras ────────────────────────────────────
   node-minimal:
@@ -99,6 +101,7 @@ services:
     environment:
       <<: *node-env
       SCOUT_HOSTNAME: node-minimal
+      SCOUT_TOKEN: test-token-minimal
 
 volumes:
   k3s-data:

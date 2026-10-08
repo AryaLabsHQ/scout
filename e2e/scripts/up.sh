@@ -6,7 +6,8 @@
 #   With node name:   start only that node (e.g. node-server, node-k3s)
 #
 # Prerequisite: the hub must already be running on localhost:3001.
-# Start it from apps/hub with: SCOUT_TOKEN=test-token-123 bun run dev
+# Start it from apps/hub with:
+#   SCOUT_AGENT_TOKENS=node-server=test-token-server,node-k3s=test-token-k3s,node-docker=test-token-docker,node-minimal=test-token-minimal bun run dev
 
 set -euo pipefail
 

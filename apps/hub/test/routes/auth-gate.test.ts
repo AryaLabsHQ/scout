@@ -41,6 +41,7 @@ import {
 } from "../helpers/access-jwt.js"
 
 const AGENT_TOKEN = "agent-token-for-tests"
+const OTHER_AGENT_TOKEN = "other-agent-token-for-tests"
 const signer = await makeTestSigner("gate-key")
 const nowSeconds = () => Math.floor(Date.now() / 1000)
 const validToken = () => signer.sign(accessClaims(nowSeconds()))
@@ -50,7 +51,10 @@ const validToken = () => signer.sign(accessClaims(nowSeconds()))
 const TestConfigLayer = Layer.succeed(HubConfig)({
   host: "127.0.0.1",
   port: 0,
-  agentToken: Redacted.make(AGENT_TOKEN),
+  agentTokens: new Map([
+    ["test-agent", Redacted.make(AGENT_TOKEN)],
+    ["other-agent", Redacted.make(OTHER_AGENT_TOKEN)],
+  ]),
   browserAuth: {
     _tag: "Access",
     teamDomain: TEST_TEAM_DOMAIN,
@@ -208,7 +212,7 @@ describe("HttpAuthGate", () => {
     }).pipe(Effect.provide(ServeHub)),
   )
 
-  it.live("requires the agent token on /ws/rpc/agent", () =>
+  it.live("requires an agent token on /ws/rpc/agent", () =>
     Effect.gen(function* () {
       expect(yield* status("/ws/rpc/agent")).toBe(401)
       expect(yield* status("/ws/rpc/agent", { authorization: "Bearer wrong" })).toBe(401)
@@ -216,6 +220,7 @@ describe("HttpAuthGate", () => {
       const token = yield* Effect.promise(validToken)
       expect(yield* status("/ws/rpc/agent", { "cf-access-jwt-assertion": token })).toBe(401)
       expect(yield* status("/ws/rpc/agent", { authorization: `Bearer ${AGENT_TOKEN}` })).toBe(200)
+      expect(yield* status("/ws/rpc/agent", { authorization: `Bearer ${OTHER_AGENT_TOKEN}` })).toBe(200)
     }).pipe(Effect.provide(ServeHub)),
   )
 

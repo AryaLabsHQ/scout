@@ -14,7 +14,8 @@
 
 Required environment variables (the hub refuses to start without them):
 
-- `SCOUT_TOKEN`: agent token, non-blank
+- `SCOUT_AGENT_TOKENS`: one token per agent, as comma-separated `hostname=token` entries. Hostnames
+  and tokens must be non-blank and unique; an agent connects only as the hostname its token belongs to
 - `SCOUT_ACCESS_TEAM_DOMAIN`, `SCOUT_ACCESS_AUD`: Cloudflare Access verification for browsers,
   unless `SCOUT_AUTH=disabled` on a loopback `SCOUT_HOST` (local development only)
 

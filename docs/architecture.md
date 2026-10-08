@@ -31,7 +31,7 @@ agni (OVH VPS, systemd --user units)
 |      SCOUT_HUB_URL, forwarding the Access credential       |
 +-----------------------------------------------------------+
 | scout-agent (Bun, apps/agent)                              |
-|  +-- ws://127.0.0.1:3901/ws/rpc/agent, Bearer SCOUT_TOKEN  |
+|  +-- ws://127.0.0.1:3901/ws/rpc/agent, Bearer agent token |
 +-----------------------------------------------------------+
 
 Browser
@@ -48,19 +48,19 @@ Deployment assets and the runbook live in [`deploy/agni`](../deploy/agni/README.
 
 ## Authentication
 
-| Caller           | Path                                | Credential                                                                              | Checked by                                          |
-| ---------------- | ----------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Anyone           | `/health`                           | none                                                                                    | --                                                  |
-| Browser, web SSR | `/api/*`, `/ws/rpc`, any other path | Cloudflare Access JWT: `Cf-Access-Jwt-Assertion` header, else `CF_Authorization` cookie | `HttpAuthGate` (`apps/hub/src/auth/http-gate.ts`)   |
-| Browser RPC      | each `ClientHubRpcs` call           | same JWT, copied from the upgrade request                                               | `ClientAuthMiddleware` (`apps/hub/src/rpc/auth.ts`) |
-| Agent            | `/ws/rpc/agent`                     | `Authorization: Bearer <SCOUT_TOKEN>` on the upgrade, and `token` in `agent.connect`    | `HttpAuthGate`, `agent.connect` handler             |
+| Caller           | Path                                | Credential                                                                               | Checked by                                          |
+| ---------------- | ----------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Anyone           | `/health`                           | none                                                                                     | --                                                  |
+| Browser, web SSR | `/api/*`, `/ws/rpc`, any other path | Cloudflare Access JWT: `Cf-Access-Jwt-Assertion` header, else `CF_Authorization` cookie  | `HttpAuthGate` (`apps/hub/src/auth/http-gate.ts`)   |
+| Browser RPC      | each `ClientHubRpcs` call           | same JWT, copied from the upgrade request                                                | `ClientAuthMiddleware` (`apps/hub/src/rpc/auth.ts`) |
+| Agent            | `/ws/rpc/agent`                     | `Authorization: Bearer <token>` on the upgrade; `agent.connect` binds it to its hostname | `HttpAuthGate`, `agent.connect` handler             |
 
 - The hub verifies the RS256 signature against `https://<team-domain>/cdn-cgi/access/certs`
   (cached; refetched on an unknown `kid` at most every 30 s, and hourly), plus `iss`, `aud`,
   `exp`, and `nbf` (30 s leeway).
 - `ClientAuthMiddleware` provides `CurrentIdentity` (`source`, `subject`, `email`) to RPC handlers
   and logs an `rpc audit` line with the actor for every RPC outside the read-only list.
-- The hub fails closed at startup: it requires a non-blank `SCOUT_TOKEN` and both Access settings
+- The hub fails closed at startup: it requires `SCOUT_AGENT_TOKENS` (one unique `hostname=token` per agent) and both Access settings
   unless `SCOUT_AUTH=disabled` is set on a loopback `SCOUT_HOST` (local development and e2e).
 
 ## Three-Runtime Model
@@ -134,7 +134,7 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 
 ### Agent Duplex Socket
 
-1. Agent connects to `/ws/rpc/agent` with `Authorization: Bearer <SCOUT_TOKEN>` and repeats the token in `agent.connect`
+1. Agent connects to `/ws/rpc/agent` with `Authorization: Bearer <SCOUT_TOKEN>` and repeats the token in `agent.connect`; the hub accepts it only if it is the token configured for the agent's hostname
 2. The single WebSocket carries two RPC directions via `DuplexRpcSocket`:
    - **Agent -> Hub** (`AgentHubRpcs`): `agent.connect`, `agent.report`, `agent.reportPluginCollection`
    - **Hub -> Agent** (`HubAgentRpcs`): `terminal.open`, `terminal.input`, `terminal.resize`, `terminal.close`, `plugins.runAction`, `plugins.logs`
@@ -294,7 +294,7 @@ All configuration is through environment variables. No configuration files.
 
 | Variable                   | Required                  | Default                                      | Description                                                         |
 | -------------------------- | ------------------------- | -------------------------------------------- | ------------------------------------------------------------------- |
-| `SCOUT_TOKEN`              | Yes                       | --                                           | Agent authentication token; blank is refused                        |
+| `SCOUT_AGENT_TOKENS`       | Yes                       | --                                           | Comma-separated `hostname=token`; unique hostnames and tokens       |
 | `SCOUT_ACCESS_TEAM_DOMAIN` | Yes, unless auth disabled | --                                           | Cloudflare Access team domain, e.g. `aryalabs.cloudflareaccess.com` |
 | `SCOUT_ACCESS_AUD`         | Yes, unless auth disabled | --                                           | Access application Audience (AUD) tag                               |
 | `SCOUT_AUTH`               | No                        | `access`                                     | `access` or `disabled`; `disabled` requires a loopback `SCOUT_HOST` |
@@ -326,16 +326,16 @@ All configuration is through environment variables. No configuration files.
 
 ### Agent Configuration
 
-| Variable                   | Required | Default         | Description                                                   |
-| -------------------------- | -------- | --------------- | ------------------------------------------------------------- |
-| `SCOUT_HUB_URL`            | Yes      | --              | URL of the hub (e.g., `ws://127.0.0.1:3901`)                  |
-| `SCOUT_TOKEN`              | Yes      | --              | Agent authentication token (must match hub); blank is refused |
-| `SCOUT_HOSTNAME`           | No       | OS hostname     | System id reported to the hub                                 |
-| `KUBECONFIG`               | No       | kubectl default | Kubeconfig used by the k8s plugin's `kubectl` calls           |
-| `SCOUT_PLUGIN_DIR`         | No       | --              | Additional directory to scan for external plugins             |
-| `SCOUT_LOG_LEVEL`          | No       | `info`          | Structured log level                                          |
-| `SCOUT_COLLECTORS_DISABLE` | No       | --              | Comma-separated list of core collectors to disable            |
-| `SCOUT_COLLECTORS_ENABLE`  | No       | --              | Comma-separated list of core collectors to force-enable       |
+| Variable                   | Required | Default         | Description                                             |
+| -------------------------- | -------- | --------------- | ------------------------------------------------------- |
+| `SCOUT_HUB_URL`            | Yes      | --              | URL of the hub (e.g., `ws://127.0.0.1:3901`)            |
+| `SCOUT_TOKEN`              | Yes      | --              | This host's token from the hub's `SCOUT_AGENT_TOKENS`   |
+| `SCOUT_HOSTNAME`           | No       | OS hostname     | System id reported to the hub                           |
+| `KUBECONFIG`               | No       | kubectl default | Kubeconfig used by the k8s plugin's `kubectl` calls     |
+| `SCOUT_PLUGIN_DIR`         | No       | --              | Additional directory to scan for external plugins       |
+| `SCOUT_LOG_LEVEL`          | No       | `info`          | Structured log level                                    |
+| `SCOUT_COLLECTORS_DISABLE` | No       | --              | Comma-separated list of core collectors to disable      |
+| `SCOUT_COLLECTORS_ENABLE`  | No       | --              | Comma-separated list of core collectors to force-enable |
 
 ## Locked Decisions
 

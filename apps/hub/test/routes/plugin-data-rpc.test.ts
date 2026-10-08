@@ -33,7 +33,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }))
 const TestConfigLayer = Layer.succeed(HubConfig)({
   host: "127.0.0.1",
   port: 0,
-  agentToken: Redacted.make("agent-token-for-tests"),
+  agentTokens: new Map([["test-agent", Redacted.make("agent-token-for-tests")]]),
   browserAuth: { _tag: "Disabled" },
 })
 

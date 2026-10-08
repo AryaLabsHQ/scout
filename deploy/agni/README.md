@@ -8,7 +8,7 @@ browser -> Cloudflare Access (app "Scout") -> tunnel agni-host -> Caddy 127.0.0.
   Caddy http://scout.arya.sh:
     /api/*, /ws/*, /health -> scout-hub 127.0.0.1:3901   (/ws/rpc/agent -> 404)
     everything else        -> scout-web 127.0.0.1:3900
-scout-agent -> ws://127.0.0.1:3901/ws/rpc/agent (Bearer SCOUT_TOKEN)
+scout-agent -> ws://127.0.0.1:3901/ws/rpc/agent (Bearer agni's agent token)
 ```
 
 | Asset                                   | Installed to                                                                             |
@@ -59,7 +59,8 @@ install -m 600 deploy/agni/env/hub.env.example   ~/.config/scout/hub.env
 install -m 600 deploy/agni/env/web.env.example   ~/.config/scout/web.env
 install -m 600 deploy/agni/env/agent.env.example ~/.config/scout/agent.env
 token=$(openssl rand -hex 32)
-sed -i "s/^SCOUT_TOKEN=$/SCOUT_TOKEN=$token/" ~/.config/scout/hub.env ~/.config/scout/agent.env
+sed -i "s/^SCOUT_AGENT_TOKENS=$/SCOUT_AGENT_TOKENS=agni=$token/" ~/.config/scout/hub.env
+sed -i "s/^SCOUT_TOKEN=$/SCOUT_TOKEN=$token/" ~/.config/scout/agent.env
 $EDITOR ~/.config/scout/hub.env   # set SCOUT_ACCESS_AUD
 ```
 
@@ -124,8 +125,8 @@ Then open `https://scout.arya.sh`, sign in through Access, and confirm the dashb
 with live metrics. A state-changing action logs `rpc audit` with your email:
 `journalctl --user -u scout-hub | grep 'rpc audit'`.
 
-The hub refuses to start (and the unit stops after five restarts) when `SCOUT_TOKEN`,
-`SCOUT_ACCESS_TEAM_DOMAIN`, or `SCOUT_ACCESS_AUD` is missing; the journal names the variable.
+The hub refuses to start (and the unit stops after five restarts) when
+`SCOUT_AGENT_TOKENS`, `SCOUT_ACCESS_TEAM_DOMAIN`, or `SCOUT_ACCESS_AUD` is missing or invalid; the journal names the variable.
 
 ## Upgrade
 
