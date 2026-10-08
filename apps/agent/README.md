@@ -24,11 +24,19 @@ Common optional variables:
 - `SCOUT_COLLECTORS_DISABLE`
 - `SCOUT_COLLECTORS_ENABLE`
 - `SCOUT_PLUGIN_DIR`
+- `SCOUT_PLUGINS_DISABLE`: comma-separated plugin manifest ids to turn off on this host
 - `KUBECONFIG`: kubeconfig for the k8s plugin's `kubectl` calls
 
 The agent sends `SCOUT_TOKEN` as `Authorization: Bearer` on the websocket upgrade and in
 `agent.connect`. The hub accepts it only for the agent's own hostname (`SCOUT_HOSTNAME`), so the
 token must be this host's entry in the hub's `SCOUT_AGENT_TOKENS`. The config loader lives in [`src/config.ts`](./src/config.ts).
+
+`SCOUT_PLUGINS_DISABLE` takes exact manifest ids as logged by `AgentPluginRegistry: loaded plugins`
+(for example `@scout/plugin-k8s,@scout/plugin-docker,systemd,edge`). There is no short form because
+first-party ids are not uniform. A disabled plugin is never detected or collected, cannot serve
+actions or streams, and is left out of `pluginCapabilities` in `agent.connect`, so the dashboard
+shows nothing for it on this host. An id that matches no loaded plugin fails agent startup with an
+error that lists the loaded ids.
 
 ## Key Entry Points
 
