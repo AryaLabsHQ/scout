@@ -1,8 +1,15 @@
 # Scout
 
-Scout is a Bun + Effect monorepo for monitoring and managing remote systems.
+[![CI](https://github.com/AryaLabsHQ/scout/actions/workflows/ci.yml/badge.svg)](https://github.com/AryaLabsHQ/scout/actions/workflows/ci.yml)
 
-It is split into three runtime apps:
+Scout is a self-hosted control plane for a small fleet of Linux machines. A lightweight agent on
+each machine reports host metrics plus what runs there (systemd units, Docker containers, Kubernetes
+workloads, tunnels and reverse proxies), and one dashboard shows it all live, raises alerts, and
+runs the actions plugins expose, such as restarting a unit or reading its journal.
+
+![The Scout dashboard showing a machine overview](./docs/assets/dashboard.png)
+
+Scout is a Bun + Effect monorepo split into three runtime apps:
 
 - `agent`: runs on nodes, collects host and plugin data, and executes management actions
 - `hub`: stores state, ingests reports, evaluates alerts, and serves REST + RPC APIs
@@ -44,16 +51,18 @@ Cross-runtime shapes come from [`packages/shared`](./packages/shared/README.md),
 | [`packages/shared`](./packages/shared/README.md)                 | Shared schemas, types, and RPC groups                             |
 | [`packages/plugin-sdk`](./packages/plugin-sdk/README.md)         | Plugin manifest, loader, and execution SDK                        |
 | [`packages/plugin-docker`](./packages/plugin-docker/README.md)   | Docker integration plugin                                         |
+| [`packages/plugin-edge`](./packages/plugin-edge/README.md)       | cloudflared tunnel and Caddy reverse-proxy health (read-only)     |
 | [`packages/plugin-k8s`](./packages/plugin-k8s/README.md)         | Kubernetes integration plugin                                     |
 | [`packages/plugin-systemd`](./packages/plugin-systemd/README.md) | systemd integration plugin                                        |
+| [`deploy`](./deploy/README.md)                                   | Self-hosting kit: systemd units, env templates, Caddy, RBAC       |
 | [`e2e`](./e2e/README.md)                                         | Docker test lab for exercising the full stack                     |
 
 ## Getting Started
 
 ### Prerequisites
 
-- Bun `1.3.x`
-- Docker Desktop or a compatible local Docker environment for the E2E harness
+- Bun `1.4.x` (the exact version is `packageManager` in `package.json`)
+- Docker for the optional E2E harness
 
 ### Install Dependencies
 
@@ -72,6 +81,9 @@ bun run build
 
 # Typecheck all workspaces
 bun run typecheck
+
+# Run every workspace's tests
+bun run test
 
 # Lint and format
 bun run lint
@@ -97,6 +109,13 @@ cd e2e
 
 Open `http://localhost:3000` for the dashboard and `http://localhost:3001/health` for hub health.
 
+## Self-Hosting
+
+[`deploy/README.md`](./deploy/README.md) walks through running Scout on your own machines: the hub
+and dashboard as `systemd --user` units behind a reverse proxy and Cloudflare Access, an agent on
+every host, remote agents over a private network, and upgrades and rollback. Every file there uses
+placeholders; keep your site-specific config in your own infrastructure repo.
+
 ## Development Notes
 
 - The root `README` is the public landing page. Deeper implementation guidance lives in the repo's `AGENTS.md` files.
@@ -105,6 +124,14 @@ Open `http://localhost:3000` for the dashboard and `http://localhost:3001/health
 
 ## More Docs
 
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md): setup, checks, and pull request conventions
 - [`AGENTS.md`](./AGENTS.md): repo-wide engineering map and implementation guidance
+- [`docs/architecture.md`](./docs/architecture.md): full system architecture
+- [`docs/plugins/README.md`](./docs/plugins/README.md): how plugins work and how to write one
+- [`docs/operator/README.md`](./docs/operator/README.md): the Operator, Scout's built-in AI assistant
 - [`e2e/README.md`](./e2e/README.md): detailed Docker harness usage
 - [`docs/e2e-testing.md`](./docs/e2e-testing.md): alternate E2E quick start and troubleshooting
+
+## License
+
+[MIT](./LICENSE)
