@@ -1,0 +1,41 @@
+# Scout behind Caddy. Merge into your Caddyfile and replace the host names.
+#
+# The dashboard site assumes Cloudflare Access authenticates every request
+# before it reaches Caddy, for example through a Cloudflare Tunnel to
+# 127.0.0.1:80. Access adds Cf-Access-Jwt-Assertion and the CF_Authorization
+# cookie, which pass through unchanged and are verified again by the hub.
+http://scout.example.com {
+	# Agents never use the public site: local agents dial the hub on
+	# loopback, and remote agents use the private listener below.
+	handle /ws/rpc/agent {
+		respond 404
+	}
+
+	@hub path /api/* /ws/* /health
+	handle @hub {
+		reverse_proxy 127.0.0.1:3901
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3900
+	}
+}
+
+# Optional: a private listener for agents on other hosts. Bind it to a private
+# network only (for example a Tailscale or WireGuard address, or a firewall
+# that admits only that network). The hub authenticates each agent with its
+# own token. Remove this site if every agent runs on the hub's host.
+hub.example.internal:3902 {
+	@agent {
+		path /ws/rpc/agent
+		# Tailscale's address ranges; use your private network's ranges.
+		remote_ip 100.64.0.0/10 fd7a:115c:a1e0::/48
+	}
+	handle @agent {
+		reverse_proxy 127.0.0.1:3901
+	}
+
+	handle {
+		respond 404
+	}
+}

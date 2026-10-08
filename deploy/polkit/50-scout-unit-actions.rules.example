@@ -1,0 +1,28 @@
+// Example polkit rule for Scout's systemd plugin. Install it as
+// /etc/polkit-1/rules.d/50-scout-unit-actions.rules (0644 root:root) and edit
+// the user and unit list. polkitd picks up rule changes without a restart.
+//
+// The agent runs without sudo and calls
+// `systemctl --no-ask-password <verb> <unit>`. This lets SCOUT_USER start,
+// stop and restart only the listed system units; everything else still needs
+// sudo. Enabling and disabling units and daemon-reload are not covered. Keep
+// SSH, your VPN and your cluster runtime off the list. polkit's JavaScript is
+// ES5: use `var`, not `const` or `let`.
+var SCOUT_USER = "scout";
+var scoutUnits = [
+  "caddy.service",
+  "fail2ban.service",
+];
+var scoutVerbs = ["start", "stop", "restart", "reload", "try-restart", "reload-or-restart"];
+
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units" || subject.user !== SCOUT_USER) {
+    return polkit.Result.NOT_HANDLED;
+  }
+  var unit = action.lookup("unit");
+  var verb = action.lookup("verb");
+  if (scoutUnits.indexOf(unit) >= 0 && scoutVerbs.indexOf(verb) >= 0) {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});
