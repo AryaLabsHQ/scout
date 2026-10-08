@@ -436,6 +436,19 @@ const normalizeContainerName = (name: string | undefined, fallbackId: string): s
 
 const relationship = (type: string, target: EntityRef) => ({ type, target })
 
+/**
+ * Drops keys whose value is `undefined`. Entity `spec` and `state` cross the
+ * agent RPC as JSON values, which reject `undefined` properties, and many
+ * Docker inspect fields are optional (for example `Parent` is absent on hosts
+ * using the containerd image store).
+ */
+const definedFields = <T extends Record<string, unknown>>(
+  fields: T,
+): { [K in keyof T]?: Exclude<T[K], undefined> } =>
+  Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as {
+    [K in keyof T]?: Exclude<T[K], undefined>
+  }
+
 const getTargetId = (
   target: ActionTarget,
   kind: string,
@@ -620,7 +633,7 @@ const collectInventory = (
         ...(info.OperatingSystem !== undefined && { operatingSystem: info.OperatingSystem }),
         ...(info.ServerVersion !== undefined && { serverVersion: info.ServerVersion }),
       }),
-      spec: {
+      spec: definedFields({
         serverVersion: info.ServerVersion,
         operatingSystem: info.OperatingSystem,
         osType: info.OSType,
@@ -628,8 +641,8 @@ const collectInventory = (
         kernelVersion: info.KernelVersion,
         rootDir: info.DockerRootDir,
         storageDriver: info.Driver,
-      },
-      state: {
+      }),
+      state: definedFields({
         cpuCount: info.NCPU,
         memoryBytes: info.MemTotal,
         containers: info.Containers,
@@ -637,7 +650,7 @@ const collectInventory = (
         containersPaused: info.ContainersPaused,
         containersStopped: info.ContainersStopped,
         images: info.Images,
-      },
+      }),
     },
     ...containers.map((container) => ({
       ref: dockerEntityRef(DOCKER_ENTITY_KINDS.container, nodeId, container.Id),
@@ -645,21 +658,23 @@ const collectInventory = (
       displayName: normalizeContainerName(container.Name, container.Id),
       status: containerStatus(container),
       labels: normalizeLabels(container.Config?.Labels),
-      spec: {
+      spec: definedFields({
         imageId: container.Image,
         imageName: container.Config?.Image,
         hostname: container.Config?.Hostname,
         networkMode: container.HostConfig?.NetworkMode,
         createdAt: container.Created,
-        mounts: (container.Mounts ?? []).map((mount) => ({
-          type: mount.Type,
-          name: mount.Name,
-          source: mount.Source,
-          destination: mount.Destination,
-          readWrite: mount.RW,
-        })),
-      },
-      state: {
+        mounts: (container.Mounts ?? []).map((mount) =>
+          definedFields({
+            type: mount.Type,
+            name: mount.Name,
+            source: mount.Source,
+            destination: mount.Destination,
+            readWrite: mount.RW,
+          }),
+        ),
+      }),
+      state: definedFields({
         running: container.State?.Running ?? false,
         paused: container.State?.Paused ?? false,
         restarting: container.State?.Restarting ?? false,
@@ -669,14 +684,16 @@ const collectInventory = (
         startedAt: container.State?.StartedAt,
         finishedAt: container.State?.FinishedAt,
         healthStatus: container.State?.Health?.Status,
-        networks: Object.entries(container.NetworkSettings?.Networks ?? {}).map(([name, network]) => ({
-          name,
-          networkId: network.NetworkID,
-          ipAddress: network.IPAddress,
-          gateway: network.Gateway,
-          aliases: network.Aliases ?? [],
-        })),
-      },
+        networks: Object.entries(container.NetworkSettings?.Networks ?? {}).map(([name, network]) =>
+          definedFields({
+            name,
+            networkId: network.NetworkID,
+            ipAddress: network.IPAddress,
+            gateway: network.Gateway,
+            aliases: network.Aliases ?? [],
+          }),
+        ),
+      }),
       relationships: dedupeRelationships([
         relationship("managed-by", daemonRef),
         ...(container.Image !== undefined && imageRefs.has(container.Image)
@@ -705,19 +722,19 @@ const collectInventory = (
       displayName: image.RepoTags?.[0] ?? image.Id,
       status: imageStatus(),
       labels: normalizeLabels(image.Config?.Labels),
-      spec: {
+      spec: definedFields({
         repoTags: image.RepoTags ?? [],
         repoDigests: image.RepoDigests ?? [],
         createdAt: image.Created,
         parentId: image.Parent,
         architecture: image.Architecture,
         os: image.Os,
-      },
-      state: {
+      }),
+      state: definedFields({
         sizeBytes: image.Size,
         sharedSizeBytes: image.SharedSize,
         virtualSizeBytes: image.VirtualSize,
-      },
+      }),
       relationships: dedupeRelationships([
         relationship("managed-by", daemonRef),
         ...[...(imageUsers.get(image.Id) ?? new Set<string>())].map((containerId) =>
@@ -734,17 +751,17 @@ const collectInventory = (
       displayName: volume.Name,
       status: volumeStatus(volume),
       labels: normalizeLabels(volume.Labels),
-      spec: {
+      spec: definedFields({
         driver: volume.Driver,
         scope: volume.Scope,
         mountpoint: volume.Mountpoint,
         options: volume.Options,
         createdAt: volume.CreatedAt,
-      },
-      state: {
+      }),
+      state: definedFields({
         refCount: volume.UsageData?.RefCount,
         sizeBytes: volume.UsageData?.Size,
-      },
+      }),
       relationships: dedupeRelationships([
         relationship("managed-by", daemonRef),
         ...[...(volumeUsers.get(volume.Name) ?? new Set<string>())].map((containerId) =>
@@ -761,7 +778,7 @@ const collectInventory = (
       displayName: network.Name ?? network.Id,
       status: networkStatus(),
       labels: normalizeLabels(network.Labels),
-      spec: {
+      spec: definedFields({
         name: network.Name,
         driver: network.Driver,
         scope: network.Scope,
@@ -769,10 +786,10 @@ const collectInventory = (
         enableIPv6: network.EnableIPv6,
         createdAt: network.Created,
         ipam: network.IPAM,
-      },
-      state: {
+      }),
+      state: definedFields({
         connectedContainers: (networkUsers.get(network.Id) ?? new Set<string>()).size,
-      },
+      }),
       relationships: dedupeRelationships([
         relationship("managed-by", daemonRef),
         ...[...(networkUsers.get(network.Id) ?? new Set<string>())].map((containerId) =>
