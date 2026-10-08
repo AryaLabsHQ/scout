@@ -12,6 +12,10 @@
       "cache": true,
       "outputs": []
     },
+    "test": {
+      "cache": false,
+      "outputs": []
+    },
     "dev": {
       "cache": false,
       "persistent": true
