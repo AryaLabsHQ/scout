@@ -141,6 +141,30 @@ const makeDegradedPlugin = (pluginId: string): LoadedAgentPlugin => {
   }
 }
 
+const withCallCounts = (plugin: LoadedAgentPlugin) => {
+  const calls = { detect: 0, collect: 0 }
+  const { detect, collect } = plugin.agent
+  const counted: LoadedAgentPlugin = {
+    ...plugin,
+    agent: {
+      ...plugin.agent,
+      detect: (ctx) => {
+        calls.detect += 1
+        return detect(ctx)
+      },
+      ...(collect === undefined
+        ? {}
+        : {
+            collect: (ctx: Parameters<typeof collect>[0]) => {
+              calls.collect += 1
+              return collect(ctx)
+            },
+          }),
+    },
+  }
+  return { plugin: counted, calls }
+}
+
 const makeFilteredHostLayer = (
   plugins: ReadonlyArray<LoadedAgentPlugin>,
   pluginsDisable: ReadonlyArray<string>,
@@ -154,6 +178,8 @@ describe("SCOUT_PLUGINS_DISABLE", () => {
   const plugins = [makeSystemdPlugin(), makeDegradedPlugin("@scout/plugin-example")]
 
   it("omits disabled plugins from capabilities and collections while keeping the rest", async () => {
+    const enabled = withCallCounts(makeSystemdPlugin())
+    const disabled = withCallCounts(makeDegradedPlugin("@scout/plugin-example"))
     const { capabilities, collections, action } = await Effect.runPromise(
       Effect.gen(function* () {
         const host = yield* AgentPluginHost
@@ -164,8 +190,14 @@ describe("SCOUT_PLUGINS_DISABLE", () => {
             .runAction({ pluginId: "@scout/plugin-example", actionId: "noop", target: { nodeId: "node-1" } })
             .pipe(Effect.flip),
         }
-      }).pipe(Effect.provide(makeFilteredHostLayer(plugins, ["@scout/plugin-example"]))),
+      }).pipe(
+        Effect.provide(makeFilteredHostLayer([enabled.plugin, disabled.plugin], ["@scout/plugin-example"])),
+      ),
     )
+
+    expect(disabled.calls).toEqual({ detect: 0, collect: 0 })
+    expect(enabled.calls.detect).toBeGreaterThan(0)
+    expect(enabled.calls.collect).toBe(1)
 
     expect(capabilities.map((capability) => capability.pluginId)).toEqual(["systemd"])
     expect(collections).toHaveLength(1)
