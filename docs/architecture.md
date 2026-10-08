@@ -326,16 +326,17 @@ All configuration is through environment variables. No configuration files.
 
 ### Agent Configuration
 
-| Variable                   | Required | Default         | Description                                             |
-| -------------------------- | -------- | --------------- | ------------------------------------------------------- |
-| `SCOUT_HUB_URL`            | Yes      | --              | URL of the hub (e.g., `ws://127.0.0.1:3901`)            |
-| `SCOUT_TOKEN`              | Yes      | --              | This host's token from the hub's `SCOUT_AGENT_TOKENS`   |
-| `SCOUT_HOSTNAME`           | No       | OS hostname     | System id reported to the hub                           |
-| `KUBECONFIG`               | No       | kubectl default | Kubeconfig used by the k8s plugin's `kubectl` calls     |
-| `SCOUT_PLUGIN_DIR`         | No       | --              | Additional directory to scan for external plugins       |
-| `SCOUT_LOG_LEVEL`          | No       | `info`          | Structured log level                                    |
-| `SCOUT_COLLECTORS_DISABLE` | No       | --              | Comma-separated list of core collectors to disable      |
-| `SCOUT_COLLECTORS_ENABLE`  | No       | --              | Comma-separated list of core collectors to force-enable |
+| Variable                   | Required | Default         | Description                                                                                                                                                                             |
+| -------------------------- | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCOUT_HUB_URL`            | Yes      | --              | URL of the hub (e.g., `ws://127.0.0.1:3901`)                                                                                                                                            |
+| `SCOUT_TOKEN`              | Yes      | --              | This host's token from the hub's `SCOUT_AGENT_TOKENS`                                                                                                                                   |
+| `SCOUT_HOSTNAME`           | No       | OS hostname     | System id reported to the hub                                                                                                                                                           |
+| `KUBECONFIG`               | No       | kubectl default | Kubeconfig used by the k8s plugin's `kubectl` calls                                                                                                                                     |
+| `SCOUT_PLUGIN_DIR`         | No       | --              | Additional directory to scan for external plugins                                                                                                                                       |
+| `SCOUT_LOG_LEVEL`          | No       | `info`          | Structured log level                                                                                                                                                                    |
+| `SCOUT_COLLECTORS_DISABLE` | No       | --              | Comma-separated list of core collectors to disable                                                                                                                                      |
+| `SCOUT_COLLECTORS_ENABLE`  | No       | --              | Comma-separated list of core collectors to force-enable                                                                                                                                 |
+| `SCOUT_PLUGINS_DISABLE`    | No       | --              | Comma-separated plugin manifest ids to turn off (exact ids such as `@scout/plugin-k8s`); disabled plugins are not detected, collected, or reported to the hub; unknown ids fail startup |
 
 ## Locked Decisions
 

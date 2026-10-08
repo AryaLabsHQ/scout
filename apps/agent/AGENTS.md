@@ -17,13 +17,13 @@ apps/agent/
 
 ## WHERE TO LOOK
 
-| Task                                 | Location                                                         | Notes                                                 |
-| ------------------------------------ | ---------------------------------------------------------------- | ----------------------------------------------------- |
-| Required env vars / defaults         | `src/config.ts`                                                  | `SCOUT_HUB_URL` and `SCOUT_TOKEN` are required        |
-| Collector discovery and report shape | `src/services/collector-registry.ts`                             | Core collector order is fixed here                    |
-| Plugin loading / runtime execution   | `src/services/plugin-registry.ts`, `src/services/plugin-host.ts` | Default plugin dir is `packages/`                     |
-| Persistent hub connection            | `src/rpc/connection.ts`                                          | Builds duplex RPC client/server over WebSocket        |
-| Agent-side RPC handlers              | `src/rpc/handlers.ts`                                            | Implements hub-initiated plugin and terminal commands |
+| Task                                 | Location                                                         | Notes                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Required env vars / defaults         | `src/config.ts`                                                  | `SCOUT_HUB_URL` and `SCOUT_TOKEN` are required                                     |
+| Collector discovery and report shape | `src/services/collector-registry.ts`                             | Core collector order is fixed here                                                 |
+| Plugin loading / runtime execution   | `src/services/plugin-registry.ts`, `src/services/plugin-host.ts` | Default plugin dir is `packages/`; `SCOUT_PLUGINS_DISABLE` filters in the registry |
+| Persistent hub connection            | `src/rpc/connection.ts`                                          | Builds duplex RPC client/server over WebSocket                                     |
+| Agent-side RPC handlers              | `src/rpc/handlers.ts`                                            | Implements hub-initiated plugin and terminal commands                              |
 
 ## CONVENTIONS
 
@@ -31,6 +31,7 @@ apps/agent/
 - Collector discovery failures are treated as capability absence; collection failures are logged and excluded instead of aborting the full report.
 - The reporter is a detached background fiber. Startup work should finish before `Effect.never`.
 - Plugin packages are discovered from a directory, not statically imported here.
+- `SCOUT_PLUGINS_DISABLE` is applied in `AgentPluginRegistry`, so disabled plugins are absent from every lookup (capabilities, collection, actions, streams). Unknown ids fail startup.
 
 ## ANTI-PATTERNS
 

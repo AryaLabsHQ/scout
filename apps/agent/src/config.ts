@@ -13,6 +13,7 @@ export class AgentConfig {
     readonly collectorsDisable: string[],
     readonly collectorsEnable: string[],
     readonly pluginDir: string,
+    readonly pluginsDisable: string[],
   ) {}
 
   static readonly load = Effect.gen(function* () {
@@ -26,6 +27,7 @@ export class AgentConfig {
     const disableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_DISABLE"), "")
     const enableStr = yield* Config.withDefault(Config.String("SCOUT_COLLECTORS_ENABLE"), "")
     const pluginDir = yield* Config.withDefault(Config.String("SCOUT_PLUGIN_DIR"), DEFAULT_PLUGIN_DIR)
+    const pluginsDisableStr = yield* Config.withDefault(Config.String("SCOUT_PLUGINS_DISABLE"), "")
 
     return new AgentConfig(
       hubUrl,
@@ -35,6 +37,10 @@ export class AgentConfig {
       disableStr ? disableStr.split(",").map((s) => s.trim()) : [],
       enableStr ? enableStr.split(",").map((s) => s.trim()) : [],
       pluginDir,
+      pluginsDisableStr
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
     )
   })
 }

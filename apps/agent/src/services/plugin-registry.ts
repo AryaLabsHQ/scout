@@ -19,43 +19,79 @@ const isDirectoryReadable = (path: string): Effect.Effect<boolean> =>
 
 const hasAgentRuntime = (plugin: LoadedScoutPlugin): plugin is LoadedAgentPlugin => plugin.agent !== undefined
 
-export class AgentPluginRegistry extends Context.Service<
-  AgentPluginRegistry,
-  {
-    readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>
-    readonly listAgentPlugins: () => Effect.Effect<ReadonlyArray<LoadedAgentPlugin>>
-    readonly get: (pluginId: string) => Effect.Effect<LoadedScoutPlugin | null>
-    readonly getAgentPlugin: (pluginId: string) => Effect.Effect<LoadedAgentPlugin | null>
-  }
->()("@scout/AgentPluginRegistry", {
-  make: Effect.gen(function* () {
-    const config = yield* AgentConfig.load
-    const hasDirectory = yield* isDirectoryReadable(config.pluginDir)
-    const loadedPlugins: ReadonlyArray<LoadedScoutPlugin> = hasDirectory
-      ? yield* loadPluginsFromDirectory(config.pluginDir)
-      : []
+type AgentPluginRegistryService = {
+  readonly list: () => Effect.Effect<ReadonlyArray<LoadedScoutPlugin>>
+  readonly listAgentPlugins: () => Effect.Effect<ReadonlyArray<LoadedAgentPlugin>>
+  readonly get: (pluginId: string) => Effect.Effect<LoadedScoutPlugin | null>
+  readonly getAgentPlugin: (pluginId: string) => Effect.Effect<LoadedAgentPlugin | null>
+}
 
-    yield* Effect.logInfo("AgentPluginRegistry: loaded plugins", {
-      pluginDir: config.pluginDir,
-      pluginIds: loadedPlugins.map((plugin) => plugin.manifest.id).join(","),
-      pluginCount: String(loadedPlugins.length),
-    })
+/**
+ * Builds the registry from already-loaded plugins, dropping the ones named in
+ * `pluginsDisable` (`SCOUT_PLUGINS_DISABLE`). Disabled plugins are absent from
+ * every lookup, so they are never detected, collected, advertised to the hub,
+ * or reachable through actions and streams. Ids must match a loaded plugin's
+ * manifest id exactly; an unknown id fails startup.
+ */
+export const makeAgentPluginRegistry = (
+  loadedPlugins: ReadonlyArray<LoadedScoutPlugin>,
+  pluginsDisable: ReadonlyArray<string>,
+): Effect.Effect<AgentPluginRegistryService, Error> =>
+  Effect.gen(function* () {
+    const loadedIds = loadedPlugins.map((plugin) => plugin.manifest.id)
+    const unknownIds = pluginsDisable.filter((pluginId) => !loadedIds.includes(pluginId))
+    if (unknownIds.length > 0) {
+      return yield* Effect.fail(
+        new Error(
+          `SCOUT_PLUGINS_DISABLE names unknown plugin id(s): ${unknownIds.join(", ")}. ` +
+            `Loaded plugin ids: ${loadedIds.join(", ") || "(none)"}`,
+        ),
+      )
+    }
 
+    const disabledIds = new Set(pluginsDisable)
+    if (disabledIds.size > 0) {
+      yield* Effect.logInfo("AgentPluginRegistry: plugins disabled by SCOUT_PLUGINS_DISABLE", {
+        pluginIds: [...disabledIds].join(","),
+      })
+    }
+
+    const enabledPlugins = loadedPlugins.filter((plugin) => !disabledIds.has(plugin.manifest.id))
     const pluginsById = new Map<string, LoadedScoutPlugin>(
-      loadedPlugins.map((plugin) => [plugin.manifest.id, plugin] as const),
+      enabledPlugins.map((plugin) => [plugin.manifest.id, plugin] as const),
     )
-    const agentPlugins: ReadonlyArray<LoadedAgentPlugin> = loadedPlugins.filter(hasAgentRuntime)
+    const agentPlugins: ReadonlyArray<LoadedAgentPlugin> = enabledPlugins.filter(hasAgentRuntime)
     const agentPluginsById = new Map<string, LoadedAgentPlugin>(
       agentPlugins.map((plugin) => [plugin.manifest.id, plugin] as const),
     )
 
     return {
-      list: () => Effect.succeed(loadedPlugins),
+      list: () => Effect.succeed(enabledPlugins),
       listAgentPlugins: () => Effect.succeed(agentPlugins),
       get: (pluginId: string) => Effect.succeed(pluginsById.get(pluginId) ?? null),
       getAgentPlugin: (pluginId: string) => Effect.succeed(agentPluginsById.get(pluginId) ?? null),
     }
-  }),
-}) {
+  })
+
+export class AgentPluginRegistry extends Context.Service<AgentPluginRegistry, AgentPluginRegistryService>()(
+  "@scout/AgentPluginRegistry",
+  {
+    make: Effect.gen(function* () {
+      const config = yield* AgentConfig.load
+      const hasDirectory = yield* isDirectoryReadable(config.pluginDir)
+      const loadedPlugins: ReadonlyArray<LoadedScoutPlugin> = hasDirectory
+        ? yield* loadPluginsFromDirectory(config.pluginDir)
+        : []
+
+      yield* Effect.logInfo("AgentPluginRegistry: loaded plugins", {
+        pluginDir: config.pluginDir,
+        pluginIds: loadedPlugins.map((plugin) => plugin.manifest.id).join(","),
+        pluginCount: String(loadedPlugins.length),
+      })
+
+      return yield* makeAgentPluginRegistry(loadedPlugins, config.pluginsDisable)
+    }),
+  },
+) {
   static readonly layer = Layer.effect(this, this.make)
 }
