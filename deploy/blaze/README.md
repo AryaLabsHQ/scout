@@ -10,8 +10,9 @@ scout-agent (blaze, user unit)
 ```
 
 The hub's `SCOUT_AGENT_TOKENS` holds one token per host, and it accepts Blaze's token only for the
-hostname `blaze`. Blaze has no cluster and no Caddy, so the k8s plugin stays unsupported
-(`KUBECONFIG=/dev/null`) and the edge plugin reads only the `blaze-host` tunnel's metrics on
+hostname `blaze`. Blaze has no cluster and no Caddy. `KUBECONFIG=/dev/null` keeps the k8s plugin
+off any other cluster, but because `kubectl` is installed it reports degraded and its collections
+fail until plugins can be disabled per agent. The edge plugin reads only the `blaze-host` tunnel's metrics on
 `127.0.0.1:2002`. Unit actions on system units use the Blaze polkit allowlist in dotfiles
 (`machines/blaze/system`), which covers `cloudflared-blaze-host` and `fail2ban`; user units need no
 polkit.
@@ -47,6 +48,7 @@ git clone git@github.com:AryaLabsHQ/scout.git ~/Developer/AryaLabsHQ/scout
 cd ~/Developer/AryaLabsHQ/scout && git checkout --detach <sha deployed on Agni>
 bun install --frozen-lockfile
 install -d -m 700 ~/.config/scout
+install -d ~/.config/systemd/user
 install -m 600 deploy/blaze/env/agent.env.example ~/.config/scout/agent.env
 # Set SCOUT_TOKEN to Blaze's token.
 install -m 644 deploy/blaze/systemd/scout-agent.service ~/.config/systemd/user/

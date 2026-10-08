@@ -17,8 +17,9 @@ Environment=NODE_ENV=production
 Environment=SCOUT_HUB_URL=https://agni.jaguar-pride.ts.net:3902
 Environment=SCOUT_HOSTNAME=blaze
 Environment=SCOUT_PLUGIN_DIR=/home/ubuntu/Developer/AryaLabsHQ/scout/packages
-# Blaze runs no cluster. An empty kubeconfig keeps the k8s plugin unsupported
-# even if a kubeconfig for another cluster appears in ~/.kube later.
+# Blaze runs no cluster. An empty kubeconfig stops the k8s plugin from acting
+# on another cluster through a kubeconfig in ~/.kube. Because kubectl is
+# installed, the plugin still reports degraded and its collections fail.
 Environment=KUBECONFIG=/dev/null
 # Edge plugin: the blaze-host tunnel's metrics server. Blaze has no Caddy.
 Environment=SCOUT_EDGE_CLOUDFLARED_METRICS=blaze-host=http://127.0.0.1:2002
