@@ -15,7 +15,12 @@ export const METRIC_LABELS: Record<string, string> = {
   "disk.percent": "Disk used",
   "gpu.temperature": "GPU temperature",
   "smart.health": "SMART health",
+  "systemd.units.failed": "Failed system units",
+  "systemd.user-units.failed": "Failed user units",
 }
+
+/** Metrics whose values are whole counts, shown without a decimal. */
+const COUNT_METRICS = new Set(["systemd.units.failed", "systemd.user-units.failed"])
 
 export const METRIC_UNITS: Record<string, string> = {
   "cpu.usage": "%",
@@ -54,6 +59,7 @@ export function ruleTone(
 }
 
 export function formatMetricValue(metric: string, value: number): string {
+  if (COUNT_METRICS.has(metric)) return String(value)
   const unit = METRIC_UNITS[metric] ?? ""
   return `${value.toFixed(1)}${unit}`
 }

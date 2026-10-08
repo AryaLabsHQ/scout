@@ -8,7 +8,6 @@ import {
   SYSTEMD_PLUGIN_ID,
   SYSTEMD_SERVICE_KINDS,
   SYSTEMD_STREAM_IDS,
-  SYSTEMD_UNIT_KIND,
 } from "@scout/plugin-systemd/contracts"
 import { HubClient } from "@/rpc/client"
 import { fetchSystemDetail } from "@/server/systems"
@@ -270,7 +269,7 @@ function UnitPage() {
       />
 
       <div className="mt-6 flex gap-6 border-b border-border">
-        {TABS.filter((value) => scope === "system" || value !== "journal").map((value) => (
+        {TABS.map((value) => (
           <Link
             key={value}
             to="/systems/$systemId/services/$unitId"
@@ -373,30 +372,20 @@ function UnitPage() {
             </>
           ) : null}
 
-          {scope === "user" ? (
-            <Section className="mt-6" title="Journal">
-              <EmptyRow>
-                Scout streams the journal of system units only. For this user unit, run{" "}
-                <span className="font-mono text-foreground">journalctl --user -u {unitId}</span> in a
-                terminal.
-              </EmptyRow>
-            </Section>
-          ) : (
-            <Section className="mt-6" title="Journal">
-              <div className={tab === "journal" ? "h-[640px]" : "h-[420px]"}>
-                <LogViewer
-                  title={`journalctl -u ${unitId}`}
-                  params={{
-                    agentId: systemId,
-                    pluginId: SYSTEMD_PLUGIN_ID,
-                    streamId: SYSTEMD_STREAM_IDS.unitLogs,
-                    entity: { pluginId: SYSTEMD_PLUGIN_ID, kind: SYSTEMD_UNIT_KIND, id: unitId },
-                    input: { tail: 200 },
-                  }}
-                />
-              </div>
-            </Section>
-          )}
+          <Section className="mt-6" title="Journal">
+            <div className={tab === "journal" ? "h-[640px]" : "h-[420px]"}>
+              <LogViewer
+                title={`journalctl ${scope === "user" ? "--user " : ""}-u ${unitId}`}
+                params={{
+                  agentId: systemId,
+                  pluginId: SYSTEMD_PLUGIN_ID,
+                  streamId: SYSTEMD_STREAM_IDS.unitLogs,
+                  entity: { pluginId: SYSTEMD_PLUGIN_ID, kind, id: unitId },
+                  input: { tail: 200 },
+                }}
+              />
+            </div>
+          </Section>
         </>
       )}
     </Page>
