@@ -85,7 +85,8 @@ Services are built with `Context.Service`, dependencies are composed with `Layer
 
 ## CONVENTIONS
 
-- Root `README.md` is still a template stub. Treat workspace source plus `e2e/README.md` as ground truth instead.
+- Root `README.md` is the public landing page and `CONTRIBUTING.md` the contributor guide. For engineering detail, treat workspace source, these `AGENTS.md` files, and `docs/` as ground truth.
+- CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`, `bun run test` (every workspace's tests through Turbo), and the web build. Keep them passing; the E2E lab stays manual.
 - Effect and every `@effect/*` package are pinned to the same exact stable version in every workspace; bump them together.
 - `typescript` is pinned to the same exact 7.x version in every workspace, and every `typecheck` script runs TS 7's native `tsc`. TS 7 does not ship the TypeScript 5/6 JS API (`import "typescript"` exports only `version`); a tool that needs that API gets a scoped `typescript@6` alias for that tool alone.
 - `bunfig.toml` turns off Bun's global install store: `bun-types` and several React libraries import undeclared type packages (`undici-types`, `@types/react`), which only resolve from the per-repo `node_modules/.bun` store.
@@ -117,7 +118,8 @@ bun run build
 # Typecheck all workspaces
 bun run typecheck
 
-# Representative tests
+# All workspace tests, or one workspace's
+bun run test
 cd apps/hub && bun run test
 cd apps/agent && bun run test
 cd packages/plugin-sdk && bun run test
