@@ -6,17 +6,18 @@ This document describes the architecture of Scout, a system observability and ma
 
 Scout runs as two processes behind one origin: the hub (API, RPC, state) and the web dashboard
 (TanStack Start SSR). A reverse proxy splits paths between them, so the browser talks to both
-same-origin. On Agni the origin is `scout.arya.sh`, protected by Cloudflare Access.
+same-origin. A typical deployment serves one origin (for example `scout.example.com`) protected by
+Cloudflare Access.
 
 ```
 browser
-  -> Cloudflare Access (app "Scout", scout.arya.sh)
-  -> cloudflared tunnel agni-host
-  -> Caddy 127.0.0.1:80 (http://scout.arya.sh)
+  -> Cloudflare Access (app "Scout", scout.example.com)
+  -> cloudflared tunnel host-tunnel
+  -> Caddy 127.0.0.1:80 (http://scout.example.com)
        /api/*, /ws/*, /health  -> hub  127.0.0.1:3901   (/ws/rpc/agent answers 404 here)
        everything else         -> web  127.0.0.1:3900
 
-agni (OVH VPS, systemd --user units)
+hub host (systemd --user units)
 +-----------------------------------------------------------+
 | scout-hub (Bun, apps/hub)                                  |
 |  +-- REST /api/*, /health  (@effect/platform-bun routes)   |
@@ -44,7 +45,7 @@ Browser
     useAtom hooks. reactivityKeys drive cache invalidation.
 ```
 
-Deployment assets and the runbook live in [`deploy/agni`](../deploy/agni/README.md).
+Example deployment assets and the runbook live in [`deploy/`](../deploy/README.md).
 
 ## Authentication
 
@@ -292,18 +293,18 @@ All configuration is through environment variables. No configuration files.
 
 ### Hub Configuration
 
-| Variable                   | Required                  | Default                                      | Description                                                         |
-| -------------------------- | ------------------------- | -------------------------------------------- | ------------------------------------------------------------------- |
-| `SCOUT_AGENT_TOKENS`       | Yes                       | --                                           | Comma-separated `hostname=token`; unique hostnames and tokens       |
-| `SCOUT_ACCESS_TEAM_DOMAIN` | Yes, unless auth disabled | --                                           | Cloudflare Access team domain, e.g. `aryalabs.cloudflareaccess.com` |
-| `SCOUT_ACCESS_AUD`         | Yes, unless auth disabled | --                                           | Access application Audience (AUD) tag                               |
-| `SCOUT_AUTH`               | No                        | `access`                                     | `access` or `disabled`; `disabled` requires a loopback `SCOUT_HOST` |
-| `SCOUT_ACCESS_CERTS_URL`   | No (test only)            | `https://<team-domain>/cdn-cgi/access/certs` | JWKS URL override for local tests                                   |
-| `SCOUT_HOST`               | No                        | `127.0.0.1`                                  | HTTP/WebSocket listen address                                       |
-| `SCOUT_PORT`               | No                        | `3001`                                       | HTTP/WebSocket listen port                                          |
-| `SCOUT_DB_PATH`            | No                        | `./scout.db`                                 | SQLite database file path                                           |
-| `SCOUT_LOG_LEVEL`          | No                        | `info`                                       | Structured log level                                                |
-| `SCOUT_PLUGIN_DIR`         | No                        | `packages/`                                  | Directory to scan for plugins                                       |
+| Variable                   | Required                  | Default                                      | Description                                                          |
+| -------------------------- | ------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| `SCOUT_AGENT_TOKENS`       | Yes                       | --                                           | Comma-separated `hostname=token`; unique hostnames and tokens        |
+| `SCOUT_ACCESS_TEAM_DOMAIN` | Yes, unless auth disabled | --                                           | Cloudflare Access team domain, e.g. `your-team.cloudflareaccess.com` |
+| `SCOUT_ACCESS_AUD`         | Yes, unless auth disabled | --                                           | Access application Audience (AUD) tag                                |
+| `SCOUT_AUTH`               | No                        | `access`                                     | `access` or `disabled`; `disabled` requires a loopback `SCOUT_HOST`  |
+| `SCOUT_ACCESS_CERTS_URL`   | No (test only)            | `https://<team-domain>/cdn-cgi/access/certs` | JWKS URL override for local tests                                    |
+| `SCOUT_HOST`               | No                        | `127.0.0.1`                                  | HTTP/WebSocket listen address                                        |
+| `SCOUT_PORT`               | No                        | `3001`                                       | HTTP/WebSocket listen port                                           |
+| `SCOUT_DB_PATH`            | No                        | `./scout.db`                                 | SQLite database file path                                            |
+| `SCOUT_LOG_LEVEL`          | No                        | `info`                                       | Structured log level                                                 |
+| `SCOUT_PLUGIN_DIR`         | No                        | `packages/`                                  | Directory to scan for plugins                                        |
 
 ### Web Configuration
 
@@ -342,27 +343,27 @@ All configuration is through environment variables. No configuration files.
 
 These architectural decisions are locked and should not be revisited without explicit justification.
 
-| Decision                | Choice                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| Hub deployment          | Hub (API + WS) and web (SSR) as separate Bun processes, systemd user units on agni     |
-| Agent deployment        | Standalone binary + systemd per machine                                                |
-| Collectors              | Auto-discover + config override per agent                                              |
-| K8s monitoring          | Generic discovery (not Agni-specific)                                                  |
-| Data retention          | 30-day tiered (1m -> 10m -> 20m -> 120m -> 480m)                                       |
-| Plugin model            | Runtime-loaded trusted plugins, one package per plugin                                 |
-| Web serving             | Reverse proxy splits one origin between web (pages) and hub (`/api`, `/ws`, `/health`) |
-| SSR strategy            | Server functions for initial load, direct client -> hub after                          |
-| Terminal emulator       | ghostty-web (custom React wrapper)                                                     |
-| HTTP layer              | @effect/platform-bun (native WS upgrade)                                               |
-| Alert rules             | Standard defaults with 3-strike debounce                                               |
-| Type strategy           | Schema-first at platform boundaries, TS inferred from Effect Schema                    |
-| Report interval         | 15 seconds                                                                             |
-| React                   | React 19 + shadcn/ui v4 + @effect/atom-react                                           |
-| Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service                                    |
-| Hub <-> agent protocol  | effect/rpc over one WebSocket, DuplexRpcSocket adapter                                 |
-| Auth                    | Cloudflare Access JWT for browsers; shared token for agents                            |
-| Network metrics         | Total rx/tx bytes only                                                                 |
-| K8s scope               | Full workload (Pods, Deployments, Services, Ingress, Jobs)                             |
-| Historical ranges       | 1h / 6h / 24h / 7d                                                                     |
-| Linting                 | oxlint + oxfmt                                                                         |
-| Name                    | Scout (final)                                                                          |
+| Decision                | Choice                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------ |
+| Hub deployment          | Hub (API + WS) and web (SSR) as separate Bun processes, systemd user units on the hub host |
+| Agent deployment        | Standalone binary + systemd per machine                                                    |
+| Collectors              | Auto-discover + config override per agent                                                  |
+| K8s monitoring          | Generic discovery (not deployment-specific)                                                |
+| Data retention          | 30-day tiered (1m -> 10m -> 20m -> 120m -> 480m)                                           |
+| Plugin model            | Runtime-loaded trusted plugins, one package per plugin                                     |
+| Web serving             | Reverse proxy splits one origin between web (pages) and hub (`/api`, `/ws`, `/health`)     |
+| SSR strategy            | Server functions for initial load, direct client -> hub after                              |
+| Terminal emulator       | ghostty-web (custom React wrapper)                                                         |
+| HTTP layer              | @effect/platform-bun (native WS upgrade)                                                   |
+| Alert rules             | Standard defaults with 3-strike debounce                                                   |
+| Type strategy           | Schema-first at platform boundaries, TS inferred from Effect Schema                        |
+| Report interval         | 15 seconds                                                                                 |
+| React                   | React 19 + shadcn/ui v4 + @effect/atom-react                                               |
+| Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service                                        |
+| Hub <-> agent protocol  | effect/rpc over one WebSocket, DuplexRpcSocket adapter                                     |
+| Auth                    | Cloudflare Access JWT for browsers; shared token for agents                                |
+| Network metrics         | Total rx/tx bytes only                                                                     |
+| K8s scope               | Full workload (Pods, Deployments, Services, Ingress, Jobs)                                 |
+| Historical ranges       | 1h / 6h / 24h / 7d                                                                         |
+| Linting                 | oxlint + oxfmt                                                                             |
+| Name                    | Scout (final)                                                                              |

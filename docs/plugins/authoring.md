@@ -311,10 +311,10 @@ If a plugin exposes an `operator` surface, also test:
 
 Useful references:
 
-- [packages/plugin-sdk/test/fixtures/valid-plugin/src/plugin.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-sdk/test/fixtures/valid-plugin/src/plugin.ts)
-- [packages/plugin-docker/src/plugin.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-docker/src/plugin.ts)
-- [packages/plugin-k8s/src/plugin.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-k8s/src/plugin.ts)
-- [packages/plugin-systemd/src/plugin.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-systemd/src/plugin.ts)
+- [packages/plugin-sdk/test/fixtures/valid-plugin/src/plugin.ts](../../packages/plugin-sdk/test/fixtures/valid-plugin/src/plugin.ts)
+- [packages/plugin-docker/src/plugin.ts](../../packages/plugin-docker/src/plugin.ts)
+- [packages/plugin-k8s/src/plugin.ts](../../packages/plugin-k8s/src/plugin.ts)
+- [packages/plugin-systemd/src/plugin.ts](../../packages/plugin-systemd/src/plugin.ts)
 
 ## Reference
 
@@ -327,7 +327,7 @@ Current plugin loading behavior:
 
 Relevant source files:
 
-- [packages/plugin-sdk/src/runtime.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-sdk/src/runtime.ts)
-- [packages/plugin-sdk/src/operator.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-sdk/src/operator.ts)
-- [packages/plugin-sdk/src/loader.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-sdk/src/loader.ts)
-- [packages/plugin-sdk/src/schemas.ts](/Users/aryasaatvik/Developer/scout/packages/plugin-sdk/src/schemas.ts)
+- [packages/plugin-sdk/src/runtime.ts](../../packages/plugin-sdk/src/runtime.ts)
+- [packages/plugin-sdk/src/operator.ts](../../packages/plugin-sdk/src/operator.ts)
+- [packages/plugin-sdk/src/loader.ts](../../packages/plugin-sdk/src/loader.ts)
+- [packages/plugin-sdk/src/schemas.ts](../../packages/plugin-sdk/src/schemas.ts)

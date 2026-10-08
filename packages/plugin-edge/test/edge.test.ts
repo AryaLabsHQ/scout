@@ -14,7 +14,7 @@ import {
 import { manifest } from "../src/manifest.js"
 import { web } from "../src/web.js"
 
-// Trimmed from cloudflared 2026.9.1 on Agni.
+// Trimmed from cloudflared 2026.9.1 on a production host.
 const CLOUDFLARED_METRICS = `# HELP build_info Build and version information
 # TYPE build_info gauge
 build_info{goversion="go1.26.8",revision="2026-09-11-13:35 UTC",type="",version="2026.9.1"} 1
@@ -33,7 +33,7 @@ const CLOUDFLARED_READY = `{"status":200,"readyConnections":4,"connectorId":"000
 
 const CADDY_UPSTREAMS = `[{"address":"127.0.0.1:3900","num_requests":0,"fails":0},{"address":"127.0.0.1:3773","num_requests":1,"fails":3}]`
 
-// Shape of Agni's Caddy config: nested subroutes, a path-matched 404, and a
+// Shape of a production Caddy config: nested subroutes, a path-matched 404, and a
 // tls app holding a credential that must never be reported.
 const CADDY_CONFIG = JSON.stringify({
   apps: {
@@ -43,7 +43,7 @@ const CADDY_CONFIG = JSON.stringify({
           listen: [":443"],
           routes: [
             {
-              match: [{ host: ["agni.example.ts.net"] }],
+              match: [{ host: ["node-1.example.ts.net"] }],
               handle: [
                 {
                   handler: "subroute",
@@ -104,22 +104,22 @@ const fakeGet =
       : Effect.fail(new Error(`GET ${url} failed: connection refused`))
   }
 
-const AGNI_ROUTES: Readonly<Record<string, HttpResponse>> = {
+const NODE_ROUTES: Readonly<Record<string, HttpResponse>> = {
   "http://127.0.0.1:2002/ready": { status: 200, body: CLOUDFLARED_READY },
   "http://127.0.0.1:2002/metrics": { status: 200, body: CLOUDFLARED_METRICS },
   "http://127.0.0.1:2019/reverse_proxy/upstreams": { status: 200, body: CADDY_UPSTREAMS },
   "http://127.0.0.1:2019/config/": { status: 200, body: CADDY_CONFIG },
 }
 
-const plugin = (env: Record<string, string>, routes = AGNI_ROUTES, calls: string[] = []) =>
+const plugin = (env: Record<string, string>, routes = NODE_ROUTES, calls: string[] = []) =>
   createEdgeAgentPlugin({ env: () => env, get: fakeGet(routes, calls) })
 
 describe("edge config", () => {
   it("parses named and bare endpoints, and off", () => {
     expect(
-      parseEndpointList("agni-host=http://127.0.0.1:2002/, http://127.0.0.1:2003", { name: "x", url: "u" }),
+      parseEndpointList("host-tunnel=http://127.0.0.1:2002/, http://127.0.0.1:2003", { name: "x", url: "u" }),
     ).toEqual([
-      { name: "agni-host", url: "http://127.0.0.1:2002", explicit: true },
+      { name: "host-tunnel", url: "http://127.0.0.1:2002", explicit: true },
       { name: "127.0.0.1:2003", url: "http://127.0.0.1:2003", explicit: true },
     ])
     expect(parseEndpointList(undefined, { name: "caddy", url: "http://127.0.0.1:2019" })).toEqual([
@@ -171,7 +171,7 @@ describe("edge parsers", () => {
   it("lists Caddy sites with their upstreams and nothing else from the config", () => {
     const sites = parseCaddySites(CADDY_CONFIG)
     expect(sites).toEqual([
-      { host: "agni.example.ts.net", listen: [":443"], upstreams: ["127.0.0.1:3773"] },
+      { host: "node-1.example.ts.net", listen: [":443"], upstreams: ["127.0.0.1:3773"] },
       { host: "scout.example.com", listen: [":80"], upstreams: ["127.0.0.1:3901", "127.0.0.1:3900"] },
       { host: "*", listen: [":80"], upstreams: [] },
     ])
@@ -182,15 +182,15 @@ describe("edge parsers", () => {
 describe("edge plugin", () => {
   it("collects a ready tunnel and a proxy with a failing upstream", async () => {
     const result = await Effect.runPromise(
-      plugin({ SCOUT_EDGE_CLOUDFLARED_METRICS: "agni-host=http://127.0.0.1:2002" }).collect!({
-        nodeId: "agni",
+      plugin({ SCOUT_EDGE_CLOUDFLARED_METRICS: "host-tunnel=http://127.0.0.1:2002" }).collect!({
+        nodeId: "node-1",
         now: 7,
       }),
     )
     expect(
       result.entities?.map((entity) => [entity.ref.kind, entity.ref.id, entity.status, entity.ts]),
     ).toEqual([
-      [EDGE_ENTITY_KINDS.tunnel, "agni-host", "ready", 7],
+      [EDGE_ENTITY_KINDS.tunnel, "host-tunnel", "ready", 7],
       [EDGE_ENTITY_KINDS.proxy, "caddy", "degraded", 7],
     ])
     expect(result.entities?.[0]?.state).toMatchObject({
@@ -214,13 +214,13 @@ describe("edge plugin", () => {
   it("only ever issues GETs to the documented read-only paths", async () => {
     const calls: string[] = []
     await Effect.runPromise(
-      plugin({ SCOUT_EDGE_CLOUDFLARED_METRICS: "agni-host=http://127.0.0.1:2002" }, AGNI_ROUTES, calls)
+      plugin({ SCOUT_EDGE_CLOUDFLARED_METRICS: "host-tunnel=http://127.0.0.1:2002" }, NODE_ROUTES, calls)
         .collect!({
-        nodeId: "agni",
+        nodeId: "node-1",
         now: 7,
       }),
     )
-    expect(new Set(calls)).toEqual(new Set(Object.keys(AGNI_ROUTES)))
+    expect(new Set(calls)).toEqual(new Set(Object.keys(NODE_ROUTES)))
   })
 
   it("reports a tunnel without edge connections as not ready", async () => {
@@ -228,10 +228,10 @@ describe("edge plugin", () => {
       plugin(
         { SCOUT_EDGE_CLOUDFLARED_METRICS: "t=http://127.0.0.1:2002", SCOUT_EDGE_CADDY_ADMIN: "off" },
         {
-          ...AGNI_ROUTES,
+          ...NODE_ROUTES,
           "http://127.0.0.1:2002/ready": { status: 503, body: `{"status":503,"readyConnections":0}` },
         },
-      ).collect!({ nodeId: "agni", now: 7 }),
+      ).collect!({ nodeId: "node-1", now: 7 }),
     )
     expect(result.entities?.map((entity) => entity.status)).toEqual(["not-ready"])
   })
@@ -258,7 +258,7 @@ describe("edge plugin", () => {
   })
 
   it("marks a proxy degraded when its config cannot be read", async () => {
-    const { "http://127.0.0.1:2019/config/": _config, ...routes } = AGNI_ROUTES
+    const { "http://127.0.0.1:2019/config/": _config, ...routes } = NODE_ROUTES
     const result = await Effect.runPromise(
       plugin(
         { SCOUT_EDGE_CLOUDFLARED_METRICS: "off" },
@@ -269,7 +269,7 @@ describe("edge plugin", () => {
             body: `[{"address":"127.0.0.1:3900","num_requests":0,"fails":0}]`,
           },
         },
-      ).collect!({ nodeId: "agni", now: 7 }),
+      ).collect!({ nodeId: "node-1", now: 7 }),
     )
     expect(result.entities?.map((entity) => entity.status)).toEqual(["degraded"])
     expect(result.entities?.[0]?.state).toMatchObject({

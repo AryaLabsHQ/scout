@@ -14,7 +14,7 @@ const refusal = (env: Record<string, string>) =>
 
 const ACCESS_ENV = {
   SCOUT_AGENT_TOKENS: "node-1=node-1-secret, node-2=node-2-secret",
-  SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com",
+  SCOUT_ACCESS_TEAM_DOMAIN: "your-team.cloudflareaccess.com",
   SCOUT_ACCESS_AUD: "aud-tag",
 }
 
@@ -28,10 +28,10 @@ describe("HubConfig", () => {
       expect(Redacted.value(config.agentTokens.get("node-2")!)).toBe("node-2-secret")
       expect(config.browserAuth).toEqual({
         _tag: "Access",
-        teamDomain: "aryalabs.cloudflareaccess.com",
+        teamDomain: "your-team.cloudflareaccess.com",
         audience: "aud-tag",
-        issuer: "https://aryalabs.cloudflareaccess.com",
-        certsUrl: "https://aryalabs.cloudflareaccess.com/cdn-cgi/access/certs",
+        issuer: "https://your-team.cloudflareaccess.com",
+        certsUrl: "https://your-team.cloudflareaccess.com/cdn-cgi/access/certs",
       })
     }),
   )
@@ -40,13 +40,13 @@ describe("HubConfig", () => {
     Effect.gen(function* () {
       const config = yield* loadWith({
         ...ACCESS_ENV,
-        SCOUT_ACCESS_TEAM_DOMAIN: "https://aryalabs.cloudflareaccess.com/",
+        SCOUT_ACCESS_TEAM_DOMAIN: "https://your-team.cloudflareaccess.com/",
         SCOUT_HOST: "0.0.0.0",
         SCOUT_PORT: "3901",
       })
       expect(config.host).toBe("0.0.0.0")
       expect(config.port).toBe(3901)
-      expect(config.browserAuth).toMatchObject({ issuer: "https://aryalabs.cloudflareaccess.com" })
+      expect(config.browserAuth).toMatchObject({ issuer: "https://your-team.cloudflareaccess.com" })
     }),
   )
 
@@ -93,7 +93,7 @@ describe("HubConfig", () => {
       expect(
         yield* refusal({
           SCOUT_AGENT_TOKENS: "local=t",
-          SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com",
+          SCOUT_ACCESS_TEAM_DOMAIN: "your-team.cloudflareaccess.com",
         }),
       ).toContain("SCOUT_ACCESS_AUD")
     }),
@@ -130,8 +130,8 @@ describe("HubConfig", () => {
 
   it("recognizes loopback hosts", () => {
     expect(["127.0.0.1", "127.1.2.3", "localhost", "::1", "[::1]"].every(isLoopbackHost)).toBe(true)
-    expect(["0.0.0.0", "::", "100.100.1.1", "scout.arya.sh", "127.0.0.1.nip.io"].some(isLoopbackHost)).toBe(
-      false,
-    )
+    expect(
+      ["0.0.0.0", "::", "100.100.1.1", "scout.example.com", "127.0.0.1.nip.io"].some(isLoopbackHost),
+    ).toBe(false)
   })
 })

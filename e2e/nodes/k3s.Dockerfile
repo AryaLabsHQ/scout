@@ -1,7 +1,7 @@
 # node-k3s: single-node k3s (server+agent combined) running under systemd.
 # Built on the shared base so we get Ubuntu + systemd + bun + smartmontools,
 # then k3s is installed via the official installer. This mirrors how k3s is
-# actually deployed on a real node (agni).
+# actually deployed on a real node.
 FROM scout-e2e-base:latest
 
 # Install k3s. The installer creates the systemd unit + enables it (via

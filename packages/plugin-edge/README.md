@@ -15,7 +15,7 @@ Set on the agent:
 
 ```bash
 # Comma-separated `name=url` or `url`; `off` disables. Default: probe 127.0.0.1:20241.
-SCOUT_EDGE_CLOUDFLARED_METRICS=agni-host=http://127.0.0.1:2002
+SCOUT_EDGE_CLOUDFLARED_METRICS=host-tunnel=http://127.0.0.1:2002
 # Default: probe 127.0.0.1:2019.
 SCOUT_EDGE_CADDY_ADMIN=http://127.0.0.1:2019
 ```
