@@ -1,7 +1,7 @@
 /**
  * Hub process configuration, validated once at startup.
  *
- * The hub fails closed: it refuses to start without an agent token, and it
+ * The hub fails closed: it refuses to start without agent tokens, and it
  * refuses to start without Cloudflare Access settings unless browser auth is
  * explicitly disabled AND the listener is bound to a loopback address.
  */
@@ -28,8 +28,11 @@ export type BrowserAuthConfig =
 export interface HubConfigShape {
   readonly host: string
   readonly port: number
-  /** Shared secret agents present on `/ws/rpc/agent`. */
-  readonly agentToken: Redacted.Redacted<string>
+  /**
+   * Agent tokens keyed by hostname. An agent presents its own token on
+   * `/ws/rpc/agent` and may connect only as the hostname that token belongs to.
+   */
+  readonly agentTokens: ReadonlyMap<string, Redacted.Redacted<string>>
   readonly browserAuth: BrowserAuthConfig
 }
 
@@ -65,11 +68,47 @@ const optionalString = (name: string) =>
 
 const fail = (message: string) => Effect.fail(new HubConfigError({ message }))
 
+/**
+ * Parses `SCOUT_AGENT_TOKENS`: comma-separated `hostname=token` entries. Every
+ * hostname and token must be non-blank and unique, so a token identifies
+ * exactly one machine.
+ */
+export const parseAgentTokens = (
+  raw: string,
+): Effect.Effect<ReadonlyMap<string, Redacted.Redacted<string>>, HubConfigError> =>
+  Effect.gen(function* () {
+    const tokens = new Map<string, Redacted.Redacted<string>>()
+    const seen = new Set<string>()
+    for (const entry of raw.split(",")) {
+      if (entry.trim().length === 0) continue
+      const separator = entry.indexOf("=")
+      const hostname = separator === -1 ? "" : entry.slice(0, separator).trim()
+      const token = separator === -1 ? "" : entry.slice(separator + 1).trim()
+      if (hostname.length === 0 || token.length === 0) {
+        return yield* fail("SCOUT_AGENT_TOKENS entries must be `hostname=token` with both parts non-blank.")
+      }
+      if (tokens.has(hostname)) {
+        return yield* fail(`SCOUT_AGENT_TOKENS lists hostname "${hostname}" more than once.`)
+      }
+      if (seen.has(token)) {
+        return yield* fail("SCOUT_AGENT_TOKENS reuses a token; give every agent its own.")
+      }
+      seen.add(token)
+      tokens.set(hostname, Redacted.make(token))
+    }
+    if (tokens.size === 0) {
+      return yield* fail(
+        "SCOUT_AGENT_TOKENS is required and must list at least one `hostname=token`; agents authenticate with it.",
+      )
+    }
+    return tokens
+  })
+
 const load: Effect.Effect<HubConfigShape, HubConfigError> = Effect.gen(function* () {
   const raw = yield* Config.all({
     host: optionalString("SCOUT_HOST"),
     port: Config.option(Config.Port("SCOUT_PORT")),
-    token: optionalString("SCOUT_TOKEN"),
+    agentTokens: optionalString("SCOUT_AGENT_TOKENS"),
     auth: optionalString("SCOUT_AUTH"),
     teamDomain: optionalString("SCOUT_ACCESS_TEAM_DOMAIN"),
     audience: optionalString("SCOUT_ACCESS_AUD"),
@@ -83,9 +122,7 @@ const load: Effect.Effect<HubConfigShape, HubConfigError> = Effect.gen(function*
   const host = Option.getOrElse(raw.host, () => DEFAULT_HOST)
   const port = Option.getOrElse(raw.port, () => DEFAULT_PORT)
 
-  if (Option.isNone(raw.token)) {
-    return yield* fail("SCOUT_TOKEN is required and must not be blank; agents authenticate with it.")
-  }
+  const agentTokens = yield* parseAgentTokens(Option.getOrElse(raw.agentTokens, () => ""))
 
   const authMode = Option.getOrElse(raw.auth, () => "access").toLowerCase()
   let browserAuth: BrowserAuthConfig
@@ -119,7 +156,7 @@ const load: Effect.Effect<HubConfigShape, HubConfigError> = Effect.gen(function*
   return {
     host,
     port,
-    agentToken: Redacted.make(raw.token.value),
+    agentTokens,
     browserAuth,
   }
 })

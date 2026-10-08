@@ -68,7 +68,7 @@ All nodes also report core system metrics (CPU, memory, disk, network, processes
 ### apps/hub/.env.test
 
 ```
-SCOUT_TOKEN=test-token-123
+SCOUT_AGENT_TOKENS=node-server=test-token-server,node-k3s=test-token-k3s,node-docker=test-token-docker,node-minimal=test-token-minimal
 SCOUT_DB_PATH=./test.db
 SCOUT_HOST=127.0.0.1
 SCOUT_PORT=3001
@@ -76,7 +76,7 @@ SCOUT_AUTH=disabled
 ```
 
 `SCOUT_AUTH=disabled` turns off Cloudflare Access verification for browsers and is refused unless
-the hub listens on a loopback address. Agents still need `SCOUT_TOKEN`.
+the hub listens on a loopback address. Agents still need their own `SCOUT_TOKEN`.
 
 > **Linux hosts:** containers reach the host through `host.docker.internal` (the Docker bridge
 > gateway), which does not reach a hub bound to `127.0.0.1`. Docker Desktop on macOS forwards it to
@@ -97,8 +97,8 @@ The containers use matching env vars set in `e2e/compose.yml`:
 
 ```
 SCOUT_HUB_URL=ws://host.docker.internal:3001
-SCOUT_TOKEN=test-token-123
 SCOUT_INTERVAL=15
+SCOUT_TOKEN=test-token-<node>   # per node, e.g. test-token-server for node-server
 ```
 
 > **Note:** Use `127.0.0.1` (not `localhost`) for `SCOUT_HUB_URL` in the web env. On macOS, `localhost` may resolve to IPv6 first and collide with other processes on the same port.

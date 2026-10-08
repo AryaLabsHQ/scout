@@ -29,7 +29,7 @@ import { AgentConnectError, AgentHubRpcs, HubAgentRpcs, makeDuplexRpcProtocols }
 import type { AgentCapabilities, AgentInfo, System } from "@scout/shared"
 import type { PluginCapability } from "@scout/plugin-sdk"
 import { HubConfig } from "../config.js"
-import { agentTokenEquals } from "../auth/http-gate.js"
+import { agentMayConnectAs } from "../auth/http-gate.js"
 import { Database } from "../services/database.js"
 import * as schema from "../../drizzle/schema.js"
 import { AgentHandlersLive } from "./agent-handlers.js"
@@ -282,9 +282,10 @@ export class RegisterAgent extends Context.Service<
 // ── agent.connect handler override ────────────────────────────────────────────
 
 /**
- * Validates the SCOUT_TOKEN carried in the payload (the upgrade request was
- * already checked by `HttpAuthGate`) and delegates to the per-connection
- * `RegisterAgent` callback.
+ * Checks that the token in the payload belongs to the hostname the agent
+ * claims (the upgrade request was already checked by `HttpAuthGate`), then
+ * delegates to the per-connection `RegisterAgent` callback. An agent can only
+ * register as its own machine.
  *
  * IMPORTANT: This layer MUST be provided with `Layer.fresh(...)` at the
  * call site. `toLayerHandler` captures the services snapshot at layer
@@ -298,15 +299,16 @@ const AgentConnectHandlerLive = AgentHubRpcs.toLayerHandler(
   "agent.connect",
   Effect.gen(function* () {
     const registerFn = yield* RegisterAgent
-    const { agentToken } = yield* HubConfig
+    const { agentTokens } = yield* HubConfig
 
     return ({ token, hostname, version, platform, capabilities, pluginCapabilities }) =>
       Effect.gen(function* () {
-        if (!agentTokenEquals(token, agentToken)) {
+        if (!agentMayConnectAs(agentTokens, hostname, token)) {
+          yield* Effect.logWarning("agent.connect: rejected token for hostname", { hostname })
           return yield* Effect.fail(
             new AgentConnectError({
               reason: "invalid-token",
-              message: "Invalid SCOUT_TOKEN",
+              message: `Invalid SCOUT_TOKEN for hostname "${hostname}"`,
             }),
           )
         }

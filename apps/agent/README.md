@@ -27,7 +27,8 @@ Common optional variables:
 - `KUBECONFIG`: kubeconfig for the k8s plugin's `kubectl` calls
 
 The agent sends `SCOUT_TOKEN` as `Authorization: Bearer` on the websocket upgrade and in
-`agent.connect`. The config loader lives in [`src/config.ts`](./src/config.ts).
+`agent.connect`. The hub accepts it only for the agent's own hostname (`SCOUT_HOSTNAME`), so the
+token must be this host's entry in the hub's `SCOUT_AGENT_TOKENS`. The config loader lives in [`src/config.ts`](./src/config.ts).
 
 ## Key Entry Points
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Redacted } from "effect"
+import { agentMayConnectAs } from "../../src/auth/http-gate.js"
 import { HubConfig, isLoopbackHost } from "../../src/config.js"
 
 const loadWith = (env: Record<string, string>) =>
@@ -12,7 +13,7 @@ const refusal = (env: Record<string, string>) =>
   )
 
 const ACCESS_ENV = {
-  SCOUT_TOKEN: "agent-secret",
+  SCOUT_AGENT_TOKENS: "agni=agni-secret, blaze=blaze-secret",
   SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com",
   SCOUT_ACCESS_AUD: "aud-tag",
 }
@@ -23,7 +24,8 @@ describe("HubConfig", () => {
       const config = yield* loadWith(ACCESS_ENV)
       expect(config.host).toBe("127.0.0.1")
       expect(config.port).toBe(3001)
-      expect(Redacted.value(config.agentToken)).toBe("agent-secret")
+      expect([...config.agentTokens.keys()]).toEqual(["agni", "blaze"])
+      expect(Redacted.value(config.agentTokens.get("blaze")!)).toBe("blaze-secret")
       expect(config.browserAuth).toEqual({
         _tag: "Access",
         teamDomain: "aryalabs.cloudflareaccess.com",
@@ -48,36 +50,72 @@ describe("HubConfig", () => {
     }),
   )
 
-  it.effect("refuses to start without SCOUT_TOKEN, including a blank one", () =>
+  it.effect("refuses to start without agent tokens, including blank ones", () =>
     Effect.gen(function* () {
-      const { SCOUT_TOKEN: _, ...withoutToken } = ACCESS_ENV
-      expect(yield* refusal(withoutToken)).toContain("SCOUT_TOKEN is required")
-      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_TOKEN: "   " })).toContain("SCOUT_TOKEN is required")
+      const { SCOUT_AGENT_TOKENS: _, ...withoutTokens } = ACCESS_ENV
+      expect(yield* refusal(withoutTokens)).toContain("SCOUT_AGENT_TOKENS is required")
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: " , " })).toContain(
+        "SCOUT_AGENT_TOKENS is required",
+      )
+    }),
+  )
+
+  it.effect("refuses malformed, duplicate, or shared agent tokens", () =>
+    Effect.gen(function* () {
+      for (const value of ["agni", "agni=", "=secret", "agni=a,blaze"]) {
+        expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: value })).toContain("`hostname=token`")
+      }
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "agni=a,agni=b" })).toContain(
+        'hostname "agni" more than once',
+      )
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "agni=same,blaze=same" })).toContain(
+        "reuses a token",
+      )
+    }),
+  )
+
+  it.effect("binds each token to its own hostname", () =>
+    Effect.gen(function* () {
+      const { agentTokens } = yield* loadWith(ACCESS_ENV)
+      expect(agentMayConnectAs(agentTokens, "agni", "agni-secret")).toBe(true)
+      expect(agentMayConnectAs(agentTokens, "blaze", "blaze-secret")).toBe(true)
+      expect(agentMayConnectAs(agentTokens, "agni", "blaze-secret")).toBe(false)
+      expect(agentMayConnectAs(agentTokens, "unknown", "agni-secret")).toBe(false)
+      expect(agentMayConnectAs(agentTokens, "agni", "")).toBe(false)
     }),
   )
 
   it.effect("refuses to start without Access settings (fail closed)", () =>
     Effect.gen(function* () {
-      expect(yield* refusal({ SCOUT_TOKEN: "t" })).toContain("SCOUT_ACCESS_TEAM_DOMAIN and SCOUT_ACCESS_AUD")
+      expect(yield* refusal({ SCOUT_AGENT_TOKENS: "local=t" })).toContain(
+        "SCOUT_ACCESS_TEAM_DOMAIN and SCOUT_ACCESS_AUD",
+      )
       expect(
-        yield* refusal({ SCOUT_TOKEN: "t", SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com" }),
+        yield* refusal({
+          SCOUT_AGENT_TOKENS: "local=t",
+          SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com",
+        }),
       ).toContain("SCOUT_ACCESS_AUD")
     }),
   )
 
   it.effect("allows SCOUT_AUTH=disabled only on a loopback host", () =>
     Effect.gen(function* () {
-      const local = yield* loadWith({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled" })
+      const local = yield* loadWith({ SCOUT_AGENT_TOKENS: "local=t", SCOUT_AUTH: "disabled" })
       expect(local.browserAuth).toEqual({ _tag: "Disabled" })
 
-      const ipv6 = yield* loadWith({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "::1" })
+      const ipv6 = yield* loadWith({
+        SCOUT_AGENT_TOKENS: "local=t",
+        SCOUT_AUTH: "disabled",
+        SCOUT_HOST: "::1",
+      })
       expect(ipv6.browserAuth._tag).toBe("Disabled")
 
-      expect(yield* refusal({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "0.0.0.0" })).toContain(
-        "only allowed when SCOUT_HOST is a loopback address",
-      )
       expect(
-        yield* refusal({ SCOUT_TOKEN: "t", SCOUT_AUTH: "disabled", SCOUT_HOST: "100.64.0.1" }),
+        yield* refusal({ SCOUT_AGENT_TOKENS: "local=t", SCOUT_AUTH: "disabled", SCOUT_HOST: "0.0.0.0" }),
+      ).toContain("only allowed when SCOUT_HOST is a loopback address")
+      expect(
+        yield* refusal({ SCOUT_AGENT_TOKENS: "local=t", SCOUT_AUTH: "disabled", SCOUT_HOST: "100.64.0.1" }),
       ).toContain("loopback")
     }),
   )

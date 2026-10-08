@@ -3,7 +3,7 @@
  *
  * Exposes two WebSocket endpoints:
  *   /ws/rpc       — ClientHubRpcs (browsers, Cloudflare Access identity)
- *   /ws/rpc/agent — AgentHubRpcs  (agents via DuplexRpcSocket, SCOUT_TOKEN)
+ *   /ws/rpc/agent — AgentHubRpcs  (agents via DuplexRpcSocket, per-host agent tokens)
  *
  * Both upgrades are authenticated by `HttpAuthGate` before they reach these
  * routes; `ClientAuthMiddlewareLive` re-verifies each browser RPC.
