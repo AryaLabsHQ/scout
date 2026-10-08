@@ -111,6 +111,13 @@ const fakeSystemctl =
                   sub: "running",
                   description: "D-Bus User Message Bus",
                 },
+                {
+                  unit: "app-sync.service",
+                  load: "loaded",
+                  active: "failed",
+                  sub: "failed",
+                  description: "App sync",
+                },
               ]
             : [
                 {
@@ -232,10 +239,11 @@ describe("systemd collection", () => {
         `${SYSTEMD_UNIT_KIND}/dbus.service`,
         `${SYSTEMD_UNIT_KIND}/restic-backup.service`,
         `${SYSTEMD_USER_UNIT_KIND}/dbus.service`,
+        `${SYSTEMD_USER_UNIT_KIND}/app-sync.service`,
         `${SYSTEMD_TIMER_KIND}/restic-backup.timer`,
       ]),
     )
-    expect(ids).toHaveLength(4)
+    expect(ids).toHaveLength(5)
     // Every entity carries the collection timestamp; the hub keys "latest" on it.
     expect(new Set(result.entities!.map((entity) => entity.ts))).toEqual(new Set([42]))
     // One batched show per manager, never one per unit.
@@ -296,7 +304,23 @@ describe("systemd collection", () => {
   it("keeps unit totals and resource metrics scoped correctly", async () => {
     const result = await collect(fakeSystemctl([]))
     const metric = (metricId: string) => result.metrics!.filter((point) => point.metricId === metricId)
-    expect(metric("units.total")[0]?.value).toBe(2)
+    const totals = [
+      "units.total",
+      "units.active",
+      "units.failed",
+      "user-units.total",
+      "user-units.active",
+      "user-units.failed",
+    ].map((metricId) => [metricId, metric(metricId).map((point) => point.value)])
+    // A failed user unit counts toward the user totals only, so it alerts apart from system units.
+    expect(totals).toEqual([
+      ["units.total", [2]],
+      ["units.active", [1]],
+      ["units.failed", [0]],
+      ["user-units.total", [2]],
+      ["user-units.active", [1]],
+      ["user-units.failed", [1]],
+    ])
     expect(
       metric("unit.memory.bytes").map((point) => [point.entity?.kind, point.entity?.id, point.value]),
     ).toEqual([
