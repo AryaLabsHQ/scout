@@ -13,7 +13,7 @@ const refusal = (env: Record<string, string>) =>
   )
 
 const ACCESS_ENV = {
-  SCOUT_AGENT_TOKENS: "agni=agni-secret, blaze=blaze-secret",
+  SCOUT_AGENT_TOKENS: "node-1=node-1-secret, node-2=node-2-secret",
   SCOUT_ACCESS_TEAM_DOMAIN: "aryalabs.cloudflareaccess.com",
   SCOUT_ACCESS_AUD: "aud-tag",
 }
@@ -24,8 +24,8 @@ describe("HubConfig", () => {
       const config = yield* loadWith(ACCESS_ENV)
       expect(config.host).toBe("127.0.0.1")
       expect(config.port).toBe(3001)
-      expect([...config.agentTokens.keys()]).toEqual(["agni", "blaze"])
-      expect(Redacted.value(config.agentTokens.get("blaze")!)).toBe("blaze-secret")
+      expect([...config.agentTokens.keys()]).toEqual(["node-1", "node-2"])
+      expect(Redacted.value(config.agentTokens.get("node-2")!)).toBe("node-2-secret")
       expect(config.browserAuth).toEqual({
         _tag: "Access",
         teamDomain: "aryalabs.cloudflareaccess.com",
@@ -62,13 +62,13 @@ describe("HubConfig", () => {
 
   it.effect("refuses malformed, duplicate, or shared agent tokens", () =>
     Effect.gen(function* () {
-      for (const value of ["agni", "agni=", "=secret", "agni=a,blaze"]) {
+      for (const value of ["node-1", "node-1=", "=secret", "node-1=a,node-2"]) {
         expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: value })).toContain("`hostname=token`")
       }
-      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "agni=a,agni=b" })).toContain(
-        'hostname "agni" more than once',
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "node-1=a,node-1=b" })).toContain(
+        'hostname "node-1" more than once',
       )
-      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "agni=same,blaze=same" })).toContain(
+      expect(yield* refusal({ ...ACCESS_ENV, SCOUT_AGENT_TOKENS: "node-1=same,node-2=same" })).toContain(
         "reuses a token",
       )
     }),
@@ -77,11 +77,11 @@ describe("HubConfig", () => {
   it.effect("binds each token to its own hostname", () =>
     Effect.gen(function* () {
       const { agentTokens } = yield* loadWith(ACCESS_ENV)
-      expect(agentMayConnectAs(agentTokens, "agni", "agni-secret")).toBe(true)
-      expect(agentMayConnectAs(agentTokens, "blaze", "blaze-secret")).toBe(true)
-      expect(agentMayConnectAs(agentTokens, "agni", "blaze-secret")).toBe(false)
-      expect(agentMayConnectAs(agentTokens, "unknown", "agni-secret")).toBe(false)
-      expect(agentMayConnectAs(agentTokens, "agni", "")).toBe(false)
+      expect(agentMayConnectAs(agentTokens, "node-1", "node-1-secret")).toBe(true)
+      expect(agentMayConnectAs(agentTokens, "node-2", "node-2-secret")).toBe(true)
+      expect(agentMayConnectAs(agentTokens, "node-1", "node-2-secret")).toBe(false)
+      expect(agentMayConnectAs(agentTokens, "unknown", "node-1-secret")).toBe(false)
+      expect(agentMayConnectAs(agentTokens, "node-1", "")).toBe(false)
     }),
   )
 
