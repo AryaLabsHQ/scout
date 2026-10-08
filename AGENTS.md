@@ -28,15 +28,16 @@ scout/
 
 ## WHERE TO LOOK
 
-| Task                                        | Location                                                                                                                  | Notes                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Add a new collector or node capability      | `apps/agent/src/collectors`, `apps/agent/src/services/collector-registry.ts`                                              | Registry order is the canonical core collector order                  |
-| Change hub APIs or live control flow        | `apps/hub/src/routes.ts`, `apps/hub/src/rpc`, `packages/shared/src/rpc`                                                   | REST is for bootstrap/HTTP, RPC is for live browser and agent traffic |
-| Change browser data flow                    | `apps/web/src/routes`, `apps/web/src/server`, `apps/web/src/rpc`, `apps/web/src/providers/atom-provider.tsx`              | SSR bootstrap happens before AtomRpc subscriptions                    |
-| Add or change shared wire contracts         | `packages/shared/src/schemas`, `packages/shared/src/rpc`                                                                  | Shared package is the source of truth for cross-runtime shapes        |
-| Add or change plugin capabilities           | `packages/plugin-sdk`, `packages/plugin-docker`, `packages/plugin-edge`, `packages/plugin-k8s`, `packages/plugin-systemd` | Plugin manifests, contracts, and runtime adapters live together       |
-| Run the full stack against disposable nodes | `e2e/README.md`, `e2e/scripts`, `e2e/nodes`                                                                               | Hub runs on the host; containers mount the repo at `/opt/scout`       |
-| Operator sessions, tools, approvals         | `apps/hub/src/services/operator-*`, `apps/web/src/components/operator/`                                                   | Hub services own runtime + persistence; web owns chat UI              |
+| Task                                        | Location                                                                                                                  | Notes                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Add a new collector or node capability      | `apps/agent/src/collectors`, `apps/agent/src/services/collector-registry.ts`                                              | Registry order is the canonical core collector order                     |
+| Change hub APIs or live control flow        | `apps/hub/src/routes.ts`, `apps/hub/src/rpc`, `packages/shared/src/rpc`                                                   | REST is for bootstrap/HTTP, RPC is for live browser and agent traffic    |
+| Change browser data flow                    | `apps/web/src/routes`, `apps/web/src/server`, `apps/web/src/rpc`, `apps/web/src/providers/atom-provider.tsx`              | SSR bootstrap happens before AtomRpc subscriptions                       |
+| Add or change shared wire contracts         | `packages/shared/src/schemas`, `packages/shared/src/rpc`                                                                  | Shared package is the source of truth for cross-runtime shapes           |
+| Add or change plugin capabilities           | `packages/plugin-sdk`, `packages/plugin-docker`, `packages/plugin-edge`, `packages/plugin-k8s`, `packages/plugin-systemd` | Plugin manifests, contracts, and runtime adapters live together          |
+| Run the full stack against disposable nodes | `e2e/README.md`, `e2e/scripts`, `e2e/nodes`                                                                               | Hub runs on the host; containers mount the repo at `/opt/scout`          |
+| Operator sessions, tools, approvals         | `apps/hub/src/services/operator-*`, `apps/web/src/components/operator/`                                                   | Hub services own runtime + persistence; web owns chat UI                 |
+| Self-host or deploy Scout                   | `deploy/README.md`, `deploy/systemd`, `deploy/env`                                                                        | Generic kit with placeholders; keep site-specific config out of the repo |
 
 ## WHY EFFECT V4
 

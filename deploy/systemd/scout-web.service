@@ -1,8 +1,8 @@
 # Scout web dashboard (TanStack Start / nitro build) on 127.0.0.1:3900.
-# Install: deploy/agni/README.md
+# Assumes the checkout at ~/scout and Bun at ~/.bun/bin/bun; adjust both if
+# yours differ. Install: deploy/README.md
 [Unit]
 Description=Scout web dashboard
-Documentation=file:///home/ubuntu/Developer/AryaLabsHQ/scout/deploy/agni/README.md
 After=network-online.target scout-hub.service
 Wants=network-online.target
 StartLimitIntervalSec=300
@@ -10,7 +10,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ubuntu/Developer/AryaLabsHQ/scout/apps/web
+WorkingDirectory=%h/scout/apps/web
 Environment=NODE_ENV=production
 Environment=NITRO_HOST=127.0.0.1
 Environment=NITRO_PORT=3900

@@ -1,0 +1,32 @@
+# Scout agent: collectors and plugins for this host, connected to the hub.
+# Assumes the checkout at ~/scout and Bun at ~/.bun/bin/bun; adjust both if
+# yours differ. Install: deploy/README.md
+[Unit]
+Description=Scout agent
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/scout/apps/agent
+Environment=NODE_ENV=production
+# The hub on this host. For a remote hub, set SCOUT_HUB_URL in agent.env
+# (see "Remote agents" in deploy/README.md).
+Environment=SCOUT_HUB_URL=ws://127.0.0.1:3901
+Environment=SCOUT_PLUGIN_DIR=%h/scout/packages
+# Kubernetes plugin: a scoped kubeconfig (deploy/k8s/rbac.yaml), never a
+# cluster-admin one. Remove this line on hosts without a cluster.
+Environment=KUBECONFIG=%h/.config/scout/kubeconfig
+# Values in the env file override the defaults above.
+EnvironmentFile=%h/.config/scout/agent.env
+ExecStart=%h/.bun/bin/bun src/main.ts
+Restart=on-failure
+RestartSec=5
+# The agent never escalates: system-unit actions work only where polkit allows
+# them (deploy/polkit) and otherwise fail with permission-denied.
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

@@ -1,10 +1,10 @@
-# Kubernetes identity for the Scout agent's k8s plugin on Agni.
+# Kubernetes identity for the Scout agent's k8s plugin.
 #
 # Grants read access to exactly what packages/plugin-k8s collects and
 # describes, plus the writes its declared actions perform:
 #   scale-workload        kubectl scale  -> deployments/scale, statefulsets/scale
 #   restart-pod/delete-pod kubectl delete pod -> pods: delete
-# No access to Secrets or ConfigMaps. Apply with deploy/agni/README.md.
+# No access to Secrets or ConfigMaps. Apply with deploy/README.md.
 ---
 apiVersion: v1
 kind: Namespace
