@@ -1,13 +1,32 @@
 # Async/Await to Effect.gen Migration Guide
 
-**Source:** `effect/Effect.ts` (`Effect.gen`, `Effect.fn`, `Effect.fnUntraced`, `Effect.tryPromise`) - see `~/Developer/effect/packages/effect/src/Effect.ts`
+## Table of Contents
 
-Based on Kit Langton's effectification of opencode (March 2026).
+- [1. Function Definition Migration](#1-function-definition-migration)
+- [2. Service Access Pattern](#2-service-access-pattern)
+- [3. Parallel Execution](#3-parallel-execution)
+- [4. Error Handling Migration](#4-error-handling-migration)
+- [5. Optional Values](#5-optional-values)
+- [6. Composition Patterns](#6-composition-patterns)
+- [7. Looping and Recursion](#7-looping-and-recursion)
+- [8. Real Examples from Opencode SessionPrompt](#8-real-examples-from-opencode-sessionprompt)
+- [Summary: Migration Decision Tree](#summary-migration-decision-tree)
+- [Key Takeaways from Kit's Effectification](#key-takeaways-from-kits-effectification)
+
+**Source:**
+
+`effect/Effect.ts` (`Effect.gen`, `Effect.fn`, `Effect.fnUntraced`, `Effect.tryPromise`) - see
+`~/Developer/effect/packages/effect/src/Effect.ts`
+
+Based on Kit Langton's effectification of opencode (March 2026). opencode has moved on since; the
+commits below are the durable citation, so read them with `git show <sha>` in `~/Developer/opencode`
+rather than expecting the working tree to match.
 
 **Commit references:**
 
 - `4f784276b` - effectify resolvePromptParts: use AppFileSystem and Agent service directly
-- `724e599cb` - effectify createUserMessage: move into layer as createMessage, delete old 400-line async version
+- `724e599cb` - effectify createUserMessage: move into layer as createMessage, delete old 400-line
+  async version
 - `eaf345410` - effectify prompt tool resolution
 
 ---
@@ -17,9 +36,7 @@ Based on Kit Langton's effectification of opencode (March 2026).
 ### Before: Async Functions
 
 ```ts
-async function resolvePromptParts(
-  template: string,
-): Promise<PromptInput["parts"]> {
+async function resolvePromptParts(template: string): Promise<PromptInput["parts"]> {
   // ... implementation
 }
 
@@ -33,17 +50,17 @@ async function createUserMessage(input: PromptInput): Promise<MessageV2.User> {
 ```ts
 import { Effect, Context } from "effect";
 
-const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(
-  function* (template: string) {
-    // ... implementation with yield*
-  },
-);
+const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (
+  template: string,
+) {
+  // ... implementation with yield*
+});
 
-const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(
-  function* (input: PromptInput) {
-    // ... implementation with yield*
-  },
-);
+const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (
+  input: PromptInput,
+) {
+  // ... implementation with yield*
+});
 ```
 
 ### Effect.fn Naming Convention
@@ -56,7 +73,8 @@ The name parameter in `Effect.fn("Name")` is used for:
 
 **Pattern**: Use `Domain.method` format (e.g., `"SessionPrompt.resolvePromptParts"`)
 
-**Untraced variants**: Use `Effect.fnUntraced` for internal helpers where trace overhead isn't needed:
+**Untraced variants**: Use `Effect.fnUntraced` for internal helpers where trace overhead isn't
+needed:
 
 ```ts
 const internalHelper = Effect.fnUntraced(function* (x: string) {
@@ -103,37 +121,40 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service; // ✅ Service yielded here
 
     // Use yielded service instances in functions
-    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(
-      function* (template: string) {
-        const parts: PromptInput["parts"] = [{ type: "text", text: template }];
-        const files = ConfigMarkdown.files(template);
-        const seen = new Set<string>();
+    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (
+      template: string,
+    ) {
+      const parts: PromptInput["parts"] = [{ type: "text", text: template }];
+      const files = ConfigMarkdown.files(template);
+      const seen = new Set<string>();
 
-        yield* Effect.forEach(
-          files,
-          Effect.fnUntraced(function* (match) {
-            const name = match[1];
-            if (seen.has(name)) return;
-            seen.add(name);
+      yield* Effect.forEach(
+        files,
+        Effect.fnUntraced(function* (match) {
+          const name = match[1];
+          if (seen.has(name)) return;
+          seen.add(name);
 
-            const filepath = name.startsWith("~/")
-              ? path.join(os.homedir(), name.slice(2))
-              : path.resolve(Instance.worktree, name);
+          const filepath = name.startsWith("~/")
+            ? path.join(os.homedir(), name.slice(2))
+            : path.resolve(Instance.worktree, name);
 
-            // Use the yielded service directly
-            const info = yield* fsys.stat(filepath).pipe(Effect.option);
-            if (Option.isNone(info)) {
-              const found = yield* agents.get(name); // ✅ Using yielded service
-              if (found) parts.push({ type: "agent", name: found.name });
-              return;
-            }
-            // ...
-          }),
-          { concurrency: "unbounded", discard: true },
-        );
-        return parts;
-      },
-    );
+          // Use the yielded service directly.
+          // `Effect.option` is as originally migrated, not the recommendation: it maps every
+          // stat failure to None, so PermissionDenied reads as "file missing". Prefer
+          // fsys.exists, or catchTag the one absence error — effect-native-architecture.md §5.
+          const info = yield* fsys.stat(filepath).pipe(Effect.option);
+          if (Option.isNone(info)) {
+            const found = yield* agents.get(name); // ✅ Using yielded service
+            if (found) parts.push({ type: "agent", name: found.name });
+            return;
+          }
+          // ...
+        }),
+        { concurrency: "unbounded", discard: true },
+      );
+      return parts;
+    });
   }),
 );
 ```
@@ -146,7 +167,8 @@ const layer = Layer.effect(
 | **Effect.promise wrapper**   | Function outside layer needs service - minimal wrapper to bridge        |
 | **Pass as argument**         | Service needed in deeply nested function - pass explicitly              |
 
-**Commit pattern**: "Use Service directly in layer" - this is the preferred approach for effectified services.
+**Commit pattern**: "Use Service directly in layer" - this is the preferred approach for effectified
+services.
 
 ---
 
@@ -161,11 +183,7 @@ for (const match of files) {
 }
 
 // Promise.all (parallel but no structured concurrency)
-const results = await Promise.all([
-  processFile(file1),
-  processFile(file2),
-  processFile(file3),
-]);
+const results = await Promise.all([processFile(file1), processFile(file2), processFile(file3)]);
 ```
 
 ### After: Effect.forEach with concurrency
@@ -197,14 +215,6 @@ yield *
     fn,
     { concurrency: 5 }, // ✅ Max 5 concurrent
   );
-
-// Inherit from parent
-yield *
-  Effect.forEach(
-    items,
-    fn,
-    { concurrency: "inherit" }, // ✅ Use parent's concurrency setting
-  );
 ```
 
 ### Concurrency Options
@@ -212,9 +222,10 @@ yield *
 | Option        | Behavior                               |
 | ------------- | -------------------------------------- |
 | `"unbounded"` | Run all in parallel (use with caution) |
-| `"inherit"`   | Use parent's concurrency setting       |
 | `number`      | Fixed limit of concurrent executions   |
 | `undefined`   | Sequential execution                   |
+
+`"inherit"` was removed in beta.102. Pass an explicit `number` or `"unbounded"`.
 
 ---
 
@@ -281,13 +292,10 @@ yield *
 import { Effect, Schema } from "effect";
 
 // Define tagged error class
-class ResourceNotFound extends Schema.TaggedErrorClass<ResourceNotFound>()(
-  "ResourceNotFound",
-  {
-    clientName: Schema.String,
-    uri: Schema.String,
-  },
-) {}
+class ResourceNotFound extends Schema.TaggedError<ResourceNotFound>()("ResourceNotFound", {
+  clientName: Schema.String,
+  uri: Schema.String,
+}) {}
 
 // Convert Promise exception to typed error
 const readResource = (clientName: string, uri: string) =>
@@ -322,10 +330,17 @@ if (info === null) {
 }
 ```
 
-### After: Effect.option + Option helpers
+### After: Option helpers
+
+The point of this section is the shape change — a nullable check becomes an `Option` match, and the
+function moves into the layer closure. The `Effect.option` in the snippets below is how the original
+migration was written and is **not** the recommended way to get there: it erases the whole error
+channel, so `PermissionDenied` and `TimedOut` arrive looking exactly like a missing file. Narrow the
+absence error instead, or call `FileSystem.exists`. See
+[effect-native-architecture.md](effect-native-architecture.md) §5.
 
 ```ts
-const info = yield * fsys.stat(filepath).pipe(Effect.option); // ✅ Returns Option<Stat>
+const info = yield * fsys.stat(filepath).pipe(Effect.option); // as originally migrated
 
 if (Option.isNone(info)) {
   // ✅ Check for None
@@ -375,8 +390,7 @@ const result = yield * resolvePromptParts(template);
 
 ```ts
 // ✅ Use Effect.promise for external Promise-based APIs
-const model =
-  yield * Effect.promise(() => Provider.getModel(providerID, modelID));
+const model = yield * Effect.promise(() => Provider.getModel(providerID, modelID));
 
 // ✅ With error transformation
 const model =
@@ -409,6 +423,8 @@ const layer = Layer.effect(
     // ✅ Now inside layer - direct service access
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(
       function* (template: string) {
+        // Effect.option as originally migrated — it erases every stat failure, so prefer
+        // fsys.exists or catchTag the absence error. effect-native-architecture.md §5.
         const info = yield* fsys.stat(filepath).pipe(Effect.option)
         const found = yield* agents.get(name)
         // ...
@@ -418,7 +434,8 @@ const layer = Layer.effect(
 )
 ```
 
-**Key insight**: Moving functions into the layer closure eliminates most `Effect.promise` wrappers because services are already available as yielded instances.
+**Key insight**: Moving functions into the layer closure eliminates most `Effect.promise` wrappers
+because services are already available as yielded instances.
 
 ---
 
@@ -502,14 +519,12 @@ const traverseDirectory = Effect.fn("traverseDirectory")(function* (
 });
 ```
 
-### Effect.loop for indexed iteration
+### Effect.forEach for indexed iteration
 
 ```ts
 yield *
-  Effect.loop(
-    0, // initial state
-    (i) => i < 10, // while condition
-    (i) => i + 1, // increment
+  Effect.forEach(
+    Array.from({ length: 10 }, (_, i) => i),
     (i) => Effect.sync(() => console.log(i)),
   );
 ```
@@ -537,9 +552,7 @@ const resolvePromptParts = (template: string) =>
   Effect.promise(() => resolvePromptPartsImpl(template));
 
 // Standalone async implementation with ad-hoc service access
-async function resolvePromptPartsImpl(
-  template: string,
-): Promise<PromptInput["parts"]> {
+async function resolvePromptPartsImpl(template: string): Promise<PromptInput["parts"]> {
   const parts: PromptInput["parts"] = [{ type: "text", text: template }];
   const files = ConfigMarkdown.files(template);
 
@@ -571,46 +584,43 @@ const layer = Layer.effect(
     const fsys = yield* AppFileSystem.Service; // ✅ Yielded at layer level
     const agents = yield* Agent.Service; // ✅ Yielded at layer level
 
-    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(
-      function* (template: string) {
-        const parts: PromptInput["parts"] = [{ type: "text", text: template }];
-        const files = ConfigMarkdown.files(template);
-        const seen = new Set<string>();
+    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (
+      template: string,
+    ) {
+      const parts: PromptInput["parts"] = [{ type: "text", text: template }];
+      const files = ConfigMarkdown.files(template);
+      const seen = new Set<string>();
 
-        yield* Effect.forEach(
-          files,
-          Effect.fnUntraced(function* (match) {
-            const name = match[1];
-            if (seen.has(name)) return;
-            seen.add(name);
+      yield* Effect.forEach(
+        files,
+        Effect.fnUntraced(function* (match) {
+          const name = match[1];
+          if (seen.has(name)) return;
+          seen.add(name);
 
-            const filepath = name.startsWith("~/")
-              ? path.join(os.homedir(), name.slice(2))
-              : path.resolve(Instance.worktree, name);
+          const filepath = name.startsWith("~/")
+            ? path.join(os.homedir(), name.slice(2))
+            : path.resolve(Instance.worktree, name);
 
-            const info = yield* fsys.stat(filepath).pipe(Effect.option); // ✅ Using yielded service
-            if (Option.isNone(info)) {
-              const found = yield* agents.get(name); // ✅ Using yielded service
-              if (found) parts.push({ type: "agent", name: found.name });
-              return;
-            }
+          const info = yield* fsys.stat(filepath).pipe(Effect.option); // ✅ Using yielded service
+          if (Option.isNone(info)) {
+            const found = yield* agents.get(name); // ✅ Using yielded service
+            if (found) parts.push({ type: "agent", name: found.name });
+            return;
+          }
 
-            const stat = info.value;
-            parts.push({
-              type: "file",
-              url: pathToFileURL(filepath).href,
-              filename: name,
-              mime:
-                stat.type === "Directory"
-                  ? "application/x-directory"
-                  : "text/plain",
-            });
-          }),
-          { concurrency: "unbounded", discard: true },
-        );
-        return parts;
-      },
-    );
+          const stat = info.value;
+          parts.push({
+            type: "file",
+            url: pathToFileURL(filepath).href,
+            filename: name,
+            mime: stat.type === "Directory" ? "application/x-directory" : "text/plain",
+          });
+        }),
+        { concurrency: "unbounded", discard: true },
+      );
+      return parts;
+    });
   }),
 );
 ```
@@ -644,9 +654,7 @@ const exit = yield * mcp.readResource(clientName, uri).pipe(Effect.exit);
 if (Exit.isSuccess(exit)) {
   const content = exit.value;
   if (!content) throw new Error(`Resource not found: ${clientName}/${uri}`);
-  const items = Array.isArray(content.contents)
-    ? content.contents
-    : [content.contents];
+  const items = Array.isArray(content.contents) ? content.contents : [content.contents];
   for (const c of items) {
     if ("text" in c && c.text) {
       pieces.push({
@@ -699,7 +707,9 @@ if (!info) {
 **After:**
 
 ```ts
-const info = yield * fsys.stat(filepath).pipe(Effect.option); // Returns Option
+// Effect.option as originally migrated — it maps every stat failure to None, so prefer
+// fsys.exists or catchTag the absence error. effect-native-architecture.md §5.
+const info = yield * fsys.stat(filepath).pipe(Effect.option);
 if (Option.isNone(info)) {
   // Explicit Option check
   const found = yield * agents.get(name);
@@ -733,8 +743,7 @@ const lsp = yield * LSP.Service;
 
 // Then use in function with proper error handling
 const symbols =
-  yield *
-  lsp.documentSymbol(filePathURI).pipe(Effect.catch(() => Effect.succeed([]))); // ✅ Effect.catch replaces .catch()
+  yield * lsp.documentSymbol(filePathURI).pipe(Effect.catch(() => Effect.succeed([]))); // ✅ Effect.catch replaces .catch()
 ```
 
 ---
@@ -761,8 +770,11 @@ Should I effectify this function?
 │  ├─ Catch by predicate → Effect.catchIf
 │  └─ Inspect success/failure → Effect.exit + Exit.isSuccess/Cause.squash
 │
-└─ Does it deal with nullable values?
-   └─ YES → Effect.option + Option.isNone/isSome
+├─ Is the value merely nullable? → Option.fromNullishOr + Option.isNone/isSome
+│
+└─ Can the lookup legitimately find nothing?
+   ├─ An API already reports it → use that (e.g. FileSystem.exists)
+   └─ Otherwise → catchTag/catchIf the one absence error into Effect.succeedNone
 ```
 
 ---
@@ -772,8 +784,11 @@ Should I effectify this function?
 1. **Move functions into layer closure** - Eliminates most `Effect.promise` wrappers
 2. **Yield services at layer level** - Access them directly in nested functions
 3. **Use `Effect.exit` + `Cause.squash`** - For explicit error handling over try/catch
-4. **Prefer `Effect.option`** - Over nullable checks for optional values
-5. **Direct `yield* fn()` composition** - Don't wrap with `Effect.promise` when calling other Effect functions
+4. **Model absence in the value, not by erasing the error** - `Option.fromNullishOr` for a nullable
+   value; for a lookup that can legitimately find nothing, narrow the one error that means absence
+   rather than reaching for `Effect.option`, which maps every failure to `None`
+5. **Direct `yield* fn()` composition** - Don't wrap with `Effect.promise` when calling other Effect
+   functions
 6. **Use `Effect.fn` naming** - Critical for debugging and observability
 7. **Parallel with `Effect.forEach`** - Structured concurrency over `Promise.all`
 
@@ -781,5 +796,5 @@ Should I effectify this function?
 
 **File paths referenced:**
 
-- `packages/opencode/src/session/prompt.ts`
+- `opencode:src/session/prompt.ts`
 - Commits: `4f784276b`, `724e599cb`, `eaf345410`

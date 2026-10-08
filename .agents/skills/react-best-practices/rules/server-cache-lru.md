@@ -1,41 +1,57 @@
 ---
-title: Cross-Request LRU Caching
-impact: HIGH
-impactDescription: caches across requests
-tags: server, cache, lru, cross-request
+title: Bound and Isolate Cross-Request Caches
+impact: MEDIUM
+impactDescription: reuses explicitly cacheable data across requests
+tags: server, cache, lru, cross-request, cloudflare
 ---
 
-## Cross-Request LRU Caching
+## Bound and Isolate Cross-Request Caches
 
-`React.cache()` only works within one request. For data shared across sequential requests (user clicks button A then button B), use an LRU cache.
+Use a process- or isolate-local LRU only when cross-request reuse is intentional. It is not an
+extension of React's RSC cache and it does not provide request isolation, durable storage, or a
+consistent cache shared by every server instance.
 
-**Implementation:**
+Before adding one:
 
-```typescript
-import { LRUCache } from 'lru-cache'
+- Confirm the work is measured and expensive enough to justify cache complexity.
+- Cache public or immutable data where possible. For scoped data, include every tenant,
+  authorization, locale, and version dimension in the key.
+- Set both a size bound and TTL. Decide whether missing values and failures may be cached.
+- Define invalidation from the source of truth. A TTL alone is not sufficient when stale data would
+  violate correctness or authorization.
+- Never store request objects, secrets, or user-specific data under a global key.
 
-const cache = new LRUCache<string, any>({
-  max: 1000,
-  ttl: 5 * 60 * 1000  // 5 minutes
-})
+```ts
+import { LRUCache } from "lru-cache";
 
-export async function getUser(id: string) {
-  const cached = cache.get(id)
-  if (cached) return cached
+type CatalogCacheEntry = { value: CatalogItem | null };
 
-  const user = await db.user.findUnique({ where: { id } })
-  cache.set(id, user)
-  return user
+const catalogCache = new LRUCache<string, CatalogCacheEntry>({
+  max: 500,
+  ttl: 60_000,
+});
+
+export async function getCatalogItem(version: string, itemId: string) {
+  const key = `${version}:${itemId}`;
+  if (catalogCache.has(key)) return catalogCache.get(key)?.value ?? null;
+
+  const item = await catalog.findById(itemId);
+  catalogCache.set(key, { value: item });
+  return item;
 }
-
-// Request 1: DB query, result cached
-// Request 2: cache hit, no DB query
 ```
 
-Use when sequential user actions hit multiple endpoints needing the same data within seconds.
+Use `has` when `null`, `false`, `0`, or an empty string is a valid cached value. For concurrent
+deduplication, cache the in-flight promise deliberately and decide whether rejection removes the
+entry.
 
-**With Vercel's [Fluid Compute](https://vercel.com/docs/fluid-compute):** LRU caching is especially effective because multiple concurrent requests can share the same function instance and cache. This means the cache persists across requests without needing external storage like Redis.
+### Runtime boundaries
 
-**In traditional serverless:** Each invocation runs in isolation, so consider Redis for cross-process caching.
+- **Cloudflare Workers:** a warm isolate can reuse module state, but another isolate, deployment, or
+  cold start has a different cache. Use the Cache API, KV, Durable Objects, or another owned service
+  when the required semantics exceed opportunistic isolate-local reuse.
+- **Node/serverless:** each process or instance owns a different LRU and loses it on restart.
+- **One HTTP request:** prefer TanStack Start request middleware/context. See
+  [server-cache-react.md](server-cache-react.md) for the RSC versus ordinary SSR decision.
 
-Reference: [https://github.com/isaacs/node-lru-cache](https://github.com/isaacs/node-lru-cache)
+Reference: [`lru-cache`](https://github.com/isaacs/node-lru-cache)

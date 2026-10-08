@@ -1,38 +1,51 @@
 ---
-title: Minimize Serialization at RSC Boundaries
+title: Minimize Loader and Route Context Payload
 impact: HIGH
 impactDescription: reduces data transfer size
-tags: server, rsc, serialization, props
+tags: server, loaders, serialization, route-context
 ---
 
-## Minimize Serialization at RSC Boundaries
+## Minimize Loader and Route Context Payload
 
-The React Server/Client boundary serializes all object properties into strings and embeds them in the HTML response and subsequent RSC requests. This serialized data directly impacts page weight and load time, so **size matters a lot**. Only pass fields that the client actually uses.
+Loader data and `beforeLoad` context are serialized for SSR and client navigations. Only return
+fields the route tree actually uses.
 
-**Incorrect (serializes all 50 fields):**
+**Incorrect (serializes entire record):**
 
 ```tsx
-async function Page() {
-  const user = await fetchUser()  // 50 fields
-  return <Profile user={user} />
-}
+export const Route = createFileRoute("/profile/$userId")({
+  loader: async ({ params }) => {
+    const user = await fetchUser(params.userId); // 50 fields
+    return { user };
+  },
+});
 
-'use client'
-function Profile({ user }: { user: User }) {
-  return <div>{user.name}</div>  // uses 1 field
+function ProfilePage() {
+  const { user } = Route.useLoaderData();
+  return <div>{user.name}</div>; // uses 1 field
 }
 ```
 
-**Correct (serializes only 1 field):**
+**Correct (return only needed fields):**
 
 ```tsx
-async function Page() {
-  const user = await fetchUser()
-  return <Profile name={user.name} />
-}
+export const Route = createFileRoute("/profile/$userId")({
+  loader: async ({ params }) => {
+    const user = await fetchUser(params.userId);
+    return { name: user.name, avatarUrl: user.avatarUrl };
+  },
+});
 
-'use client'
-function Profile({ name }: { name: string }) {
-  return <div>{name}</div>
+function ProfilePage() {
+  const { name, avatarUrl } = Route.useLoaderData();
+  return (
+    <div>
+      <img src={avatarUrl} alt="" />
+      {name}
+    </div>
+  );
 }
 ```
+
+**For HttpApi dashboard data:** Prefer atom queries with narrow schemas instead of fat route loaders
+when the route is `ssr: false` (see `tanstack-start`).

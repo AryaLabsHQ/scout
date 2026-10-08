@@ -1,83 +1,83 @@
 ---
-title: Parallel Data Fetching with Component Composition
+title: Parallel Data Fetching with Route Composition
 impact: CRITICAL
 impactDescription: eliminates server-side waterfalls
-tags: server, rsc, parallel-fetching, composition
+tags: server, loaders, parallel-fetching, composition, tanstack-start
 ---
 
-## Parallel Data Fetching with Component Composition
+## Parallel Data Fetching with Route Composition
 
-React Server Components execute sequentially within a tree. Restructure with composition to parallelize data fetching.
+Route `loader`s and sibling route modules run in a tree. Restructure with composition so independent
+fetches start together instead of chaining sequentially through parent components.
 
-**Incorrect (Sidebar waits for Page's fetch to complete):**
+**Incorrect (child loader waits for parent shell work):**
 
 ```tsx
-export default async function Page() {
-  const header = await fetchHeader()
+// routes/dashboard/route.tsx
+export const Route = createFileRoute("/dashboard")({
+  loader: async () => {
+    const shell = await fetchShellConfig();
+    return { shell };
+  },
+  component: DashboardLayout,
+});
+
+function DashboardLayout() {
+  const { shell } = Route.useLoaderData();
   return (
     <div>
-      <div>{header}</div>
-      <Sidebar />
+      <Header config={shell} />
+      <Sidebar /> {/* Sidebar's loader only starts after parent resolves */}
     </div>
-  )
-}
-
-async function Sidebar() {
-  const items = await fetchSidebarItems()
-  return <nav>{items.map(renderItem)}</nav>
+  );
 }
 ```
 
-**Correct (both fetch simultaneously):**
+**Correct (sibling routes fetch in parallel):**
 
 ```tsx
-async function Header() {
-  const data = await fetchHeader()
-  return <div>{data}</div>
-}
+// routes/dashboard/route.tsx — layout only, no blocking fetch
+export const Route = createFileRoute("/dashboard")({
+  component: DashboardLayout,
+});
 
-async function Sidebar() {
-  const items = await fetchSidebarItems()
-  return <nav>{items.map(renderItem)}</nav>
-}
+// routes/dashboard/_layout/header.tsx
+export const Route = createFileRoute("/dashboard/_layout/header")({
+  loader: () => fetchHeader(),
+  component: Header,
+});
 
-export default function Page() {
-  return (
-    <div>
-      <Header />
-      <Sidebar />
-    </div>
-  )
-}
-```
+// routes/dashboard/_layout/sidebar.tsx
+export const Route = createFileRoute("/dashboard/_layout/sidebar")({
+  loader: () => fetchSidebarItems(),
+  component: Sidebar,
+});
 
-**Alternative with children prop:**
-
-```tsx
-async function Header() {
-  const data = await fetchHeader()
-  return <div>{data}</div>
-}
-
-async function Sidebar() {
-  const items = await fetchSidebarItems()
-  return <nav>{items.map(renderItem)}</nav>
-}
-
-function Layout({ children }: { children: ReactNode }) {
+function DashboardLayout() {
   return (
     <div>
       <Header />
-      {children}
-    </div>
-  )
-}
-
-export default function Page() {
-  return (
-    <Layout>
       <Sidebar />
-    </Layout>
-  )
+      <Outlet />
+    </div>
+  );
 }
 ```
+
+**Correct (parallelize inside a single loader):**
+
+```tsx
+export const Route = createFileRoute("/marketing/")({
+  loader: async () => {
+    const [hero, pricing, testimonials] = await Promise.all([
+      fetchHero(),
+      fetchPricing(),
+      fetchTestimonials(),
+    ]);
+    return { hero, pricing, testimonials };
+  },
+});
+```
+
+**Dashboard HttpApi data:** Prefer parallel atom registry prefetch (see `tanstack-start`
+dehydration) over serial `await` in one mega-loader when the dashboard route uses `ssr: false`.

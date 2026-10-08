@@ -2,12 +2,13 @@
 title: Deduplicate Global Event Listeners
 impact: LOW
 impactDescription: single listener for N components
-tags: client, swr, event-listeners, subscription
+tags: client, event-listeners, subscription
 ---
 
 ## Deduplicate Global Event Listeners
 
-Use `useSWRSubscription()` to share global event listeners across component instances.
+Share one global event listener across component instances with a module-level registry instead of
+registering in every `useEffect`.
 
 **Incorrect (N instances = N listeners):**
 
@@ -16,59 +17,50 @@ function useKeyboardShortcut(key: string, callback: () => void) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey && e.key === key) {
-        callback()
+        callback();
       }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [key, callback])
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [key, callback]);
 }
 ```
 
-When using the `useKeyboardShortcut` hook multiple times, each instance will register a new listener.
+When using the `useKeyboardShortcut` hook multiple times, each instance will register a new
+listener.
 
 **Correct (N instances = 1 listener):**
 
 ```tsx
-import useSWRSubscription from 'swr/subscription'
+const keyCallbacks = new Map<string, Set<() => void>>();
+let listenerAttached = false;
 
-// Module-level Map to track callbacks per key
-const keyCallbacks = new Map<string, Set<() => void>>()
+function ensureKeydownListener() {
+  if (listenerAttached) return;
+  listenerAttached = true;
+  window.addEventListener("keydown", (e) => {
+    if (!e.metaKey || !keyCallbacks.has(e.key)) return;
+    keyCallbacks.get(e.key)!.forEach((cb) => cb());
+  });
+}
 
 function useKeyboardShortcut(key: string, callback: () => void) {
-  // Register this callback in the Map
   useEffect(() => {
+    ensureKeydownListener();
     if (!keyCallbacks.has(key)) {
-      keyCallbacks.set(key, new Set())
+      keyCallbacks.set(key, new Set());
     }
-    keyCallbacks.get(key)!.add(callback)
-
+    keyCallbacks.get(key)!.add(callback);
     return () => {
-      const set = keyCallbacks.get(key)
-      if (set) {
-        set.delete(callback)
-        if (set.size === 0) {
-          keyCallbacks.delete(key)
-        }
+      const set = keyCallbacks.get(key);
+      if (!set) return;
+      set.delete(callback);
+      if (set.size === 0) {
+        keyCallbacks.delete(key);
       }
-    }
-  }, [key, callback])
-
-  useSWRSubscription('global-keydown', () => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && keyCallbacks.has(e.key)) {
-        keyCallbacks.get(e.key)!.forEach(cb => cb())
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  })
-}
-
-function Profile() {
-  // Multiple shortcuts will share the same listener
-  useKeyboardShortcut('p', () => { /* ... */ }) 
-  useKeyboardShortcut('k', () => { /* ... */ })
-  // ...
+    };
+  }, [key, callback]);
 }
 ```
+
+Multiple shortcut hooks share one `keydown` listener on `window`.

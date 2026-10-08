@@ -2,14 +2,16 @@
 title: Use React DOM Resource Hints
 impact: HIGH
 impactDescription: reduces load time for critical resources
-tags: rendering, preload, preconnect, prefetch, resource-hints
+tags: rendering, preload, preconnect, prefetch, resource-hints, tanstack-start
 ---
 
 ## Use React DOM Resource Hints
 
 **Impact: HIGH (reduces load time for critical resources)**
 
-React DOM provides APIs to hint the browser about resources it will need. These are especially useful in server components to start loading resources before the client even receives the HTML.
+React DOM provides APIs to hint the browser about resources it will need. In TanStack Start, prefer
+route `head()` `links` for static preconnect/preload; use React DOM hints when a component needs
+runtime hints.
 
 - **`prefetchDNS(href)`**: Resolve DNS for a domain you expect to connect to
 - **`preconnect(href)`**: Establish connection (DNS + TCP + TLS) to a server
@@ -18,68 +20,63 @@ React DOM provides APIs to hint the browser about resources it will need. These 
 - **`preinit(href, options)`**: Fetch and evaluate a stylesheet or script
 - **`preinitModule(href)`**: Fetch and evaluate an ES module
 
-**Example (preconnect to third-party APIs):**
+**Correct (preconnect in root `head()` — idiomatic TanStack Start):**
 
 ```tsx
-import { preconnect, prefetchDNS } from 'react-dom'
+export const Route = createRootRoute({
+  head: () => ({
+    links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
+      },
+      { rel: "stylesheet", href: appCss },
+    ],
+  }),
+});
+```
 
-export default function App() {
-  prefetchDNS('https://analytics.example.com')
-  preconnect('https://api.example.com')
+**Correct (React DOM hints in a component):**
 
-  return <main>{/* content */}</main>
+```tsx
+import { preconnect, prefetchDNS } from "react-dom";
+
+export function AnalyticsShell({ children }: { children: React.ReactNode }) {
+  prefetchDNS("https://analytics.example.com");
+  preconnect("https://api.example.com");
+  return <main>{children}</main>;
 }
 ```
 
-**Example (preload critical fonts and styles):**
+**Preload likely next route (intent-based):**
 
 ```tsx
-import { preload, preinit } from 'react-dom'
+import { preloadModule } from "react-dom";
 
-export default function RootLayout({ children }) {
-  // Preload font file
-  preload('/fonts/inter.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' })
-
-  // Fetch and apply critical stylesheet immediately
-  preinit('/styles/critical.css', { as: 'style' })
-
+function NavLink({ to, onIntent }: Props) {
+  const preload = () => preloadModule("/dashboard.js", { as: "script" });
   return (
-    <html>
-      <body>{children}</body>
-    </html>
-  )
+    <a href={to} onMouseEnter={preload} onFocus={preload}>
+      Dashboard
+    </a>
+  );
 }
 ```
 
-**Example (preload modules for code-split routes):**
+| API             | Use case                                    |
+| --------------- | ------------------------------------------- |
+| `prefetchDNS`   | Third-party domains you'll connect to later |
+| `preconnect`    | APIs or CDNs you'll fetch from immediately  |
+| `preload`       | Critical resources needed for current page  |
+| `preloadModule` | JS modules for likely next navigation       |
+| `preinit`       | Stylesheets/scripts that must execute early |
+| `preinitModule` | ES modules that must execute early          |
 
-```tsx
-import { preloadModule, preinitModule } from 'react-dom'
-
-function Navigation() {
-  const preloadDashboard = () => {
-    preloadModule('/dashboard.js', { as: 'script' })
-  }
-
-  return (
-    <nav>
-      <a href="/dashboard" onMouseEnter={preloadDashboard}>
-        Dashboard
-      </a>
-    </nav>
-  )
-}
-```
-
-**When to use each:**
-
-| API | Use case |
-|-----|----------|
-| `prefetchDNS` | Third-party domains you'll connect to later |
-| `preconnect` | APIs or CDNs you'll fetch from immediately |
-| `preload` | Critical resources needed for current page |
-| `preloadModule` | JS modules for likely next navigation |
-| `preinit` | Stylesheets/scripts that must execute early |
-| `preinitModule` | ES modules that must execute early |
-
-Reference: [React DOM Resource Preloading APIs](https://react.dev/reference/react-dom#resource-preloading-apis)
+Reference:
+[React DOM resource preloading](https://react.dev/reference/react-dom#resource-preloading-apis)

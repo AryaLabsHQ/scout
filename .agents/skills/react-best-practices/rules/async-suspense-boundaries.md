@@ -2,98 +2,96 @@
 title: Strategic Suspense Boundaries
 impact: HIGH
 impactDescription: faster initial paint
-tags: async, suspense, streaming, layout-shift
+tags: async, suspense, lazy-loading, layout-shift, tanstack-start
 ---
 
 ## Strategic Suspense Boundaries
 
-Instead of awaiting data in async components before returning JSX, use Suspense boundaries to show the wrapper UI faster while data loads.
+Use Suspense to show shell UI immediately while lazy routes or heavy child components load. Do not
+block the entire layout waiting for code or data that only one region needs.
 
-**Incorrect (wrapper blocked by data fetching):**
+**Incorrect (entire page waits for lazy editor chunk):**
 
 ```tsx
-async function Page() {
-  const data = await fetchData() // Blocks entire page
-  
+import { MonacoEditor } from "./monaco-editor";
+
+function CodePage() {
   return (
     <div>
-      <div>Sidebar</div>
-      <div>Header</div>
-      <div>
-        <DataDisplay data={data} />
-      </div>
-      <div>Footer</div>
+      <Sidebar />
+      <Header />
+      <MonacoEditor /> {/* ~300KB blocks shell paint */}
+      <Footer />
     </div>
-  )
+  );
 }
 ```
 
-The entire layout waits for data even though only the middle section needs it.
-
-**Correct (wrapper shows immediately, data streams in):**
+**Correct (shell renders, editor streams in):**
 
 ```tsx
-function Page() {
+import { lazy, Suspense } from "react";
+
+const MonacoEditor = lazy(() =>
+  import("./monaco-editor").then((m) => ({ default: m.MonacoEditor })),
+);
+
+function CodePage() {
   return (
     <div>
-      <div>Sidebar</div>
-      <div>Header</div>
-      <div>
-        <Suspense fallback={<Skeleton />}>
-          <DataDisplay />
-        </Suspense>
-      </div>
-      <div>Footer</div>
+      <Sidebar />
+      <Header />
+      <Suspense fallback={<EditorSkeleton />}>
+        <MonacoEditor />
+      </Suspense>
+      <Footer />
     </div>
-  )
-}
-
-async function DataDisplay() {
-  const data = await fetchData() // Only blocks this component
-  return <div>{data.content}</div>
+  );
 }
 ```
 
-Sidebar, Header, and Footer render immediately. Only DataDisplay waits for data.
+**Correct (TanStack Router route-level chunk loading):**
 
-**Alternative (share promise across components):**
+```tsx
+import { createFileRoute } from "@tanstack/react-router";
+import { lazyRouteComponent } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/code")({
+  ssr: false,
+  pendingComponent: () => <EditorSkeleton />,
+  component: lazyRouteComponent(() => import("./code-page")),
+});
+```
+
+`pendingComponent` covers **route chunk** load. For HttpApi data on dashboard routes, use atom
+`onInitial` / `Result` loading UI (see `tanstack-start`) — not Suspense around fetch logic.
+
+**Alternative (share a promise across components with `use()`):**
 
 ```tsx
 function Page() {
-  // Start fetch immediately, but don't await
-  const dataPromise = fetchData()
-  
+  const dataPromise = fetchBootstrap();
+
   return (
     <div>
-      <div>Sidebar</div>
-      <div>Header</div>
+      <Sidebar />
       <Suspense fallback={<Skeleton />}>
         <DataDisplay dataPromise={dataPromise} />
         <DataSummary dataPromise={dataPromise} />
       </Suspense>
-      <div>Footer</div>
     </div>
-  )
+  );
 }
 
 function DataDisplay({ dataPromise }: { dataPromise: Promise<Data> }) {
-  const data = use(dataPromise) // Unwraps the promise
-  return <div>{data.content}</div>
-}
-
-function DataSummary({ dataPromise }: { dataPromise: Promise<Data> }) {
-  const data = use(dataPromise) // Reuses the same promise
-  return <div>{data.summary}</div>
+  const data = use(dataPromise);
+  return <div>{data.content}</div>;
 }
 ```
 
-Both components share the same promise, so only one fetch occurs. Layout renders immediately while both components wait together.
+**When NOT to use:**
 
-**When NOT to use this pattern:**
-
-- Critical data needed for layout decisions (affects positioning)
-- SEO-critical content above the fold
-- Small, fast queries where suspense overhead isn't worth it
-- When you want to avoid layout shift (loading → content jump)
-
-**Trade-off:** Faster initial paint vs potential layout shift. Choose based on your UX priorities.
+- Critical above-the-fold SEO content on SSR marketing routes (use route `loader` + `head()`
+  instead)
+- Small, fast loads where Suspense overhead isn't worth it
+- When avoiding layout shift is more important than faster shell paint

@@ -7,43 +7,64 @@ tags: bundle, third-party, analytics, defer
 
 ## Defer Non-Critical Third-Party Libraries
 
-Analytics, logging, and error tracking don't block user interaction. Load them after hydration.
+Analytics, logging, and error tracking don't block user interaction. Load them after hydration with
+dynamic `import()`.
 
 **Incorrect (blocks initial bundle):**
 
 ```tsx
-import { Analytics } from '@vercel/analytics/react'
+import posthog from "posthog-js";
 
-export default function RootLayout({ children }) {
+export function RootDocument({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    posthog.init(import.meta.env.VITE_POSTHOG_KEY);
+  }, []);
+
   return (
     <html>
-      <body>
-        {children}
-        <Analytics />
-      </body>
+      <body>{children}</body>
     </html>
-  )
+  );
 }
 ```
 
 **Correct (loads after hydration):**
 
 ```tsx
-import dynamic from 'next/dynamic'
+import { useEffect } from "react";
 
-const Analytics = dynamic(
-  () => import('@vercel/analytics/react').then(m => m.Analytics),
-  { ssr: false }
-)
+export function RootDocument({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    void import("posthog-js").then(({ default: posthog }) => {
+      posthog.init(import.meta.env.VITE_POSTHOG_KEY);
+    });
+  }, []);
 
-export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+**Correct (lazy component wrapper):**
+
+```tsx
+import { lazy, Suspense } from "react";
+
+const Analytics = lazy(() => import("./analytics").then((m) => ({ default: m.Analytics })));
+
+export function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html>
       <body>
         {children}
-        <Analytics />
+        <Suspense fallback={null}>
+          <Analytics />
+        </Suspense>
       </body>
     </html>
-  )
+  );
 }
 ```

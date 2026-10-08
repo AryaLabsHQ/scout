@@ -1,15 +1,36 @@
-# Dual API Design in Effect-TS v4
+# Dual API Design in Effect-TS
 
-**Source:** `effect/ManagedRuntime.ts` - see `~/Developer/effect/packages/effect/src/ManagedRuntime.ts`
-**Source:** `effect/Layer.ts` - see `~/Developer/effect/packages/effect/src/Layer.ts`
+## Table of Contents
+
+- [Why Dual API?](#why-dual-api)
+- [The makeRuntime Pattern](#the-makeruntime-pattern)
+- [Service Namespace Structure](#service-namespace-structure)
+- [Default Layer Wiring](#default-layer-wiring)
+- [Facade Function Patterns](#facade-function-patterns)
+- [Examples from Opencode](#examples-from-opencode)
+- [Performance Considerations](#performance-considerations)
+- [Complete Working Example](#complete-working-example)
+- [Summary](#summary)
+- [References](#references)
+
+**Source:** `effect/ManagedRuntime.ts` - see
+
+`~/Developer/effect/packages/effect/src/ManagedRuntime.ts` **Source:** `effect/Layer.ts` - see
+`~/Developer/effect/packages/effect/src/Layer.ts`
 
 Exposing both Effect and imperative/async APIs using the `makeRuntime` pattern from opencode.
+
+The worked examples below are quoted from `~/Developer/opencode` at commit `e5101d9`. That clone
+tracks an unpinned HEAD, so read a cited file with `git show e5101d9:<path>` rather than assuming it
+still exists at the tip. Sections without a path quote code that upstream has since removed; the
+pattern, not the file, is the point.
 
 ---
 
 ## Why Dual API?
 
-Effect services benefit from a dual API design that serves both Effect consumers and traditional async/await code:
+Effect services benefit from a dual API design that serves both Effect consumers and traditional
+async/await code:
 
 | Consumer          | Preferred API                            |
 | ----------------- | ---------------------------------------- |
@@ -49,9 +70,10 @@ await MyService.method(input);
 
 ## The makeRuntime Pattern
 
-The `makeRuntime` helper creates a lazily-initialized `ManagedRuntime` that shares dependencies across all services.
+The `makeRuntime` helper creates a lazily-initialized `ManagedRuntime` that shares dependencies
+across all services.
 
-### Source: packages/opencode/src/effect/run-service.ts
+### Source: opencode:src/effect/run-service.ts
 
 ```ts
 import { Effect, Layer, ManagedRuntime } from "effect";
@@ -60,10 +82,7 @@ import * as Context from "effect/Context";
 // Global memoMap ensures layer deduplication across all services
 export const memoMap = Layer.makeMemoMapUnsafe();
 
-export function makeRuntime<I, S, E>(
-  service: Context.Service<I, S>,
-  layer: Layer.Layer<I, E>,
-) {
+export function makeRuntime<I, S, E>(service: Context.Service<I, S>, layer: Layer.Layer<I, E>) {
   // Lazy initialization - runtime created only on first use
   let rt: ManagedRuntime.ManagedRuntime<I, E> | undefined;
   const getRuntime = () => (rt ??= ManagedRuntime.make(layer, { memoMap }));
@@ -74,10 +93,8 @@ export function makeRuntime<I, S, E>(
       getRuntime().runSync(service.use(fn)),
 
     // Promise-returning (most common for imperative API)
-    runPromise: <A, Err>(
-      fn: (svc: S) => Effect.Effect<A, Err, I>,
-      options?: Effect.RunOptions,
-    ) => getRuntime().runPromise(service.use(fn), options),
+    runPromise: <A, Err>(fn: (svc: S) => Effect.Effect<A, Err, I>, options?: Effect.RunOptions) =>
+      getRuntime().runPromise(service.use(fn), options),
 
     // Promise with Exit (for error handling)
     runPromiseExit: <A, Err>(
@@ -110,46 +127,42 @@ export function makeRuntime<I, S, E>(
 A complete service following the dual API pattern:
 
 ```ts
-export namespace MyService {
-  // 1. Interface - pure TypeScript contract
-  export interface Interface {
-    readonly method: (input: Input) => Effect.Effect<Output, MyError, never>;
-  }
-
-  // 2. Service Tag - Effect's dependency injection key
-  export class Service extends Context.Service<Service, Interface>()(
-    "@my/Service",
-  ) {}
-
-  // 3. Layer - service implementation
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      // Dependencies
-      const dep = yield* OtherService.Service;
-
-      // Implementation
-      const method = Effect.fn("MyService.method")(function* (input: Input) {
-        // ... effect implementation
-        return output;
-      });
-
-      return Service.of({ method });
-    }),
-  );
-
-  // 4. Default Layer - wired with dependencies
-  export const defaultLayer = layer.pipe(
-    Layer.provide(OtherService.defaultLayer),
-  );
-
-  // 5. Runtime (not exported) - for internal use only
-  const { runPromise, runSync } = makeRuntime(Service, defaultLayer);
-
-  // 6. Public Imperative API - async/await wrappers
-  export const method = (input: Input) =>
-    runPromise((svc) => svc.method(input));
+// my-service.ts
+// 1. Interface - pure TypeScript contract
+export interface Interface {
+  readonly method: (input: Input) => Effect.Effect<Output, MyError, never>;
 }
+
+// 2. Service Tag - Effect's dependency injection key
+export class Service extends Context.Service<Service, Interface>()("@my/Service") {}
+
+// 3. Layer - service implementation
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    // Dependencies
+    const dep = yield* OtherService.Service;
+
+    // Implementation
+    const method = Effect.fn("MyService.method")(function* (input: Input) {
+      // ... effect implementation
+      return output;
+    });
+
+    return Service.of({ method });
+  }),
+);
+
+// 4. Default Layer - wired with dependencies
+export const defaultLayer = layer.pipe(Layer.provide(OtherService.defaultLayer));
+
+// 5. Runtime (not exported) - for internal use only
+const { runPromise, runSync } = makeRuntime(Service, defaultLayer);
+
+// 6. Public Imperative API - async/await wrappers
+export const method = (input: Input) => runPromise((svc) => svc.method(input));
+
+export * as MyService from "./my-service";
 ```
 
 ---
@@ -163,7 +176,7 @@ Layers compose with `Layer.provide` in reverse order (innermost first):
 ```ts
 export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer), // provides DB to MyService
-  Layer.provide(Config.defaultLayer), // provides Config to Database
+  Layer.provide(Config.defaultLayer), // app-defined Config service (not root effect/Config)
   Layer.provide(Logger.defaultLayer), // provides Logger to everything
 );
 ```
@@ -173,13 +186,10 @@ export const defaultLayer = layer.pipe(
 For circular dependency avoidance or expensive construction:
 
 ```ts
-// packages/opencode/src/tool/registry.ts
+// opencode:src/tool/registry.ts
 export const defaultLayer = Layer.unwrap(
   Effect.sync(() =>
-    layer.pipe(
-      Layer.provide(Config.defaultLayer),
-      Layer.provide(Plugin.defaultLayer),
-    ),
+    layer.pipe(Layer.provide(Config.defaultLayer), Layer.provide(Plugin.defaultLayer)),
   ),
 );
 ```
@@ -218,17 +228,14 @@ export async function get(id: string) {
 }
 ```
 
-### With Zod Validation (from packages/opencode/src/util/fn.ts)
+### With Zod Validation
 
 For runtime input validation:
 
 ```ts
 import { z } from "zod";
 
-export function fn<T extends z.ZodType, Result>(
-  schema: T,
-  cb: (input: z.infer<T>) => Result,
-) {
+export function fn<T extends z.ZodType, Result>(schema: T, cb: (input: z.infer<T>) => Result) {
   const result = (input: z.infer<T>) => {
     const parsed = schema.parse(input); // throws on invalid
     return cb(parsed);
@@ -287,14 +294,14 @@ Skip the imperative API when:
 - The service is purely internal (e.g., database implementation detail)
 
 ```ts
-// Internal service - Effect-only
-export namespace InternalDB {
-  export interface Interface { ... }
-  export class Service extends Context.Service<...>()(...) {}
-  export const layer = Layer.effect(...)
-  // No makeRuntime, no imperative exports
-  // Only exported: Service tag for dependency injection
-}
+// internal-db.ts — internal service, Effect-only
+export interface Interface { ... }
+export class Service extends Context.Service<...>()(...) {}
+export const layer = Layer.effect(...)
+// No makeRuntime, no imperative exports
+// Only exported: Service tag for dependency injection
+
+export * as InternalDB from "./internal-db";
 ```
 
 ---
@@ -303,189 +310,187 @@ export namespace InternalDB {
 
 ### Bus Service - Cleanest Example
 
-**File: packages/opencode/src/bus/index.ts**
-
 ```ts
-export namespace Bus {
-  export interface Interface {
-    readonly publish: <D extends BusEvent.Definition>(
-      def: D,
-      properties: z.output<D["properties"]>,
-    ) => Effect.Effect<void>
-    readonly subscribe: <D extends BusEvent.Definition>(def: D) =>
-      Stream.Stream<Payload<D>>
-    readonly subscribeAll: () => Stream.Stream<Payload>
-    readonly subscribeCallback: <D extends BusEvent.Definition>(
-      def: D,
-      callback: (event: Payload<D>) => unknown,
-    ) => Effect.Effect<() => void>
-    readonly subscribeAllCallback: (callback: (event: any) => unknown) =>
-      Effect.Effect<() => void>
-  }
-
-  export class Service extends Context.Service<Service, Interface>()("@opencode/Bus") {}
-
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const cache = yield* InstanceState.make<State>(...)
-
-      function publish(...) { ... }
-      function subscribe(...) { ... }
-      // ... implementations
-
-      return Service.of({ publish, subscribe, subscribeAll, subscribeCallback, subscribeAllCallback })
-    }),
-  )
-
-  // Bus has no service dependencies - uses InstanceState instead
-  // So defaultLayer = layer (no Layer.provide needed)
-  const { runPromise, runSync } = makeRuntime(Service, layer)
-
-  // Imperative API
-  export async function publish<D extends BusEvent.Definition>(
+// bus.ts
+export interface Interface {
+  readonly publish: <D extends BusEvent.Definition>(
     def: D,
-    properties: z.output<D["properties"]>
-  ) {
-    return runPromise((svc) => svc.publish(def, properties))
-  }
-
-  export function subscribe<D extends BusEvent.Definition>(
+    properties: z.output<D["properties"]>,
+  ) => Effect.Effect<void>
+  readonly subscribe: <D extends BusEvent.Definition>(def: D) =>
+    Stream.Stream<Payload<D>>
+  readonly subscribeAll: () => Stream.Stream<Payload>
+  readonly subscribeCallback: <D extends BusEvent.Definition>(
     def: D,
-    callback: (event: { type: D["type"]; properties: z.infer<D["properties"]> }) => unknown,
-  ) {
-    // Uses runSync because subscribe chain is entirely synchronous
-    return runSync((svc) => svc.subscribeCallback(def, callback))
-  }
-
-  export function subscribeAll(callback: (event: any) => unknown) {
-    return runSync((svc) => svc.subscribeAllCallback(callback))
-  }
+    callback: (event: Payload<D>) => unknown,
+  ) => Effect.Effect<() => void>
+  readonly subscribeAllCallback: (callback: (event: any) => unknown) =>
+    Effect.Effect<() => void>
 }
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Bus") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const cache = yield* InstanceState.make<State>(...)
+
+    function publish(...) { ... }
+    function subscribe(...) { ... }
+    // ... implementations
+
+    return Service.of({ publish, subscribe, subscribeAll, subscribeCallback, subscribeAllCallback })
+  }),
+)
+
+// Bus has no service dependencies - uses InstanceState instead
+// So defaultLayer = layer (no Layer.provide needed)
+const { runPromise, runSync } = makeRuntime(Service, layer)
+
+// Imperative API
+export async function publish<D extends BusEvent.Definition>(
+  def: D,
+  properties: z.output<D["properties"]>
+) {
+  return runPromise((svc) => svc.publish(def, properties))
+}
+
+export function subscribe<D extends BusEvent.Definition>(
+  def: D,
+  callback: (event: { type: D["type"]; properties: z.infer<D["properties"]> }) => unknown,
+) {
+  // Uses runSync because subscribe chain is entirely synchronous
+  return runSync((svc) => svc.subscribeCallback(def, callback))
+}
+
+export function subscribeAll(callback: (event: any) => unknown) {
+  return runSync((svc) => svc.subscribeAllCallback(callback))
+}
+
+export * as Bus from "./bus";
 ```
 
-**Key insight**: Bus uses `runSync` for subscriptions because `InstanceState.get`, `PubSub.subscribe`, and `Scope.make` are all synchronous operations.
+**Key insight**: Bus uses `runSync` for subscriptions because `InstanceState.get`,
+`PubSub.subscribe`, and `Scope.make` are all synchronous operations.
 
 ### Session Service - Complex Example
 
-**File: packages/opencode/src/session/index.ts**
-
 ```ts
-export namespace Session {
-  export interface Interface {
-    readonly create: (input?: { ... }) => Effect.Effect<Info>
-    readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info>
-    readonly get: (id: SessionID) => Effect.Effect<Info>
-    readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
-    // ... 20+ methods
-  }
+// session.ts
+export interface Interface {
+  readonly create: (input?: { ... }) => Effect.Effect<Info>
+  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info>
+  readonly get: (id: SessionID) => Effect.Effect<Info>
+  readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
+  // ... 20+ methods
+}
 
-  export class Service extends Context.Service<Service, Interface>()("@opencode/Session") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Session") {}
 
-  export const layer: Layer.Layer<Service, never, Bus.Service | Config.Service> =
-    Layer.effect(Service, Effect.gen(function* () {
-      const bus = yield* Bus.Service
-      const config = yield* Config.Service
-      // ... implementation with many methods
-      return Service.of({ create, fork, get, setTitle, ... })
-    }))
+export const layer: Layer.Layer<Service, never, Bus.Service | Config.Service> =
+  Layer.effect(Service, Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const config = yield* Config.Service
+    // ... implementation with many methods
+    return Service.of({ create, fork, get, setTitle, ... })
+  }))
 
-  // Wired with dependencies
-  export const defaultLayer = layer.pipe(
-    Layer.provide(Bus.layer),           // provides Bus
-    Layer.provide(Config.defaultLayer)  // provides Config
-  )
+// Wired with dependencies
+export const defaultLayer = layer.pipe(
+  Layer.provide(Bus.layer),           // provides Bus
+  Layer.provide(Config.defaultLayer)  // provides Config
+)
 
-  const { runPromise } = makeRuntime(Service, defaultLayer)
+const { runPromise } = makeRuntime(Service, defaultLayer)
 
-  // Imperative API - many methods, some with Zod validation via fn()
-  export const create = fn(
-    z.object({ parentID: ..., title: ... }).optional(),
-    (input) => runPromise((svc) => svc.create(input))
-  )
+// Imperative API - many methods, some with Zod validation via fn()
+export const create = fn(
+  z.object({ parentID: ..., title: ... }).optional(),
+  (input) => runPromise((svc) => svc.create(input))
+)
 
-  export const get = fn(SessionID.zod, (id) =>
-    runPromise((svc) => svc.get(id))
-  )
+export const get = fn(SessionID.zod, (id) =>
+  runPromise((svc) => svc.get(id))
+)
 
-  export const fork = fn(
-    z.object({ sessionID: SessionID.zod, messageID: MessageID.zod.optional() }),
-    (input) => runPromise((svc) => svc.fork(input))
-  )
+export const fork = fn(
+  z.object({ sessionID: SessionID.zod, messageID: MessageID.zod.optional() }),
+  (input) => runPromise((svc) => svc.fork(input))
+)
 
-  // Generator function for streaming results
-  export function* list(input?: { ... }) {
-    // Uses Database.use directly (sync operation in Session)
-    const rows = Database.use((db) => ...)
-    for (const row of rows) {
-      yield fromRow(row)
-    }
+// Generator function for streaming results
+export function* list(input?: { ... }) {
+  // Uses Database.use directly (sync operation in Session)
+  const rows = Database.use((db) => ...)
+  for (const row of rows) {
+    yield fromRow(row)
   }
 }
+
+export * as Session from "./session";
 ```
 
 ### Command Service - Moderate Complexity
 
-**File: packages/opencode/src/command/index.ts**
+**File: opencode:src/command/index.ts**
 
 ```ts
-export namespace Command {
-  export interface Interface {
-    readonly get: (name: string) => Effect.Effect<Info | undefined>;
-    readonly list: () => Effect.Effect<Info[]>;
-  }
-
-  export class Service extends Context.Service<Service, Interface>()(
-    "@opencode/Command",
-  ) {}
-
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const config = yield* Config.Service;
-      const mcp = yield* MCP.Service;
-      const skill = yield* Skill.Service;
-
-      const init = Effect.fn("Command.state")(function* (ctx) {
-        const commands: Record<string, Info> = {};
-        // Build command registry from Config, MCP, and Skill
-        return { commands };
-      });
-
-      const cache = yield* InstanceState.make<State>((ctx) => init(ctx));
-
-      const get = Effect.fn("Command.get")(function* (name: string) {
-        const state = yield* InstanceState.get(cache);
-        return state.commands[name];
-      });
-
-      const list = Effect.fn("Command.list")(function* () {
-        const state = yield* InstanceState.get(cache);
-        return Object.values(state.commands);
-      });
-
-      return Service.of({ get, list });
-    }),
-  );
-
-  // Multiple dependency chain
-  export const defaultLayer = layer.pipe(
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(Skill.defaultLayer),
-  );
-
-  const { runPromise } = makeRuntime(Service, defaultLayer);
-
-  // Simple imperative wrappers
-  export async function get(name: string) {
-    return runPromise((svc) => svc.get(name));
-  }
-
-  export async function list() {
-    return runPromise((svc) => svc.list());
-  }
+// command.ts
+export interface Interface {
+  readonly get: (name: string) => Effect.Effect<Info | undefined>;
+  readonly list: () => Effect.Effect<Info[]>;
 }
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const config = yield* Config.Service;
+    const mcp = yield* MCP.Service;
+    const skill = yield* Skill.Service;
+
+    const init = Effect.fn("Command.state")(function* (ctx) {
+      const commands: Record<string, Info> = {};
+      // Build command registry from Config, MCP, and Skill
+      return { commands };
+    });
+
+    const cache = yield* InstanceState.make<State>((ctx) => init(ctx));
+
+    const get = Effect.fn("Command.get")(function* (name: string) {
+      const state = yield* InstanceState.get(cache);
+      return state.commands[name];
+    });
+
+    const list = Effect.fn("Command.list")(function* () {
+      const state = yield* InstanceState.get(cache);
+      return Object.values(state.commands);
+    });
+
+    return Service.of({ get, list });
+  }),
+);
+
+// Multiple dependency chain
+export const defaultLayer = layer.pipe(
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(MCP.defaultLayer),
+  Layer.provide(Skill.defaultLayer),
+);
+
+const { runPromise } = makeRuntime(Service, defaultLayer);
+
+// Simple imperative wrappers
+export async function get(name: string) {
+  return runPromise((svc) => svc.get(name));
+}
+
+export async function list() {
+  return runPromise((svc) => svc.list());
+}
+
+export * as Command from "./command";
 ```
 
 ---
@@ -531,14 +536,14 @@ Runtime is only created when:
 ### No Overhead for Unused Services
 
 ```ts
-// If never called, no runtime is created
-export namespace HeavyService {
-  const { runPromise } = makeRuntime(Service, expensiveLayer);
+// heavy-service.ts — if never called, no runtime is created
+const { runPromise } = makeRuntime(Service, expensiveLayer);
 
-  export async function doWork() {
-    return runPromise((svc) => svc.doWork());
-  }
+export async function doWork() {
+  return runPromise((svc) => svc.doWork());
 }
+
+export * as HeavyService from "./heavy-service";
 
 // No runtime exists until:
 await HeavyService.doWork(); // ← runtime created here
@@ -549,7 +554,7 @@ await HeavyService.doWork(); // ← runtime created here
 The shared memoMap is especially beneficial in tests where multiple services are exercised:
 
 ```ts
-// Test: packages/opencode/test/effect/run-service.test.ts
+// Test: opencode:test/effect/run-service.test.ts
 test("makeRuntime shares dependent layers through the shared memo map", async () => {
   // Two services, both need Config
   const { runPromise: runOne } = makeRuntime(One, one);
@@ -586,68 +591,65 @@ class NotFoundError extends Error {
 }
 
 // Service namespace
-export namespace UserService {
-  // 1. Interface
-  export interface Interface {
-    readonly get: (id: string) => Effect.Effect<User, NotFoundError>;
-    readonly create: (input: Omit<User, "id">) => Effect.Effect<User>;
-    readonly list: () => Effect.Effect<User[]>;
-  }
-
-  // 2. Service tag
-  export class Service extends Context.Service<Service, Interface>()(
-    "@app/UserService",
-  ) {}
-
-  // 3. Layer with implementation
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      // In real app, inject database here
-      const users = new Map<string, User>();
-      let nextId = 1;
-
-      const get = Effect.fn("UserService.get")(function* (id: string) {
-        const user = users.get(id);
-        if (!user) return yield* new NotFoundError(id);
-        return user;
-      });
-
-      const create = Effect.fn("UserService.create")(function* (
-        input: Omit<User, "id">,
-      ) {
-        const user: User = { ...input, id: String(nextId++) };
-        users.set(user.id, user);
-        return user;
-      });
-
-      const list = Effect.fn("UserService.list")(function* () {
-        return Array.from(users.values());
-      });
-
-      return Service.of({ get, create, list });
-    }),
-  );
-
-  // 4. Default layer (no dependencies in this example)
-  export const defaultLayer = layer;
-
-  // 5. Runtime (private)
-  const { runPromise } = makeRuntime(Service, defaultLayer);
-
-  // 6. Imperative API
-  export async function get(id: string): Promise<User> {
-    return runPromise((svc) => svc.get(id));
-  }
-
-  export async function create(input: Omit<User, "id">): Promise<User> {
-    return runPromise((svc) => svc.create(input));
-  }
-
-  export async function list(): Promise<User[]> {
-    return runPromise((svc) => svc.list());
-  }
+// user-service.ts
+// 1. Interface
+export interface Interface {
+  readonly get: (id: string) => Effect.Effect<User, NotFoundError>;
+  readonly create: (input: Omit<User, "id">) => Effect.Effect<User>;
+  readonly list: () => Effect.Effect<User[]>;
 }
+
+// 2. Service tag
+export class Service extends Context.Service<Service, Interface>()("@app/UserService") {}
+
+// 3. Layer with implementation
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    // In real app, inject database here
+    const users = new Map<string, User>();
+    let nextId = 1;
+
+    const get = Effect.fn("UserService.get")(function* (id: string) {
+      const user = users.get(id);
+      if (!user) return yield* new NotFoundError(id);
+      return user;
+    });
+
+    const create = Effect.fn("UserService.create")(function* (input: Omit<User, "id">) {
+      const user: User = { ...input, id: String(nextId++) };
+      users.set(user.id, user);
+      return user;
+    });
+
+    const list = Effect.fn("UserService.list")(function* () {
+      return Array.from(users.values());
+    });
+
+    return Service.of({ get, create, list });
+  }),
+);
+
+// 4. Default layer (no dependencies in this example)
+export const defaultLayer = layer;
+
+// 5. Runtime (private)
+const { runPromise } = makeRuntime(Service, defaultLayer);
+
+// 6. Imperative API
+export async function get(id: string): Promise<User> {
+  return runPromise((svc) => svc.get(id));
+}
+
+export async function create(input: Omit<User, "id">): Promise<User> {
+  return runPromise((svc) => svc.create(input));
+}
+
+export async function list(): Promise<User[]> {
+  return runPromise((svc) => svc.list());
+}
+
+export * as UserService from "./user-service";
 
 // Usage
 
@@ -693,9 +695,13 @@ async function imperativeCode() {
 
 ## References
 
-- **makeRuntime**: `packages/opencode/src/effect/run-service.ts`
-- **Bus** (cleanest example): `packages/opencode/src/bus/index.ts`
-- **Session** (complex): `packages/opencode/src/session/index.ts`
-- **Command** (moderate): `packages/opencode/src/command/index.ts`
-- **fn helper** (validation): `packages/opencode/src/util/fn.ts`
 - **Effect docs**: https://effect.website/
+
+Resolvable in `~/Developer/opencode` at `e5101d9`:
+
+- **makeRuntime**: `opencode:src/effect/run-service.ts`
+- **Command** (moderate complexity): `opencode:src/command/index.ts`
+- **shared memo map test**: `opencode:test/effect/run-service.test.ts`
+
+The Bus, Session, and `fn`-helper examples above have no current upstream path — opencode removed
+its module barrels and its Zod helpers after these were written.

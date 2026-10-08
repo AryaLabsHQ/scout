@@ -1,6 +1,24 @@
 # Effect Callback Interop Patterns
 
-**Source:** `effect/Effect.ts` (`Effect.callback`, `Effect.async`) - see `~/Developer/effect/packages/effect/src/Effect.ts`
+## Table of Contents
+
+- [Effect.callback Pattern](#effectcallback-pattern)
+- [Instance.bind for AsyncLocalStorage](#instancebind-for-asynclocalstorage)
+- [Native Addon Callbacks](#native-addon-callbacks)
+- [EventEmitter Integration](#eventemitter-integration)
+- [Wrapping External Libraries](#wrapping-external-libraries)
+- [Stream.runForEach with forkScoped](#streamrunforeach-with-forkscoped)
+- [Common Pitfalls](#common-pitfalls)
+- [Code Examples](#code-examples)
+- [Summary](#summary)
+
+<!-- End table of contents -->
+
+**Source:** `effect/Effect.ts` (`Effect.callback`, `Effect.async`)
+
+- see
+
+  `~/Developer/effect/packages/effect/src/Effect.ts`
 
 Integrating Effect-TS with callback-based Node.js APIs, based on patterns from opencode.
 
@@ -41,28 +59,15 @@ import { Effect, Deferred, Exit } from "effect";
 import * as NodeChildProcess from "node:child_process";
 import launch from "cross-spawn";
 
-type ExitSignal = Deferred.Deferred<
-  readonly [code: number | null, signal: NodeJS.Signals | null]
->;
+type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>;
 
-const spawn = (
-  command: string,
-  args: string[],
-  opts: NodeChildProcess.SpawnOptions,
-) =>
-  Effect.callback<
-    readonly [NodeChildProcess.ChildProcess, ExitSignal],
-    PlatformError
-  >((resume) => {
+const spawn = (command: string, args: string[], opts: NodeChildProcess.SpawnOptions) =>
+  Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError>((resume) => {
     const signal =
-      Deferred.makeUnsafe<
-        readonly [code: number | null, signal: NodeJS.Signals | null]
-      >();
+      Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>();
     const proc = launch(command, args, opts);
     let end = false;
-    let exit:
-      | readonly [code: number | null, signal: NodeJS.Signals | null]
-      | undefined;
+    let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined;
 
     proc.on("error", (err) => {
       resume(Effect.fail(toPlatformError("spawn", err, command)));
@@ -91,12 +96,12 @@ const spawn = (
 
 ## Instance.bind for AsyncLocalStorage
 
-`Instance.bind(fn)` captures the current Instance AsyncLocalStorage context and restores it synchronously when the callback fires.
+`Instance.bind(fn)` captures the current Instance AsyncLocalStorage context and restores it
+synchronously when the callback fires.
 
 ### Implementation
 
 ```typescript
-// From packages/opencode/src/project/instance.ts
 export const Instance = {
   /**
    * Captures the current instance ALS context and returns a wrapper that
@@ -145,7 +150,8 @@ nativeAddon.subscribe(cb);
 
 ## Native Addon Callbacks
 
-Native addons (compiled C++ modules) execute callbacks from native code, bypassing normal async context propagation.
+Native addons (compiled C++ modules) execute callbacks from native code, bypassing normal async
+context propagation.
 
 ### @parcel/watcher Example
 
@@ -157,12 +163,9 @@ import type ParcelWatcher from "@parcel/watcher";
 const cb: ParcelWatcher.SubscribeCallback = Instance.bind((err, evts) => {
   if (err) return;
   for (const evt of evts) {
-    if (evt.type === "create")
-      Bus.publish(Event.Updated, { file: evt.path, event: "add" });
-    if (evt.type === "update")
-      Bus.publish(Event.Updated, { file: evt.path, event: "change" });
-    if (evt.type === "delete")
-      Bus.publish(Event.Updated, { file: evt.path, event: "unlink" });
+    if (evt.type === "create") Bus.publish(Event.Updated, { file: evt.path, event: "add" });
+    if (evt.type === "update") Bus.publish(Event.Updated, { file: evt.path, event: "change" });
+    if (evt.type === "delete") Bus.publish(Event.Updated, { file: evt.path, event: "unlink" });
   }
 });
 
@@ -235,10 +238,7 @@ Converting EventEmitter-based APIs to Effect Streams.
 ```typescript
 import { Effect, Stream, Scope, PubSub } from "effect";
 
-function fromEventEmitter<T>(
-  emitter: EventEmitter,
-  eventName: string,
-): Stream.Stream<T> {
+function fromEventEmitter<T>(emitter: EventEmitter, eventName: string): Stream.Stream<T> {
   return Stream.unwrap(
     Effect.gen(function* () {
       const pubsub = yield* PubSub.unbounded<T>();
@@ -308,10 +308,9 @@ export interface ExternalLibInterface {
 }
 
 // Create the service tag
-export class ExternalLibService extends Context.Service<
-  ExternalLibService,
-  ExternalLibInterface
->()("@myapp/ExternalLib") {}
+export class ExternalLibService extends Context.Service<ExternalLibService, ExternalLibInterface>()(
+  "@myapp/ExternalLib",
+) {}
 
 // Implement the layer
 export const layer = Layer.effect(
@@ -333,10 +332,7 @@ export const layer = Layer.effect(
       yield* Effect.promise(() => client.disconnect());
     });
 
-    const publish = Effect.fn("ExternalLib.publish")(function* (
-      topic: string,
-      message: string,
-    ) {
+    const publish = Effect.fn("ExternalLib.publish")(function* (topic: string, message: string) {
       yield* Effect.tryPromise({
         try: () => client.publish(topic, message),
         catch: (err) => new PublishError(String(err)),
@@ -377,16 +373,12 @@ Pattern for converting event callbacks to managed Stream consumers with automati
 
 ### Bus Subscription Pattern
 
-From `packages/opencode/src/bus/index.ts`:
+Shape of a bus service that bridges a `PubSub` to callback subscribers:
 
 ```typescript
 import { Effect, Scope, PubSub, Stream, Exit } from "effect";
 
-function on<T>(
-  pubsub: PubSub.PubSub<T>,
-  type: string,
-  callback: (event: T) => unknown,
-) {
+function on<T>(pubsub: PubSub.PubSub<T>, type: string, callback: (event: T) => unknown) {
   return Effect.gen(function* () {
     log.info("subscribing", { type });
 
@@ -588,89 +580,88 @@ import { InstanceState } from "@/effect/instance-state";
 import { Bus } from "@/bus";
 import { spawn } from "bun-pty";
 
-export namespace Pty {
-  export interface Interface {
-    readonly create: (input: CreateInput) => Effect.Effect<Info>;
-    readonly write: (id: PtyID, data: string) => Effect.Effect<void>;
-  }
-
-  export class Service extends Context.Service<Service, Interface>()(
-    "@opencode/Pty",
-  ) {}
-
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const bus = yield* Bus.Service;
-
-      const cache = yield* InstanceState.make<Map<PtyID, ActiveSession>>(
-        Effect.fn("Pty.state")(function* (ctx) {
-          const sessions = new Map<PtyID, ActiveSession>();
-
-          // Cleanup all sessions on instance disposal
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => {
-              for (const session of sessions.values()) {
-                session.process.kill();
-              }
-              sessions.clear();
-            }),
-          );
-
-          return sessions;
-        }),
-      );
-
-      const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
-        const sessions = yield* InstanceState.get(cache);
-
-        return yield* Effect.promise(async () => {
-          const id = generateId();
-          const proc = spawn(input.command, input.args, {
-            cwd: input.cwd || Instance.directory,
-            env: process.env,
-          });
-
-          const session: ActiveSession = {
-            id,
-            process: proc,
-            buffer: "",
-          };
-          sessions.set(id, session);
-
-          // CRITICAL: Use Instance.bind for native callbacks
-          proc.onData(
-            Instance.bind((chunk) => {
-              session.buffer += chunk;
-
-              // Now we can safely use Bus.publish
-              void bus.publish(PtyEvent.Data, { id, chunk });
-            }),
-          );
-
-          proc.onExit(
-            Instance.bind(({ exitCode }) => {
-              session.process = undefined as any;
-              void bus.publish(PtyEvent.Exited, { id, exitCode });
-            }),
-          );
-
-          return session;
-        });
-      });
-
-      const write = Effect.fn("Pty.write")(function* (id: PtyID, data: string) {
-        const sessions = yield* InstanceState.get(cache);
-        const session = sessions.get(id);
-        if (session?.process) {
-          session.process.write(data);
-        }
-      });
-
-      return Service.of({ create, write });
-    }),
-  );
+// pty.ts
+export interface Interface {
+  readonly create: (input: CreateInput) => Effect.Effect<Info>;
+  readonly write: (id: PtyID, data: string) => Effect.Effect<void>;
 }
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Pty") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service;
+
+    const cache = yield* InstanceState.make<Map<PtyID, ActiveSession>>(
+      Effect.fn("Pty.state")(function* (ctx) {
+        const sessions = new Map<PtyID, ActiveSession>();
+
+        // Cleanup all sessions on instance disposal
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            for (const session of sessions.values()) {
+              session.process.kill();
+            }
+            sessions.clear();
+          }),
+        );
+
+        return sessions;
+      }),
+    );
+
+    const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
+      const sessions = yield* InstanceState.get(cache);
+
+      return yield* Effect.promise(async () => {
+        const id = generateId();
+        const proc = spawn(input.command, input.args, {
+          cwd: input.cwd || Instance.directory,
+          env: process.env,
+        });
+
+        const session: ActiveSession = {
+          id,
+          process: proc,
+          buffer: "",
+        };
+        sessions.set(id, session);
+
+        // CRITICAL: Use Instance.bind for native callbacks
+        proc.onData(
+          Instance.bind((chunk) => {
+            session.buffer += chunk;
+
+            // Now we can safely use Bus.publish
+            void bus.publish(PtyEvent.Data, { id, chunk });
+          }),
+        );
+
+        proc.onExit(
+          Instance.bind(({ exitCode }) => {
+            session.process = undefined as any;
+            void bus.publish(PtyEvent.Exited, { id, exitCode });
+          }),
+        );
+
+        return session;
+      });
+    });
+
+    const write = Effect.fn("Pty.write")(function* (id: PtyID, data: string) {
+      const sessions = yield* InstanceState.get(cache);
+      const session = sessions.get(id);
+      if (session?.process) {
+        session.process.write(data);
+      }
+    });
+
+    return Service.of({ create, write });
+  }),
+);
+
+export * as Pty from "./pty";
 ```
 
 ### File Watcher with Instance.bind
@@ -682,70 +673,67 @@ import { InstanceState } from "@/effect/instance-state";
 import { Bus } from "@/bus";
 import type ParcelWatcher from "@parcel/watcher";
 
-export namespace FileWatcher {
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const bus = yield* Bus.Service;
+// file-watcher.ts
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service;
 
-      yield* InstanceState.make(
-        Effect.fn("FileWatcher.state")(function* () {
-          const w = watcher(); // Native addon
-          if (!w) return;
+    yield* InstanceState.make(
+      Effect.fn("FileWatcher.state")(function* () {
+        const w = watcher(); // Native addon
+        if (!w) return;
 
-          const subs: ParcelWatcher.AsyncSubscription[] = [];
+        const subs: ParcelWatcher.AsyncSubscription[] = [];
 
-          // Cleanup subscriptions on instance disposal
-          yield* Effect.addFinalizer(() =>
-            Effect.promise(() =>
-              Promise.allSettled(subs.map((sub) => sub.unsubscribe())),
-            ),
-          );
+        // Cleanup subscriptions on instance disposal
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(() => Promise.allSettled(subs.map((sub) => sub.unsubscribe()))),
+        );
 
-          // CRITICAL: Wrap callback with Instance.bind
-          const cb: ParcelWatcher.SubscribeCallback = Instance.bind(
-            (err, evts) => {
-              if (err) return;
-              for (const evt of evts) {
-                // Instance context is preserved - can use Bus.publish
-                if (evt.type === "create") {
-                  void bus.publish(Event.Updated, {
-                    file: evt.path,
-                    event: "add",
-                  });
-                }
-                if (evt.type === "update") {
-                  void bus.publish(Event.Updated, {
-                    file: evt.path,
-                    event: "change",
-                  });
-                }
-                if (evt.type === "delete") {
-                  void bus.publish(Event.Updated, {
-                    file: evt.path,
-                    event: "unlink",
-                  });
-                }
-              }
-            },
-          );
+        // CRITICAL: Wrap callback with Instance.bind
+        const cb: ParcelWatcher.SubscribeCallback = Instance.bind((err, evts) => {
+          if (err) return;
+          for (const evt of evts) {
+            // Instance context is preserved - can use Bus.publish
+            if (evt.type === "create") {
+              void bus.publish(Event.Updated, {
+                file: evt.path,
+                event: "add",
+              });
+            }
+            if (evt.type === "update") {
+              void bus.publish(Event.Updated, {
+                file: evt.path,
+                event: "change",
+              });
+            }
+            if (evt.type === "delete") {
+              void bus.publish(Event.Updated, {
+                file: evt.path,
+                event: "unlink",
+              });
+            }
+          }
+        });
 
-          // Subscribe with context-preserved callback
-          const sub = yield* Effect.promise(() =>
-            w.subscribe(Instance.directory, cb, { backend: "fs-events" }),
-          );
-          subs.push(sub);
-        }),
-      );
+        // Subscribe with context-preserved callback
+        const sub = yield* Effect.promise(() =>
+          w.subscribe(Instance.directory, cb, { backend: "fs-events" }),
+        );
+        subs.push(sub);
+      }),
+    );
 
-      return Service.of({
-        init: Effect.fn("FileWatcher.init")(function* () {
-          yield* InstanceState.get(state);
-        }),
-      });
-    }),
-  );
-}
+    return Service.of({
+      init: Effect.fn("FileWatcher.init")(function* () {
+        yield* InstanceState.get(state);
+      }),
+    });
+  }),
+);
+
+export * as FileWatcher from "./file-watcher";
 ```
 
 ### Bus Service with forkScoped Subscriptions
@@ -754,103 +742,93 @@ export namespace FileWatcher {
 import { Effect, PubSub, Scope, Stream, Exit, Layer, Context } from "effect";
 import { InstanceState } from "@/effect/instance-state";
 
-export namespace Bus {
-  export interface Interface {
-    readonly publish: <D extends BusEvent.Definition>(
-      def: D,
-      properties: z.output<D["properties"]>,
-    ) => Effect.Effect<void>;
-    readonly subscribe: <D extends BusEvent.Definition>(
-      def: D,
-    ) => Stream.Stream<Payload<D>>;
-    readonly subscribeCallback: <D extends BusEvent.Definition>(
-      def: D,
-      callback: (event: Payload<D>) => unknown,
-    ) => Effect.Effect<() => void>;
-  }
+// bus.ts
+export interface Interface {
+  readonly publish: <D extends BusEvent.Definition>(
+    def: D,
+    properties: z.output<D["properties"]>,
+  ) => Effect.Effect<void>;
+  readonly subscribe: <D extends BusEvent.Definition>(def: D) => Stream.Stream<Payload<D>>;
+  readonly subscribeCallback: <D extends BusEvent.Definition>(
+    def: D,
+    callback: (event: Payload<D>) => unknown,
+  ) => Effect.Effect<() => void>;
+}
 
-  export class Service extends Context.Service<Service, Interface>()(
-    "@opencode/Bus",
-  ) {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/Bus") {}
 
-  export const layer = Layer.effect(
-    Service,
-    Effect.gen(function* () {
-      const cache = yield* InstanceState.make<State>(
-        Effect.fn("Bus.state")(function* (ctx) {
-          const wildcard = yield* PubSub.unbounded<Payload>();
-          const typed = new Map<string, PubSub.PubSub<Payload>>();
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const cache = yield* InstanceState.make<State>(
+      Effect.fn("Bus.state")(function* (ctx) {
+        const wildcard = yield* PubSub.unbounded<Payload>();
+        const typed = new Map<string, PubSub.PubSub<Payload>>();
 
-          // Shutdown pubsubs on instance disposal
-          yield* Effect.addFinalizer(() =>
-            Effect.gen(function* () {
-              yield* PubSub.publish(wildcard, {
-                type: InstanceDisposed.type,
-                properties: { directory: ctx.directory },
-              });
-              yield* PubSub.shutdown(wildcard);
-              for (const ps of typed.values()) {
-                yield* PubSub.shutdown(ps);
-              }
-            }),
-          );
+        // Shutdown pubsubs on instance disposal
+        yield* Effect.addFinalizer(() =>
+          Effect.gen(function* () {
+            yield* PubSub.publish(wildcard, {
+              type: InstanceDisposed.type,
+              properties: { directory: ctx.directory },
+            });
+            yield* PubSub.shutdown(wildcard);
+            for (const ps of typed.values()) {
+              yield* PubSub.shutdown(ps);
+            }
+          }),
+        );
 
-          return { wildcard, typed };
-        }),
-      );
+        return { wildcard, typed };
+      }),
+    );
 
-      // Subscribe with automatic cleanup via forkScoped
-      function on<T>(
-        pubsub: PubSub.PubSub<T>,
-        type: string,
-        callback: (event: T) => unknown,
-      ) {
-        return Effect.gen(function* () {
-          const scope = yield* Scope.make();
-          const subscription = yield* Scope.provide(scope)(
-            PubSub.subscribe(pubsub),
-          );
+    // Subscribe with automatic cleanup via forkScoped
+    function on<T>(pubsub: PubSub.PubSub<T>, type: string, callback: (event: T) => unknown) {
+      return Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        const subscription = yield* Scope.provide(scope)(PubSub.subscribe(pubsub));
 
-          // Fork scoped fiber - automatically interrupted when scope closes
-          yield* Scope.provide(scope)(
-            Stream.fromSubscription(subscription).pipe(
-              Stream.runForEach((msg) =>
-                Effect.tryPromise({
-                  try: () => Promise.resolve().then(() => callback(msg)),
-                  catch: (cause) =>
-                    log.error("subscriber failed", { type, cause }),
-                }).pipe(Effect.ignore),
-              ),
-              Effect.forkScoped,
+        // Fork scoped fiber - automatically interrupted when scope closes
+        yield* Scope.provide(scope)(
+          Stream.fromSubscription(subscription).pipe(
+            Stream.runForEach((msg) =>
+              Effect.tryPromise({
+                try: () => Promise.resolve().then(() => callback(msg)),
+                catch: (cause) => log.error("subscriber failed", { type, cause }),
+              }).pipe(Effect.ignore),
             ),
-          );
+            Effect.forkScoped,
+          ),
+        );
 
-          // Return cleanup function that closes the scope
-          return () => {
-            Effect.runFork(Scope.close(scope, Exit.void));
-          };
-        });
+        // Return cleanup function that closes the scope
+        return () => {
+          Effect.runFork(Scope.close(scope, Exit.void));
+        };
+      });
+    }
+
+    const subscribeCallback = Effect.fn("Bus.subscribeCallback")(function* <
+      D extends BusEvent.Definition,
+    >(def: D, callback: (event: Payload<D>) => unknown) {
+      const state = yield* InstanceState.get(cache);
+
+      let ps = state.typed.get(def.type);
+      if (!ps) {
+        ps = yield* PubSub.unbounded<Payload>();
+        state.typed.set(def.type, ps);
       }
 
-      const subscribeCallback = Effect.fn("Bus.subscribeCallback")(function* <
-        D extends BusEvent.Definition,
-      >(def: D, callback: (event: Payload<D>) => unknown) {
-        const state = yield* InstanceState.get(cache);
+      // Subscribe with automatic cleanup
+      return yield* on(ps, def.type, callback);
+    });
 
-        let ps = state.typed.get(def.type);
-        if (!ps) {
-          ps = yield* PubSub.unbounded<Payload>();
-          state.typed.set(def.type, ps);
-        }
+    return Service.of({ subscribeCallback /* other methods */ });
+  }),
+);
 
-        // Subscribe with automatic cleanup
-        return yield* on(ps, def.type, callback);
-      });
-
-      return Service.of({ subscribeCallback /* other methods */ });
-    }),
-  );
-}
+export * as Bus from "./bus";
 ```
 
 ## Summary
@@ -863,4 +841,6 @@ export namespace Bus {
 | `Effect.acquireRelease`            | One-time setup/cleanup of resources               |
 | `Effect.addFinalizer`              | Adding cleanup to current scope                   |
 
-Remember: Native addons bypass normal async context propagation. Always use `Instance.bind` when callbacks need to access `Instance.directory`, call `Bus.publish`, or use other context-dependent operations.
+Remember: Native addons bypass normal async context propagation. Always use `Instance.bind` when
+callbacks need to access `Instance.directory`, call `Bus.publish`, or use other context-dependent
+operations.

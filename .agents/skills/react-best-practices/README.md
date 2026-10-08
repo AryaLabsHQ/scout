@@ -1,39 +1,14 @@
 # React Best Practices
 
-A structured repository for creating and maintaining React Best Practices optimized for agents and LLMs.
+A structured rule set for React performance on TanStack Start, optimized for agent workflows.
 
 ## Structure
 
-- `rules/` - Individual rule files (one per rule)
-  - `_sections.md` - Section metadata (titles, impacts, descriptions)
-  - `_template.md` - Template for creating new rules
-  - `area-description.md` - Individual rule files
-- `src/` - Build scripts and utilities
-- `metadata.json` - Document metadata (version, organization, abstract)
-- __`AGENTS.md`__ - Compiled output (generated)
-- __`test-cases.json`__ - Test cases for LLM evaluation (generated)
-
-## Getting Started
-
-1. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-
-2. Build AGENTS.md from rules:
-   ```bash
-   pnpm build
-   ```
-
-3. Validate rule files:
-   ```bash
-   pnpm validate
-   ```
-
-4. Extract test cases:
-   ```bash
-   pnpm extract-tests
-   ```
+- `SKILL.md` — Agent entrypoint (routing, categories, quick reference)
+- `rules/` — One file per rule (source of truth)
+  - `_sections.md` — Section metadata (titles, impacts, descriptions)
+  - `_template.md` — Template for creating new rules
+  - `area-description.md` — Individual rule files
 
 ## Creating a New Rule
 
@@ -41,21 +16,19 @@ A structured repository for creating and maintaining React Best Practices optimi
 2. Choose the appropriate area prefix:
    - `async-` for Eliminating Waterfalls (Section 1)
    - `bundle-` for Bundle Size Optimization (Section 2)
-   - `server-` for Server-Side Performance (Section 3)
+   - `server-` for Server & SSR Performance (Section 3)
    - `client-` for Client-Side Data Fetching (Section 4)
    - `rerender-` for Re-render Optimization (Section 5)
    - `rendering-` for Rendering Performance (Section 6)
    - `js-` for JavaScript Performance (Section 7)
    - `advanced-` for Advanced Patterns (Section 8)
 3. Fill in the frontmatter and content
-4. Ensure you have clear examples with explanations
-5. Run `pnpm build` to regenerate AGENTS.md and test-cases.json
 
 ## Rule File Structure
 
 Each rule file should follow this structure:
 
-```markdown
+````markdown
 ---
 title: Rule Title Here
 impact: MEDIUM
@@ -72,6 +45,7 @@ Brief explanation of the rule and why it matters.
 ```typescript
 // Bad code example
 ```
+````
 
 **Correct (description of what's right):**
 
@@ -79,17 +53,12 @@ Brief explanation of the rule and why it matters.
 // Good code example
 ```
 
-Optional explanatory text after examples.
-
-Reference: [Link](https://example.com)
-
 ## File Naming Convention
 
-- Files starting with `_` are special (excluded from build)
+- Files starting with `_` are special metadata/templates
 - Rule files: `area-description.md` (e.g., `async-parallel.md`)
-- Section is automatically inferred from filename prefix
+- Section is inferred from filename prefix
 - Rules are sorted alphabetically by title within each section
-- IDs (e.g., 1.1, 1.2) are auto-generated during build
 
 ## Impact Levels
 
@@ -100,24 +69,7 @@ Reference: [Link](https://example.com)
 - `LOW-MEDIUM` - Low-medium gains
 - `LOW` - Incremental improvements
 
-## Scripts
+## Stack
 
-- `pnpm build` - Compile rules into AGENTS.md
-- `pnpm validate` - Validate all rule files
-- `pnpm extract-tests` - Extract test cases for LLM evaluation
-- `pnpm dev` - Build and validate
-
-## Contributing
-
-When adding or modifying rules:
-
-1. Use the correct filename prefix for your section
-2. Follow the `_template.md` structure
-3. Include clear bad/good examples with explanations
-4. Add appropriate tags
-5. Run `pnpm build` to regenerate AGENTS.md and test-cases.json
-6. Rules are automatically sorted by title - no need to manage numbers!
-
-## Acknowledgments
-
-Originally created by [@shuding](https://x.com/shuding) at [Vercel](https://vercel.com).
+Tailored for **TanStack Start + React 19**. Pair with the `tanstack-start` skill for AtomHttpApi,
+dehydration, and router SSR configuration.

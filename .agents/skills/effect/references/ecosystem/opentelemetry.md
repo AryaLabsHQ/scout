@@ -1,96 +1,83 @@
 # OpenTelemetry
 
-Use `@effect/opentelemetry` for Effect-to-OpenTelemetry integration layers.
+Use `@effect/opentelemetry` at the same version as `effect`. The package exports namespaces named
+`NodeSdk`, `OtelLogger`, `OtelMetrics`, `OtelTracer`, `Resource`, and `WebSdk`. Examples importing
+`Tracer`, `Metrics`, or `Logger` directly from `@effect/opentelemetry` are stale.
 
-**Source:** `@effect/opentelemetry` - see `~/Developer/effect/packages/opentelemetry/src/`
+**Source:** `~/Developer/effect/packages/opentelemetry/src/`.
 
-## Module Overview
+## Prefer the platform SDK layer
 
-| Module | What it provides |
-|--------|-----------------|
-| `Tracer.make` | Tracer factory |
-| `Tracer.layer` / `Tracer.layerGlobal` | Effect layer for tracing |
-| `Tracer.layerampler` | Sampling-aware tracer layer |
-| `Metrics.makeProducer` | Metrics producer factory |
-| `Metrics.layer` | Effect layer for metrics |
-| `Logger` | OpenTelemetry LogRecord exporter |
-| `NodeSdk` | OpenTelemetry SDK for Node.js |
-| `Resource` | Telemetry resource descriptors |
-| `WebSdk` | OpenTelemetry SDK for browsers |
-
-## Node SDK Layer
+For Node applications, configure the signals through `NodeSdk.layer`:
 
 ```ts
-import { NodeSdk } from "@effect/opentelemetry"
-import { Layer } from "effect"
+import { NodeSdk } from "@effect/opentelemetry";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-const OtelLive = NodeSdk.layer(() => ({
-  resource: { serviceName: "my-service" },
-  spanProcessor: [],
-  metricReader: [],
-  logRecordProcessor: []
-}))
-
-const AppLive = Layer.mergeAll(OtelLive)
+const TelemetryLive = NodeSdk.layer(() => ({
+  resource: {
+    serviceName: "my-service",
+    serviceVersion: "1.0.0",
+  },
+  spanProcessor: new BatchSpanProcessor(new OTLPTraceExporter()),
+}));
 ```
 
-## Tracing
+Add `metricReader` or `logRecordProcessor` to the same configuration when those signals are
+required. Do not pass Effect layers where OpenTelemetry SDK processors/readers are expected.
+`NodeSdk.layer` owns resource construction and scoped provider shutdown.
+
+## Application instrumentation
+
+Create spans with core Effect APIs after providing the SDK layer:
 
 ```ts
-import { Tracer } from "@effect/opentelemetry"
-import { Effect } from "effect"
+import { Effect } from "effect";
 
-const program = Effect.withSpan("my-operation")(Effect.succeed("result")).pipe(
-  Effect.provide(Tracer.layer({ serviceName: "my-service" }))
-)
+const program = Effect.succeed("result").pipe(Effect.withSpan("my-operation"));
 ```
 
-Use `Effect.withSpan(name, options?)` to create spans around Effect operations. The tracer layer handles propagation and export.
-
-## Metrics
+Use core `Metric` APIs for Effect metrics; `OtelMetrics` exports the producer/reader bridge, not an
+increment function:
 
 ```ts
-import { Metrics } from "@effect/opentelemetry"
-import { Effect, Metric } from "effect"
+import { Effect, Metric } from "effect";
 
-const requestCount = Metric.counter("http_requests").pipe(
-  Metric.withDescription("Total HTTP requests")
-)
+const requestCount = Metric.counter("http_requests", {
+  description: "Total HTTP requests",
+});
 
-const program = Effect.gen(function*() {
-  yield* Metrics.increment(requestCount)
-  return "done"
-}).pipe(Effect.provide(Metrics.layer()))
+const program = Effect.gen(function* () {
+  yield* Metric.update(requestCount, 1);
+  return "done";
+});
 ```
 
-## Instrumenting Effect Services
+`OtelMetrics.layer(reader, options?)` registers the Effect metric producer with one or more SDK
+metric readers. `OtelLogger.layer` installs the Effect logger after providing an
+`OtelLogger.OtelLoggerProvider`; normally let `NodeSdk.layer` assemble both.
+
+## Lower-level namespaces
+
+Use lower-level modules only when custom composition is required:
 
 ```ts
-import { Tracer, Metrics } from "@effect/opentelemetry"
-import { Effect, Layer } from "effect"
-
-// Add AI-specific telemetry
-const AiTelemetryLive = Layer.mergeAll(
-  Tracer.layer({ serviceName: "ai-service" }),
-  Metrics.layer()
-)
+import { OtelLogger, OtelMetrics, OtelTracer, Resource } from "@effect/opentelemetry";
 ```
 
-## Logger Integration
-
-```ts
-import { Logger } from "@effect/opentelemetry"
-import { NodeSdk } from "@effect/opentelemetry"
-import { Layer } from "effect"
-
-const OtelLive = NodeSdk.layer(() => ({
-  resource: { serviceName: "my-service" },
-  logRecordProcessor: [Logger.layer()]
-}))
-```
+- `OtelTracer.layer`: create/install the Effect tracer from an OTel provider and resource.
+- `OtelTracer.currentOtelSpan`: access the current OTel span, failing when no span exists.
+- `OtelMetrics.makeProducer` / `OtelMetrics.layer`: bridge Effect metrics to metric readers.
+- `OtelLogger.layerLoggerProvider` / `OtelLogger.layer`: construct a provider and install/merge the
+  Effect logger.
+- `Resource.layerFromEnv`: construct resource metadata from environment/configuration.
 
 ## Notes
 
-- In v4, `Tracer` and `Metrics` moved to `effect/unstable/observability`. `NodeSdk` and `WebSdk` remain in `@effect/opentelemetry` since they are platform-specific SDKs.
-- Requires OpenTelemetry SDK dependencies: `@opentelemetry/api`, `@opentelemetry/sdk-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/exporter-metrics-otlp-http`, etc.
-- Span context propagation works automatically with `Effect.withSpan` and `HttpEffect` middleware.
+- Register Node auto-instrumentations before importing modules they patch.
+- Older-pinned consumers: check the installed package surface via
+  [v4-beta-deltas.md](v4-beta-deltas.md) before pasting examples.
+
+Compile the complete layer with the consumer's actual exporters/processors; imports alone do not
+prove signal export or shutdown behavior.

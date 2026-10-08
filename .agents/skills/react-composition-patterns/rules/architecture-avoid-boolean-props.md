@@ -7,9 +7,13 @@ tags: composition, props, architecture
 
 ## Avoid Boolean Prop Proliferation
 
-Don't add boolean props like `isThread`, `isEditing`, `isDMThread` to customize
-component behavior. Each boolean doubles possible states and creates
-unmaintainable conditional logic. Use composition instead.
+Avoid boolean props like `isThread`, `isEditing`, and `isDMThread` when they select substantially
+different structures or create invalid combinations. Use explicit variants or composition for those
+modes.
+
+Boolean props remain appropriate for genuine independent binary state or native semantics, such as
+`disabled`, `required`, `checked`, or a narrowly scoped disclosure flag. The smell is combinatorial
+mode selection, not the `boolean` type itself.
 
 **Incorrect (boolean props create exponential complexity):**
 
@@ -32,16 +36,10 @@ function Composer({
       ) : isThread ? (
         <AlsoSendToChannelField id={channelId} />
       ) : null}
-      {isEditing ? (
-        <EditActions />
-      ) : isForwarding ? (
-        <ForwardActions />
-      ) : (
-        <DefaultActions />
-      )}
+      {isEditing ? <EditActions /> : isForwarding ? <ForwardActions /> : <DefaultActions />}
       <Footer onSubmit={onSubmit} />
     </form>
-  )
+  );
 }
 ```
 
@@ -61,7 +59,7 @@ function ChannelComposer() {
         <Composer.Submit />
       </Composer.Footer>
     </Composer.Frame>
-  )
+  );
 }
 
 // Thread composer - adds "also send to channel" field
@@ -77,7 +75,7 @@ function ThreadComposer({ channelId }: { channelId: string }) {
         <Composer.Submit />
       </Composer.Footer>
     </Composer.Frame>
-  )
+  );
 }
 
 // Edit composer - different footer actions
@@ -92,9 +90,9 @@ function EditComposer() {
         <Composer.SaveEdit />
       </Composer.Footer>
     </Composer.Frame>
-  )
+  );
 }
 ```
 
-Each variant is explicit about what it renders. We can share internals without
-sharing a single monolithic parent.
+Each variant is explicit about what it renders. We can share internals without sharing a single
+monolithic parent.

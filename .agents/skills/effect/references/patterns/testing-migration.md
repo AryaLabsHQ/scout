@@ -1,9 +1,10 @@
-# Testing Migration Guide for Effect v4
+# Testing Migration Guide for Effect
 
-**Source:** `@effect/vitest` - see `~/Developer/effect/packages/vitest/src/`
-**Source:** `effect/testing/*` (`TestClock.ts`, `TestConsole.ts`, `TestSchema.ts`, `FastCheck.ts`) - see `~/Developer/effect/packages/effect/src/testing/`
+**Source:** `@effect/vitest` - see `~/Developer/effect/packages/vitest/src/` **Source:**
+`effect/testing/*` (`TestClock.ts`, `TestConsole.ts`, `TestSchema.ts`) - see
+`~/Developer/effect/packages/effect/src/testing/`
 
-A comprehensive guide for migrating tests to Effect v4 using @effect/vitest patterns from opencode.
+A comprehensive guide for migrating tests to Effect using @effect/vitest patterns from opencode.
 
 ## Table of Contents
 
@@ -31,7 +32,8 @@ bun add @effect/vitest
 
 ### Vitest Config for Effect Tests
 
-Opencode uses a custom test helper pattern rather than direct @effect/vitest integration. This provides more control over layer management and test execution.
+Opencode uses a custom test helper pattern rather than direct @effect/vitest integration. This
+provides more control over layer management and test execution.
 
 **File: `test/lib/effect.ts`**
 
@@ -47,16 +49,9 @@ const env = TestConsole.layer;
 const body = <A, E, R>(value: Body<A, E, R>) =>
   Effect.suspend(() => (typeof value === "function" ? value() : value));
 
-const run = <A, E, R, E2>(
-  value: Body<A, E, R | Scope.Scope>,
-  layer: Layer.Layer<R, E2, never>,
-) =>
+const run = <A, E, R, E2>(value: Body<A, E, R | Scope.Scope>, layer: Layer.Layer<R, E2, never>) =>
   Effect.gen(function* () {
-    const exit = yield* body(value).pipe(
-      Effect.scoped,
-      Effect.provide(layer),
-      Effect.exit,
-    );
+    const exit = yield* body(value).pipe(Effect.scoped, Effect.provide(layer), Effect.exit);
     if (Exit.isFailure(exit)) {
       for (const err of Cause.prettyErrors(exit.cause)) {
         yield* Effect.logError(err);
@@ -112,99 +107,107 @@ it.effect("test name", () =>
 
 ---
 
-## v4 Test Primitives (Quick Reference)
+## Test Primitives (Quick Reference)
 
-These are the v4 testing primitives this guide builds on. If you already know them, skim and move on.
+These are the testing primitives this guide builds on. If you already know them, skim and move on.
 
 ### `it.effect` vs `it.live`
 
 `@effect/vitest` exports both via `import { it } from "@effect/vitest"`:
 
-| Helper | Base services | Use when |
-|--------|---------------|----------|
-| `it.effect` | `TestClock` + `TestConsole` | Deterministic time control via `TestClock.adjust(...)`. Most pure-logic tests. |
-| `it.live` | Real `Clock` + `TestConsole` | Real time, real filesystem mtimes, real subprocesses, real file locks. |
-| `it.scoped` / `it.scopedLive` | Same as above plus a fresh `Scope` | When the test body uses `Effect.acquireRelease` directly. |
+| Helper                                     | Base services                          | Use when                                                                       |
+| ------------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------ |
+| `it.effect`                                | `TestClock` + `TestConsole`            | Deterministic time control via `TestClock.adjust(...)`. Most pure-logic tests. |
+| `it.live`                                  | Real `Clock` + `TestConsole`           | Real time, real filesystem mtimes, real subprocesses, real file locks.         |
+| `Effect.scoped` in `it.effect` / `it.live` | Add a fresh `Scope` to the effect body | When the test body uses `Effect.acquireRelease` directly.                      |
 
-**Source:** `~/Developer/effect/packages/vitest/src/index.ts:169-175`. Custom helpers like opencode's `testEffect(layer)` typically wrap both, returning `{ effect, live }` so each test picks its base.
+**Source:** `~/Developer/effect/packages/vitest/src/index.ts` (`Methods`). Custom helpers like
+opencode's `testEffect(layer)` typically wrap both, returning `{ effect, live }` so each test picks
+its base.
 
 ### `Layer.mock(Tag)(partialImpl)` — partial stubs
 
-`Layer.mock` (Layer.ts:1895) is curried. Methods you don't implement throw an `UnimplementedError` defect when called.
+`Layer.mock` is curried. Methods you don't implement throw an `UnimplementedError` defect when
+called.
 
 ```ts
-import { Layer, Effect, Option } from "effect"
+import { Layer, Effect, Option } from "effect";
 
 const stubAccount = Layer.mock(Account.Service)({
   active: () => Effect.succeed(Option.none()),
   // updateActive, list, etc. not implemented — calling them throws UnimplementedError
-})
+});
 
 const stubNpm = Layer.mock(Npm.Service)({
   install: () => Effect.void,
   add: () => Effect.die("not allowed in tests"),
   which: () => Effect.succeed(Option.none()),
-})
+});
 ```
 
-Use `Layer.mock` over `Layer.succeed(Tag, Tag.of({ ... }))` whenever you only need a few methods — you don't have to write `Effect.die` placeholders for every unused field. Calling an unimplemented method is loud (defect with stack trace) so tests fail fast if a code path you didn't expect to hit reaches a stubbed dependency.
+Use `Layer.mock` over `Layer.succeed(Tag, Tag.of({ ... }))` whenever you only need a few methods —
+you don't have to write `Effect.die` placeholders for every unused field. Calling an unimplemented
+method is loud (defect with stack trace) so tests fail fast if a code path you didn't expect to hit
+reaches a stubbed dependency.
 
 The two-arg uncurried form also works: `Layer.mock(Tag, partial)`.
 
 ### `Layer.fresh(layer)` — bypass shared `MemoMap`
 
-**Why this exists in v4:** Effect v4 auto-memoizes layers across separate `Effect.provide` calls (v3 did not). See `~/Developer/effect/migration/layer-memoization.md`. This makes production composition more efficient but creates a new pitfall in tests:
+Effect auto-memoizes layers across separate `Effect.provide` calls. See
+`~/Developer/effect/migration/layer-memoization.md`. This makes production composition more
+efficient but creates a new pitfall in tests:
 
 ```ts
-const it = testEffect(Storage.defaultLayer)  // builds Storage once, memoizes
+const it = testEffect(Storage.defaultLayer); // builds Storage once, memoizes
 
 it.effect("uses custom storage", () =>
   Effect.gen(function* () {
-    const s = yield* Storage.Service  // ← still the outer Storage, not customStorage!
+    const s = yield* Storage.Service; // ← still the outer Storage, not customStorage!
     // ...
   }).pipe(
-    Effect.provide(customStorage),  // silently no-op — the memoized one wins
+    Effect.provide(customStorage), // silently no-op — the memoized one wins
   ),
-)
+);
 ```
 
-`Layer.fresh` (Layer.ts:1762) wraps a layer so it always builds with a fresh `MemoMap`, bypassing the shared cache:
+`Layer.fresh` wraps a layer so it always builds with a fresh `MemoMap`, bypassing the shared cache:
 
 ```ts
 const remappedStorage = Layer.fresh(
-  Storage.layer.pipe(
-    Layer.provide(remappedFs(root)),
-    Layer.provide(Git.defaultLayer),
-  ),
-)
+  Storage.layer.pipe(Layer.provide(remappedFs(root)), Layer.provide(Git.defaultLayer)),
+);
 
 it.effect("uses custom storage", () =>
   Effect.gen(function* () {
-    const s = yield* Storage.Service  // ← now the fresh remappedStorage
+    const s = yield* Storage.Service; // ← now the fresh remappedStorage
     // ...
   }).pipe(Effect.provide(remappedStorage)),
-)
+);
 ```
 
 ### `Effect.provide(layer, { local: true })` — alternative
 
-The same `migration/layer-memoization.md` doc documents a second escape hatch: `Effect.provide(layer, { local: true })` opts out of the shared memo map for that one provide call. Equivalent to `Layer.fresh` for most cases:
+The same `migration/layer-memoization.md` doc documents a second escape hatch:
+`Effect.provide(layer, { local: true })` opts out of the shared memo map for that one provide call.
+Equivalent to `Layer.fresh` for most cases:
 
 ```ts
 .pipe(Effect.provide(remappedStorage, { local: true }))
 ```
 
-Pick whichever reads better. `Layer.fresh` is reusable across tests; `{ local: true }` is per-provide.
+Pick whichever reads better. `Layer.fresh` is reusable across tests; `{ local: true }` is
+per-provide.
 
 ### When to use which
 
-| Scenario | Pattern |
-|----------|---------|
-| Stub one or two methods of a service | `Layer.mock(Tag)(partial)` |
-| Replace whole service with a stateful fake | `Layer.succeed(Tag, Tag.of({ ... }))` or `Layer.unwrap(Effect.gen(...))` for a closure-stateful fake |
-| Override a service for one test that's already in `testEffect`'s layer | wrap override in `Layer.fresh(...)` (or use `{ local: true }`) |
-| Provide test clock | base on `it.effect` (already includes `TestClock`) |
-| Need real OS clock / FS / subprocess | use `it.live` |
+| Scenario                                                               | Pattern                                                                                              |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Stub one or two methods of a service                                   | `Layer.mock(Tag)(partial)`                                                                           |
+| Replace whole service with a stateful fake                             | `Layer.succeed(Tag, Tag.of({ ... }))` or `Layer.unwrap(Effect.gen(...))` for a closure-stateful fake |
+| Override a service for one test that's already in `testEffect`'s layer | wrap override in `Layer.fresh(...)` (or use `{ local: true }`)                                       |
+| Provide test clock                                                     | base on `it.effect` (already includes `TestClock`)                                                   |
+| Need real OS clock / FS / subprocess                                   | use `it.live`                                                                                        |
 
 ---
 
@@ -252,10 +255,7 @@ import { Effect } from "effect";
 import { expect } from "bun:test";
 import { testEffect } from "../lib/effect";
 
-const user = Effect.fn("test.user")(function* (
-  sessionID: SessionID,
-  text: string,
-) {
+const user = Effect.fn("test.user")(function* (sessionID: SessionID, text: string) {
   const session = yield* Session.Service;
   const msg = yield* session.updateMessage({
     id: MessageID.ascending(),
@@ -300,12 +300,10 @@ it.effect(
   "scoped resource test",
   () =>
     Effect.gen(function* () {
-      const resource = yield* Effect.acquireRelease(
-        Effect.succeed({ data: "value" }),
-        (res) =>
-          Effect.sync(() => {
-            console.log("Cleanup:", res);
-          }),
+      const resource = yield* Effect.acquireRelease(Effect.succeed({ data: "value" }), (res) =>
+        Effect.sync(() => {
+          console.log("Cleanup:", res);
+        }),
       );
 
       expect(resource.data).toBe("value");
@@ -319,17 +317,16 @@ it.effect(
 
 ### Layer.mergeAll for Test Dependencies
 
-Build your layer stack by merging all required services:
+Build your layer stack by merging all required services. This is the canonical ladder —
+infrastructure at the bottom, shared `deps` above it, feature layers on top, `env` last. Later
+sections in this file state only their delta from it rather than reprinting it.
 
 ```typescript
 import { Layer } from "effect";
 import { NodeFileSystem } from "@effect/platform-node";
 
 // Infrastructure layer
-const infra = Layer.mergeAll(
-  NodeFileSystem.layer,
-  CrossSpawnSpawner.defaultLayer,
-);
+const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer);
 
 // Core dependencies
 const deps = Layer.mergeAll(
@@ -338,7 +335,7 @@ const deps = Layer.mergeAll(
   AgentSvc.defaultLayer,
   Permission.layer,
   Plugin.defaultLayer,
-  Config.defaultLayer,
+  Config.defaultLayer, // app-defined Config service (not root effect/Config)
   status,
   llm, // Mock LLM layer
 ).pipe(Layer.provideMerge(infra));
@@ -373,9 +370,7 @@ const llm = Layer.unwrap(
       return Effect.void;
     });
 
-    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) =>
-      push(stream(...items)),
-    );
+    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) => push(stream(...items)));
 
     return Layer.mergeAll(
       Layer.succeed(
@@ -439,9 +434,7 @@ const llm = Layer.unwrap(
       return Effect.void;
     });
 
-    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) =>
-      push(stream(...items)),
-    );
+    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) => push(stream(...items)));
 
     return Layer.mergeAll(
       Layer.succeed(
@@ -468,41 +461,9 @@ const llm = Layer.unwrap(
   }),
 );
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer));
-const infra = Layer.mergeAll(
-  NodeFileSystem.layer,
-  CrossSpawnSpawner.defaultLayer,
-);
-const deps = Layer.mergeAll(
-  Session.defaultLayer,
-  Snapshot.defaultLayer,
-  AgentSvc.defaultLayer,
-  Command.defaultLayer,
-  Permission.layer,
-  Plugin.defaultLayer,
-  Config.defaultLayer,
-  filetime,
-  lsp,
-  mcp,
-  AppFileSystem.defaultLayer,
-  status,
-  llm,
-).pipe(Layer.provideMerge(infra));
-const registry = ToolRegistry.layer.pipe(Layer.provideMerge(deps));
-const trunc = Truncate.layer.pipe(Layer.provideMerge(deps));
-const proc = SessionProcessor.layer.pipe(Layer.provideMerge(deps));
-const compact = SessionCompaction.layer.pipe(
-  Layer.provideMerge(proc),
-  Layer.provideMerge(deps),
-);
-const env = SessionPrompt.layer.pipe(
-  Layer.provideMerge(compact),
-  Layer.provideMerge(proc),
-  Layer.provideMerge(registry),
-  Layer.provideMerge(trunc),
-  Layer.provideMerge(deps),
-);
-
+// `env` comes from the ladder in "Layer.mergeAll for Test Dependencies" above, with five
+// extra entries in `deps` — Command.defaultLayer, filetime, lsp, mcp,
+// AppFileSystem.defaultLayer — and `compact` stacked under SessionPrompt.layer.
 const it = testEffect(env);
 const unix = process.platform !== "win32" ? it.effect : it.effect.skip;
 
@@ -516,8 +477,7 @@ it.effect("loop exits immediately when last assistant has stop finish", () =>
 
         const result = yield* prompt.loop({ sessionID: chat.id });
         expect(result.info.role).toBe("assistant");
-        if (result.info.role === "assistant")
-          expect(result.info.finish).toBe("stop");
+        if (result.info.role === "assistant") expect(result.info.finish).toBe("stop");
         expect(yield* test.calls).toBe(0);
       }),
     { git: true },
@@ -707,15 +667,13 @@ it.effect("test failures with exit", () =>
 ```typescript
 import { Effect, Exit, Cause } from "effect";
 
-class MyError extends Schema.TaggedErrorClass<MyError>()("MyError", {
+class MyError extends Schema.TaggedError<MyError>()("MyError", {
   code: Schema.String,
 }) {}
 
 it.effect("assert typed errors", () =>
   Effect.gen(function* () {
-    const result = yield* Effect.fail(new MyError({ code: "test" })).pipe(
-      Effect.exit,
-    );
+    const result = yield* Effect.fail(new MyError({ code: "test" })).pipe(Effect.exit);
 
     expect(Exit.isFailure(result)).toBe(true);
     if (Exit.isFailure(result)) {
@@ -774,7 +732,8 @@ it.effect("scoped resource management", () =>
 ### Test Clocks for Time-Based Effects
 
 ```typescript
-import { Effect, Fiber, TestClock } from "effect";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 
 it.effect("time-based test", () =>
   Effect.gen(function* () {
@@ -792,7 +751,7 @@ it.effect("time-based test", () =>
     // Assert results
     const result = yield* Fiber.join(fiber);
     expect(result).toBeDefined();
-  }).pipe(Effect.provide(TestClock.layer)),
+  }).pipe(Effect.provide(TestClock.layer())),
 );
 ```
 
@@ -801,20 +760,17 @@ it.effect("time-based test", () =>
 ```typescript
 import { Effect, Random } from "effect";
 
-it.effect("reproducible random", () =>
-  Effect.gen(function* () {
-    // Seed random for reproducibility
-    const random = yield* Random.Random;
-    yield* Random.setSeed(12345);
+const reproducibleRandom = Effect.gen(function* () {
+  const random = yield* Random.Random;
+  const value1 = yield* random.nextIntBetween(1, 100);
+  const value2 = yield* random.nextIntBetween(1, 100);
 
-    const value1 = yield* random.nextIntBetween(1, 100);
-    const value2 = yield* random.nextIntBetween(1, 100);
+  // Values are reproducible because the seed is attached to the program.
+  expect(value1).toBeDefined();
+  expect(value2).toBeDefined();
+});
 
-    // Values will always be the same in this test
-    expect(value1).toBe(42); // Deterministic
-    expect(value2).toBe(17); // Deterministic
-  }),
-);
+it.effect("reproducible random", () => reproducibleRandom.pipe(Random.withSeed(12345)));
 ```
 
 ### Forking and Joining Fibers
@@ -860,10 +816,7 @@ it.effect("concurrent callers", () =>
 
     // Run multiple operations concurrently
     const [a, b] = yield* Effect.all(
-      [
-        prompt.loop({ sessionID: chat.id }),
-        prompt.loop({ sessionID: chat.id }),
-      ],
+      [prompt.loop({ sessionID: chat.id }), prompt.loop({ sessionID: chat.id })],
       { concurrency: "unbounded" },
     );
 
@@ -1012,7 +965,7 @@ it.effect("uses session", () =>
 
 ### Complete Test File Structure
 
-**File: `packages/opencode/test/session/processor-effect.test.ts`**
+**File: `opencode:test/session/processor-effect.test.ts`**
 
 ```typescript
 import { NodeFileSystem } from "@effect/platform-node";
@@ -1174,10 +1127,7 @@ function defer<T>() {
 }
 
 // Test data factories
-const user = Effect.fn("TestSession.user")(function* (
-  sessionID: SessionID,
-  text: string,
-) {
+const user = Effect.fn("TestSession.user")(function* (sessionID: SessionID, text: string) {
   const session = yield* Session.Service;
   const msg = yield* session.updateMessage({
     id: MessageID.ascending(),
@@ -1240,9 +1190,7 @@ const llm = Layer.unwrap(
       return Effect.void;
     });
 
-    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) =>
-      push(stream(...items)),
-    );
+    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) => push(stream(...items)));
     return Layer.mergeAll(
       Layer.succeed(
         LLM.Service,
@@ -1268,21 +1216,9 @@ const llm = Layer.unwrap(
   }),
 );
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer));
-const infra = Layer.mergeAll(
-  NodeFileSystem.layer,
-  CrossSpawnSpawner.defaultLayer,
-);
-const deps = Layer.mergeAll(
-  Session.defaultLayer,
-  Snapshot.defaultLayer,
-  AgentSvc.defaultLayer,
-  Permission.layer,
-  Plugin.defaultLayer,
-  Config.defaultLayer,
-  status,
-  llm,
-).pipe(Layer.provideMerge(infra));
+// `infra` and `deps` are the pair from "Layer.mergeAll for Test Dependencies" above. This
+// file exercises only the processor, so the ladder stops here instead of stacking the
+// SessionPrompt feature layers.
 const env = SessionProcessor.layer.pipe(Layer.provideMerge(deps));
 
 // Create test helper
@@ -1341,83 +1277,76 @@ it.effect("session.processor effect tests capture llm input cleanly", () => {
         expect(value).toBe("continue");
         expect(calls).toBe(1);
         expect(inputs).toHaveLength(1);
-        expect(inputs[0].messages).toStrictEqual([
-          { role: "user", content: "hi" },
-        ]);
-        expect(
-          parts.some((part) => part.type === "text" && part.text === "hello"),
-        ).toBe(true);
+        expect(inputs[0].messages).toStrictEqual([{ role: "user", content: "hi" }]);
+        expect(parts.some((part) => part.type === "text" && part.text === "hello")).toBe(true);
       }),
     { git: true },
   );
 });
 
-it.effect(
-  "session.processor effect tests stop after token overflow requests compaction",
-  () => {
-    return provideTmpdirInstance(
-      (dir) =>
-        Effect.gen(function* () {
-          const test = yield* TestLLM;
-          const processors = yield* SessionProcessor.Service;
-          const session = yield* Session.Service;
+it.effect("session.processor effect tests stop after token overflow requests compaction", () => {
+  return provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const test = yield* TestLLM;
+        const processors = yield* SessionProcessor.Service;
+        const session = yield* Session.Service;
 
-          yield* test.reply(
-            start(),
-            {
-              type: "finish-step",
-              finishReason: "stop",
-              rawFinishReason: "stop",
-              response: {
-                id: "res",
-                modelId: "test-model",
-                timestamp: new Date(),
-              },
-              providerMetadata: undefined,
-              usage: usage(100, 0, 100),
+        yield* test.reply(
+          start(),
+          {
+            type: "finish-step",
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            response: {
+              id: "res",
+              modelId: "test-model",
+              timestamp: new Date(),
             },
-            textStart(),
-            textDelta("t", "after"),
-            textEnd(),
-          );
+            providerMetadata: undefined,
+            usage: usage(100, 0, 100),
+          },
+          textStart(),
+          textDelta("t", "after"),
+          textEnd(),
+        );
 
-          const chat = yield* session.create({});
-          const parent = yield* user(chat.id, "compact");
-          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir));
-          const mdl = model(20);
-          const handle = yield* processors.create({
-            assistantMessage: msg,
+        const chat = yield* session.create({});
+        const parent = yield* user(chat.id, "compact");
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir));
+        const mdl = model(20);
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        });
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
             sessionID: chat.id,
-            model: mdl,
-          });
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "compact" }],
+          tools: {},
+        });
 
-          const value = yield* handle.process({
-            user: {
-              id: parent.id,
-              sessionID: chat.id,
-              role: "user",
-              time: parent.time,
-              agent: parent.agent,
-              model: { providerID: ref.providerID, modelID: ref.modelID },
-            } satisfies MessageV2.User,
-            sessionID: chat.id,
-            model: mdl,
-            agent: agent(),
-            system: [],
-            messages: [{ role: "user", content: "compact" }],
-            tools: {},
-          });
+        const parts = yield* Effect.promise(() => MessageV2.parts(msg.id));
 
-          const parts = yield* Effect.promise(() => MessageV2.parts(msg.id));
-
-          expect(value).toBe("compact");
-          expect(parts.some((part) => part.type === "text")).toBe(false);
-          expect(parts.some((part) => part.type === "step-finish")).toBe(true);
-        }),
-      { git: true },
-    );
-  },
-);
+        expect(value).toBe("compact");
+        expect(parts.some((part) => part.type === "text")).toBe(false);
+        expect(parts.some((part) => part.type === "step-finish")).toBe(true);
+      }),
+    { git: true },
+  );
+});
 ```
 
 ### How Tests Provide Complex Dependency Graphs
@@ -1438,8 +1367,7 @@ const mcp = Layer.succeed(
     getPrompt: () => Effect.succeed(undefined),
     readResource: () => Effect.succeed(undefined),
     startAuth: () => Effect.die("unexpected MCP auth in prompt-effect tests"),
-    authenticate: () =>
-      Effect.die("unexpected MCP auth in prompt-effect tests"),
+    authenticate: () => Effect.die("unexpected MCP auth in prompt-effect tests"),
     finishAuth: () => Effect.die("unexpected MCP auth in prompt-effect tests"),
     removeAuth: () => Effect.void,
     supportsOAuth: () => Effect.succeed(false),
@@ -1478,42 +1406,9 @@ const filetime = Layer.succeed(
   }),
 );
 
-const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer));
-const infra = Layer.mergeAll(
-  NodeFileSystem.layer,
-  CrossSpawnSpawner.defaultLayer,
-);
-const deps = Layer.mergeAll(
-  Session.defaultLayer,
-  Snapshot.defaultLayer,
-  AgentSvc.defaultLayer,
-  Command.defaultLayer,
-  Permission.layer,
-  Plugin.defaultLayer,
-  Config.defaultLayer,
-  filetime,
-  lsp,
-  mcp,
-  AppFileSystem.defaultLayer,
-  status,
-  llm,
-).pipe(Layer.provideMerge(infra));
-
-// Each feature layer builds on the previous
-const registry = ToolRegistry.layer.pipe(Layer.provideMerge(deps));
-const trunc = Truncate.layer.pipe(Layer.provideMerge(deps));
-const proc = SessionProcessor.layer.pipe(Layer.provideMerge(deps));
-const compact = SessionCompaction.layer.pipe(
-  Layer.provideMerge(proc),
-  Layer.provideMerge(deps),
-);
-const env = SessionPrompt.layer.pipe(
-  Layer.provideMerge(compact),
-  Layer.provideMerge(proc),
-  Layer.provideMerge(registry),
-  Layer.provideMerge(trunc),
-  Layer.provideMerge(deps),
-);
+// Layer ladder as in "Layer.mergeAll for Test Dependencies" above: `infra`, then `deps`
+// with this file's extra entries (Command.defaultLayer, filetime, lsp, mcp,
+// AppFileSystem.defaultLayer), then registry / trunc / proc / compact, then `env`.
 ```
 
 ### Testing Effectified Services vs Old Async Tests
@@ -1554,10 +1449,7 @@ it.effect("concurrent loop callers get same result", () =>
         yield* seed(chat.id, { finish: "stop" });
 
         const [a, b] = yield* Effect.all(
-          [
-            prompt.loop({ sessionID: chat.id }),
-            prompt.loop({ sessionID: chat.id }),
-          ],
+          [prompt.loop({ sessionID: chat.id }), prompt.loop({ sessionID: chat.id })],
           {
             concurrency: "unbounded",
           },
@@ -1574,21 +1466,27 @@ it.effect("concurrent loop callers get same result", () =>
 
 ### Key Differences
 
-1. **Cleanup Management**: Old pattern uses `await using` with `tmpdir`, new pattern uses `Effect.scoped` and `provideTmpdirInstance`
-2. **Dependency Access**: Old pattern uses `Instance.provide`, new pattern uses `yield*` to access services
-3. **Concurrency**: Old pattern uses `Promise.all`, new pattern uses `Effect.all` with controlled concurrency
+1. **Cleanup Management**: Old pattern uses `await using` with `tmpdir`, new pattern uses
+   `Effect.scoped` and `provideTmpdirInstance`
+2. **Dependency Access**: Old pattern uses `Instance.provide`, new pattern uses `yield*` to access
+   services
+3. **Concurrency**: Old pattern uses `Promise.all`, new pattern uses `Effect.all` with controlled
+   concurrency
 4. **Error Handling**: New pattern uses `Effect.exit` and `Cause` for structured error handling
-5. **Mocking**: Old pattern uses function spies, new pattern uses `Layer.succeed` to replace services
+5. **Mocking**: Old pattern uses function spies, new pattern uses `Layer.succeed` to replace
+   services
 
 ---
 
 ## Summary
 
-Migrating tests to Effect v4 with @effect/vitest patterns from opencode involves:
+Migrating tests to Effect with @effect/vitest patterns from opencode involves:
 
-1. **Setup**: Create a test helper like `testEffect` that wraps your test framework with layer provisioning
+1. **Setup**: Create a test helper like `testEffect` that wraps your test framework with layer
+   provisioning
 2. **Dependencies**: Build layer stacks with `Layer.mergeAll` and `Layer.provideMerge`
-3. **Mocking**: Use `Layer.succeed` and `Layer.unwrap` to create test-specific service implementations
+3. **Mocking**: Use `Layer.succeed` and `Layer.unwrap` to create test-specific service
+   implementations
 4. **Tests**: Write tests with `Effect.gen` and `yield*` for dependency injection
 5. **Assertions**: Use standard assertions plus `Effect.exit` and `Cause` for failure testing
 6. **Cleanup**: Use `Effect.scoped` and `Effect.addFinalizer` for automatic resource cleanup
@@ -1605,44 +1503,47 @@ The key benefits are:
 
 ## Test Setup Helpers (Effect-Native)
 
-When tests need a temporary working directory, real subprocess setup, or any other resource that's typically managed with `try/finally` in async tests, replace those with `Effect.acquireRelease` / `Effect.addFinalizer` so cleanup ties to the test scope.
+When tests need a temporary working directory, real subprocess setup, or any other resource that's
+typically managed with `try/finally` in async tests, replace those with `Effect.acquireRelease` /
+`Effect.addFinalizer` so cleanup ties to the test scope.
 
 ### `tmpdirScoped` — replace `try/finally` for tmpdir
 
 Pattern:
 
 ```ts
-import { Effect, FileSystem } from "effect"
-import * as path from "node:path"
-import * as os from "node:os"
+import { Effect, FileSystem } from "effect";
+import * as path from "node:path";
+import * as os from "node:os";
 
 const tmpdirScoped = (options?: { git?: boolean }) =>
   Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const dir = path.join(os.tmpdir(), `test-${crypto.randomUUID()}`)
-    yield* fs.makeDirectory(dir, { recursive: true })
+    const fs = yield* FileSystem.FileSystem;
+    const dir = path.join(os.tmpdir(), `test-${crypto.randomUUID()}`);
+    yield* fs.makeDirectory(dir, { recursive: true });
 
     yield* Effect.addFinalizer(() =>
       fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore),
-    )
+    );
 
     if (options?.git) {
-      yield* runGitInit(dir)
+      yield* runGitInit(dir);
     }
 
-    return dir
-  })
+    return dir;
+  });
 
 // Usage in a test
 it.live("uses tmpdir", () =>
   Effect.gen(function* () {
-    const dir = yield* tmpdirScoped({ git: true })
+    const dir = yield* tmpdirScoped({ git: true });
     // ... test logic ...
   }).pipe(Effect.scoped),
-)
+);
 ```
 
-The `Effect.addFinalizer` runs when the enclosing scope closes — `it.live` and friends wrap each test body in `Effect.scoped`, so the directory is cleaned up exactly once per test.
+The `Effect.addFinalizer` runs when the enclosing scope closes — `it.live` and friends wrap each
+test body in `Effect.scoped`, so the directory is cleaned up exactly once per test.
 
 This replaces:
 
@@ -1665,33 +1566,35 @@ When porting test setup, swap raw `fs`/`Bun` calls for the `FileSystem` service:
 ```ts
 // ❌ Mixed async/Effect — easy to get cleanup wrong
 test("foo", async () => {
-  await Bun.write(path, contents)
+  await Bun.write(path, contents);
   // ...
-})
+});
 
 // ✅ Pure Effect.gen
 const writeJson = Effect.fnUntraced(function* (file: string, value: unknown) {
-  const fs = yield* FileSystem.FileSystem
-  yield* fs.makeDirectory(path.dirname(file), { recursive: true })
-  yield* fs.writeFileString(file, JSON.stringify(value, null, 2))
-})
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+  yield* fs.writeFileString(file, JSON.stringify(value, null, 2));
+});
 
 it.live("foo", () =>
   Effect.gen(function* () {
-    const dir = yield* tmpdirScoped()
-    yield* writeJson(path.join(dir, "config.json"), { ok: true })
+    const dir = yield* tmpdirScoped();
+    yield* writeJson(path.join(dir, "config.json"), { ok: true });
     // ...
   }).pipe(Effect.scoped),
-)
+);
 ```
 
-You'll need `NodeFileSystem.layer` (or `BunFileSystem.layer`) somewhere in your test base layer for `FileSystem.FileSystem` to resolve.
+You'll need `NodeFileSystem.layer` (or `BunFileSystem.layer`) somewhere in your test base layer for
+`FileSystem.FileSystem` to resolve.
 
 ---
 
-## v4 Test Pitfalls
+## Test Pitfalls
 
-The three most common ways tests go wrong during a v3 → v4 or async → Effect migration. All three are silent — the test passes or fails for the wrong reason.
+The three most common ways tests go wrong during an async → Effect migration. All three are silent —
+the test passes or fails for the wrong reason.
 
 ### 1. Layer override is silently no-op
 
@@ -1708,7 +1611,8 @@ it.effect("uses custom storage", () =>
 )
 ```
 
-This silently uses the outer `Storage` from `testEffect`'s memoized layer, **not** `customStorage`. v4's auto-memoization across `Effect.provide` calls means the inner provide hits the cache.
+This silently uses the outer `Storage` from `testEffect`'s memoized layer, **not** `customStorage`.
+Automatic memoization across `Effect.provide` calls means the inner provide hits the cache.
 
 Fix: wrap the override in `Layer.fresh(...)` (preferred for reuse) or pass `{ local: true }`:
 
@@ -1726,25 +1630,27 @@ When migrating from a facade-style async service:
 
 ```ts
 // Old facade
-const result = yield* Effect.tryPromise(() => Storage.read(key))
+const result = yield * Effect.tryPromise(() => Storage.read(key));
 
 // After service migration — service method already returns Effect
-const storage = yield* Storage.Service
-const result = yield* Effect.tryPromise(() => storage.read(key))  // ❌ double-wrapped
+const storage = yield * Storage.Service;
+const result = yield * Effect.tryPromise(() => storage.read(key)); // ❌ double-wrapped
 ```
 
-The fix is just `yield* storage.read(key)`. If you find yourself reaching for `Effect.tryPromise` on a service method, you're treating the new API like the old one.
+The fix is just `yield* storage.read(key)`. If you find yourself reaching for `Effect.tryPromise` on
+a service method, you're treating the new API like the old one.
 
 ### 3. Raw `.layer` test callers break silently in the type checker
 
-Tests that compose `Service.layer` directly (rather than `Service.defaultLayer`) become under-specified the moment the service gains a new dependency:
+Tests that compose `Service.layer` directly (rather than `Service.defaultLayer`) become
+under-specified the moment the service gains a new dependency:
 
 ```ts
 const env = Layer.mergeAll(
-  Caller.layer,           // ❌ bare — missing newly-added Storage dep
+  Caller.layer, // ❌ bare — missing newly-added Storage dep
   Bus.defaultLayer,
   Config.defaultLayer,
-)
+);
 ```
 
 `tsgo` flags this as:
@@ -1755,22 +1661,23 @@ Two fixes:
 
 ```ts
 // (a) Switch to defaultLayer
-const env = Layer.mergeAll(Caller.defaultLayer, Bus.defaultLayer, Config.defaultLayer)
+const env = Layer.mergeAll(Caller.defaultLayer, Bus.defaultLayer, Config.defaultLayer);
 
 // (b) Or add the new dep explicitly
 const env = Layer.mergeAll(
   Caller.layer.pipe(Layer.provide(Storage.defaultLayer)),
   Bus.defaultLayer,
   Config.defaultLayer,
-)
+);
 ```
 
-This shows up the most after a service migration that adds a yield. The error message is precise; the surprise is that an apparently-unrelated test starts failing.
+This shows up the most after a service migration that adds a yield. The error message is precise;
+the surprise is that an apparently-unrelated test starts failing.
 
 ---
 
 ## Related
 
-- `references/patterns/service-effectification.md` — what tests are testing
-- `references/ecosystem/vitest.md` — `@effect/vitest` reference
+- [service-effectification.md](service-effectification.md) — what tests are testing
+- [vitest.md](../ecosystem/vitest.md) — `@effect/vitest` reference
 - `~/Developer/effect/migration/layer-memoization.md` — auto-memoization explainer

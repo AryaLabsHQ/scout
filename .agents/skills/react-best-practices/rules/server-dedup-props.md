@@ -1,65 +1,53 @@
 ---
-title: Avoid Duplicate Serialization in RSC Props
+title: Avoid Duplicate Derived Data in Loader Returns
 impact: LOW
-impactDescription: reduces network payload by avoiding duplicate serialization
-tags: server, rsc, serialization, props, client-components
+impactDescription: reduces serialized payload size
+tags: server, loaders, serialization, route-context
 ---
 
-## Avoid Duplicate Serialization in RSC Props
+## Avoid Duplicate Derived Data in Loader Returns
 
-**Impact: LOW (reduces network payload by avoiding duplicate serialization)**
+Loader return values are serialized into the router cache and dehydrated HTML. Passing the same
+underlying data twice under different derived shapes duplicates payload. Derive filtered or sorted
+views in the component that consumes them.
 
-RSC→client serialization deduplicates by object reference, not value. Same reference = serialized once; new reference = serialized again. Do transformations (`.toSorted()`, `.filter()`, `.map()`) in client, not server.
-
-**Incorrect (duplicates array):**
-
-```tsx
-// RSC: sends 6 strings (2 arrays × 3 items)
-<ClientList usernames={usernames} usernamesOrdered={usernames.toSorted()} />
-```
-
-**Correct (sends 3 strings):**
+**Incorrect (duplicates array in loader output):**
 
 ```tsx
-// RSC: send once
-<ClientList usernames={usernames} />
-
-// Client: transform there
-'use client'
-const sorted = useMemo(() => [...usernames].sort(), [usernames])
+export const Route = createFileRoute("/users")({
+  loader: async () => {
+    const users = await fetchUsers();
+    return {
+      users,
+      activeUsers: users.filter((u) => u.active),
+      sortedNames: users.toSorted((a, b) => a.name.localeCompare(b.name)).map((u) => u.name),
+    };
+  },
+});
 ```
 
-**Nested deduplication behavior:**
-
-Deduplication works recursively. Impact varies by data type:
-
-- `string[]`, `number[]`, `boolean[]`: **HIGH impact** - array + all primitives fully duplicated
-- `object[]`: **LOW impact** - array duplicated, but nested objects deduplicated by reference
+**Correct (return source data once):**
 
 ```tsx
-// string[] - duplicates everything
-usernames={['a','b']} sorted={usernames.toSorted()} // sends 4 strings
+export const Route = createFileRoute("/users")({
+  loader: async () => {
+    const users = await fetchUsers();
+    return { users };
+  },
+});
 
-// object[] - duplicates array structure only
-users={[{id:1},{id:2}]} sorted={users.toSorted()} // sends 2 arrays + 2 unique objects (not 4)
+function UsersPage() {
+  const { users } = Route.useLoaderData();
+  const activeUsers = users.filter((u) => u.active);
+  const sortedNames = users.toSorted((a, b) => a.name.localeCompare(b.name)).map((u) => u.name);
+  // ...
+}
 ```
 
-**Operations breaking deduplication (create new references):**
+**Operations that inflate loader payloads:**
 
 - Arrays: `.toSorted()`, `.filter()`, `.map()`, `.slice()`, `[...arr]`
-- Objects: `{...obj}`, `Object.assign()`, `structuredClone()`, `JSON.parse(JSON.stringify())`
+- Objects: `{...obj}`, `structuredClone()`, `JSON.parse(JSON.stringify())`
 
-**More examples:**
-
-```tsx
-// ❌ Bad
-<C users={users} active={users.filter(u => u.active)} />
-<C product={product} productName={product.name} />
-
-// ✅ Good
-<C users={users} />
-<C product={product} />
-// Do filtering/destructuring in client
-```
-
-**Exception:** Pass derived data when transformation is expensive or client doesn't need original.
+**Exception:** Precompute in the loader when the transformation is expensive and every consumer
+needs the derived shape.

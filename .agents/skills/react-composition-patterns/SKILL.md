@@ -1,25 +1,20 @@
 ---
 name: react-composition-patterns
 description:
-  React composition patterns that scale. Use when refactoring components with
-  boolean prop proliferation, building flexible component libraries, or
-  designing reusable APIs. Triggers on tasks involving compound components,
-  render props, context providers, or component architecture. Includes React 19
-  API changes.
+  React composition patterns that scale. Use when refactoring components with boolean prop
+  proliferation, building flexible component libraries, or designing reusable APIs. Triggers on
+  tasks involving compound components, render props, context providers, or component architecture.
+  Includes React 19 API changes.
 license: MIT
-metadata:
-  author: vercel
-  version: '1.0.0'
 ---
 
-# React Composition Patterns
+# React composition patterns
 
-Composition patterns for building flexible, maintainable React components. Avoid
-boolean prop proliferation by using compound components, lifting state, and
-composing internals. These patterns make codebases easier for both humans and AI
-agents to work with as they scale.
+Composition patterns for building flexible, maintainable React components. Avoid boolean prop
+proliferation by using compound components, lifting state, and composing internals. These patterns
+make codebases easier for both humans and AI agents to work with as they scale.
 
-## When to Apply
+## When to apply
 
 Reference these guidelines when:
 
@@ -29,61 +24,60 @@ Reference these guidelines when:
 - Reviewing component architecture
 - Working with compound components or context providers
 
-## Rule Categories by Priority
+## Rule categories by priority
 
 | Priority | Category                | Impact | Prefix          |
 | -------- | ----------------------- | ------ | --------------- |
-| 1        | Component Architecture  | HIGH   | `architecture-` |
-| 2        | State Management        | MEDIUM | `state-`        |
-| 3        | Implementation Patterns | MEDIUM | `patterns-`     |
+| 1        | Component architecture  | HIGH   | `architecture-` |
+| 2        | State management        | MEDIUM | `state-`        |
+| 3        | Implementation patterns | MEDIUM | `patterns-`     |
 | 4        | React 19 APIs           | MEDIUM | `react19-`      |
 
-## Quick Reference
+## Quick reference
 
-### 1. Component Architecture (HIGH)
+### 1. Component architecture
 
-- `architecture-avoid-boolean-props` - Don't add boolean props to customize
-  behavior; use composition
-- `architecture-compound-components` - Structure complex components with shared
-  context
+HIGH.
 
-### 2. State Management (MEDIUM)
+- `architecture-avoid-boolean-props`. Avoid boolean props that encode structural modes. Keep genuine
+  binary state explicit.
+- `architecture-compound-components`. Structure complex components with shared context.
 
-- `state-decouple-implementation` - Provider is the only place that knows how
-  state is managed
-- `state-context-interface` - Define generic interface with state, actions, meta
-  for dependency injection
-- `state-lift-state` - Move state into provider components for sibling access
+### 2. State management
 
-### 3. Implementation Patterns (MEDIUM)
+MEDIUM.
 
-- `patterns-explicit-variants` - Create explicit variant components instead of
-  boolean modes
-- `patterns-children-over-render-props` - Use children for composition instead
-  of renderX props
+- `state-decouple-implementation`. Keep shared-state storage details behind the provider contract.
+- `state-context-interface`. Define a generic interface with state, actions, and meta for dependency
+  injection.
+- `state-lift-state`. Move state into provider components for sibling access.
 
-### 4. React 19 APIs (MEDIUM)
+### 3. Implementation patterns
 
-> **⚠️ React 19+ only.** Skip this section if using React 18 or earlier.
+MEDIUM.
 
-- `react19-no-forwardref` - Don't use `forwardRef`; use `use()` instead of `useContext()`
+- `patterns-explicit-variants`. Create explicit variant components instead of boolean modes.
+- `patterns-children-over-render-props`. Use children for composition instead of `renderX` props.
 
-## How to Use
+### 4. React 19 APIs
 
-Read individual rule files for detailed explanations and code examples:
+MEDIUM. React 19 and later only. Skip this section if using React 18 or earlier.
 
-```
+- `react19-no-forwardref`. Prefer ref-as-prop for new React 19 function components. Keep
+  `forwardRef` where compatibility requires it. Use `useContext` for ordinary reads. Use
+  `use(Context)` when conditional placement is useful.
+
+## How to use
+
+Read individual rule files for detailed explanations and code examples.
+
+```text
 rules/architecture-avoid-boolean-props.md
 rules/state-context-interface.md
 ```
 
-Each rule file contains:
+Each rule file contains a brief explanation of why it matters, an incorrect code example, a correct
+code example, and additional context.
 
-- Brief explanation of why it matters
-- Incorrect code example with explanation
-- Correct code example with explanation
-- Additional context and references
-
-## Full Compiled Document
-
-For the complete guide with all rules expanded: `AGENTS.md`
+Load only the rules relevant to the task. Do not read the full `rules/` tree unless auditing or
+doing a broad perf review.

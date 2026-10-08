@@ -1,13 +1,32 @@
 # RPC
 
-> **Unstable in v4.** Typed bidirectional RPC over HTTP/WebSocket/Worker. Module lives at `effect/unstable/rpc` — there is no separate `@effect/rpc` package in v4.
+## Table of Contents
 
-**Source:** `effect/unstable/rpc/*` - see `~/Developer/effect/packages/effect/src/unstable/rpc/`
+- [Decision Tree](#decision-tree)
+- [Define a procedure](#define-a-procedure)
+- [Build a group](#build-a-group)
+- [Implement handlers](#implement-handlers)
+- [Run the server (HTTP)](#run-the-server-http)
+- [Build a client](#build-a-client)
+- [Streaming responses](#streaming-responses)
+- [Middleware](#middleware)
+- [Serialization](#serialization)
+- [Workers](#workers)
+- [Testing handlers](#testing-handlers)
+- [Typed errors on the client](#typed-errors-on-the-client)
+- [Pitfalls](#pitfalls)
+- [See Also](#see-also)
+
+  > **API stability: `@stability unstable`.** Typed bidirectional RPC over HTTP/WebSocket/Worker.
+  > Module lives at `effect/rpc` — there is no separate `@effect/rpc` package in v4.
+
+**Source:** `effect/rpc/*` - see `~/Developer/effect/packages/effect/src/rpc/`
+
 - `Rpc.ts` — single procedure definition (`Rpc.make`)
 - `RpcGroup.ts` — collect procedures into a group; implement handlers (`group.toLayer`)
 - `RpcServer.ts` — server runtime (`layer`, `layerHttp`)
 - `RpcClient.ts` — client (`make`, `makeNoSerialization`); `Protocol` service
-- `RpcSerialization.ts` — `json` / `ndjson` / `jsonRpc` / `makeMsgPack` codecs
+- `RpcSerialization.ts` — JSON / NDJSON / JSON-RPC / `layerSchemaBinary`
 - `RpcMiddleware.ts` — typed middleware (auth, logging, etc.)
 - `RpcSchema.ts` — `RpcSchema.Stream` for streaming responses
 - `RpcWorker.ts` — Web Worker / Worker Thread transport
@@ -27,132 +46,137 @@ What do I need?
 ├─ Build a client                             → RpcClient.make(group)
 ├─ Stream a response                          → Rpc.make with success: RpcSchema.Stream(...)
 ├─ Add middleware                             → rpc.middleware(MyMiddleware) / group.middleware(...)
-├─ Test handlers without network              → RpcTest.makeClient(group, handlers)
-└─ Switch serialization                       → provide RpcSerialization.json / ndjson / jsonRpc / makeMsgPack
+├─ Test handlers without network              → RpcTest.makeClient(group) + provide group.toLayer(...)
+└─ Switch serialization                       → provide `layerJson` / `layerNdjson` / `layerJsonRpc` / `layerSchemaBinary`
 ```
 
 ## Define a procedure
 
 ```ts
-import { Rpc, RpcSchema } from "effect/unstable/rpc"
-import { Schema } from "effect"
+import { Rpc, RpcSchema } from "effect/rpc";
+import { Schema } from "effect";
 
 const GetUser = Rpc.make("GetUser", {
-  payload: { id: Schema.String },              // Schema.Struct fields are inferred
+  payload: { id: Schema.String }, // Schema.Struct fields are inferred
   success: Schema.Struct({ id: Schema.String, name: Schema.String }),
-  error: Schema.String,                         // optional; defaults to Schema.Never
-})
+  error: Schema.String, // optional; defaults to Schema.Never
+});
 
 const StreamLogs = Rpc.make("StreamLogs", {
   payload: { service: Schema.String },
   success: Schema.String,
-  stream: true,                                 // wraps success in RpcSchema.Stream
-})
+  stream: true, // wraps success in RpcSchema.Stream
+});
 ```
 
-The `payload`, `success`, `error` schemas are typed end-to-end. The client and server share these definitions via the `Rpc` value (or a `RpcGroup` containing many).
+The `payload`, `success`, `error` schemas are typed end-to-end. The client and server share these
+definitions via the `Rpc` value (or a `RpcGroup` containing many).
 
-`primaryKey: (payload) => string` — opt-in deduplication key. When provided, identical calls in flight collapse into one (caching/batching).
+`primaryKey: (payload) => string` — opt-in deduplication key. When provided, identical calls in
+flight collapse into one (caching/batching).
 
 ## Build a group
 
 ```ts
-import { RpcGroup } from "effect/unstable/rpc"
+import { RpcGroup } from "effect/rpc";
 
-const UserApi = RpcGroup.make(GetUser, ListUsers, CreateUser, StreamLogs)
+const UserApi = RpcGroup.make(GetUser, ListUsers, CreateUser, StreamLogs);
 
 // Combinators
-UserApi.add(DeleteUser)
-UserApi.merge(BillingApi)
-UserApi.omit("DeleteUser")
-UserApi.prefix("user.")            // tags become "user.GetUser", etc.
-UserApi.middleware(AuthMiddleware) // applies to all procedures so far
+UserApi.add(DeleteUser);
+UserApi.merge(BillingApi);
+UserApi.omit("DeleteUser");
+UserApi.prefix("user."); // tags become "user.GetUser", etc.
+UserApi.middleware(AuthMiddleware); // applies to all procedures so far
 ```
 
 ## Implement handlers
 
 ```ts
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect";
 
 const UserApiLive = UserApi.toLayer({
   GetUser: ({ id }) =>
-    Effect.gen(function*() {
-      const db = yield* Database
-      return yield* db.findUser(id)
+    Effect.gen(function* () {
+      const db = yield* Database;
+      return yield* db.findUser(id);
     }),
-  ListUsers: () =>
-    Effect.succeed([{ id: "u1", name: "Alice" }]),
+  ListUsers: () => Effect.succeed([{ id: "u1", name: "Alice" }]),
   CreateUser: ({ name }) =>
-    Effect.gen(function*() {
-      const db = yield* Database
-      return yield* db.createUser({ name })
+    Effect.gen(function* () {
+      const db = yield* Database;
+      return yield* db.createUser({ name });
     }),
-  StreamLogs: ({ service }) =>
-    Stream.fromIterable([`[${service}] ready`, `[${service}] tick`]),
-})
+  StreamLogs: ({ service }) => Stream.fromIterable([`[${service}] ready`, `[${service}] tick`]),
+});
 // UserApiLive: Layer<Rpc.ToHandler<UserApi>, never, Database>
 ```
 
-`toLayer` returns a `Layer` that provides the handler service for the group. Dependencies (e.g. `Database`) bubble up into the layer's requirements.
+`toLayer` returns a `Layer` that provides the handler service for the group. Dependencies (e.g.
+`Database`) bubble up into the layer's requirements.
 
-`toLayerHandler(tag, build)` implements a single handler — useful when handlers live in different files.
+`toLayer` / `toHandlers` iterate the group's registered RPC definitions — extra keys on the handler
+object are ignored. Handlers are registered in group definition order, not object key order.
+
+`toLayerHandler(tag, build)` implements a single handler — useful when handlers live in different
+files.
 
 ## Run the server (HTTP)
 
 ```ts
-import { Effect, Layer } from "effect"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
-import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
-import { createServer } from "node:http"
+import { Effect, Layer } from "effect";
+import { HttpRouter, HttpServer } from "effect/http";
+import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
+import { RpcSerialization, RpcServer } from "effect/rpc";
+import { createServer } from "node:http";
 
 const ServerLive = Layer.mergeAll(
   RpcServer.layerHttp({
     group: UserApi,
     path: "/rpc",
-    protocol: "websocket",       // or "http"
+    protocol: "http",
   }),
-  RpcSerialization.layer(RpcSerialization.json),
+  RpcSerialization.layerJson,
   HttpRouter.layer,
   NodeHttpServer.layer(() => createServer(), { port: 3000 }),
   UserApiLive,
-)
+);
 
-NodeRuntime.runMain(Layer.launch(ServerLive))
+NodeRuntime.runMain(Layer.launch(ServerLive));
 ```
 
-`RpcServer.layer(group, options)` is the lower-level form — use when you bring your own `Protocol` (e.g. Worker, custom socket).
+`RpcServer.layer(group, options)` is the lower-level form — use when you bring your own `Protocol`
+(e.g. Worker, custom socket).
 
 ## Build a client
 
 ```ts
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
-import { Effect, Layer } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { RpcClient, RpcSerialization } from "effect/rpc";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient, HttpClient } from "effect/http";
 
 const ClientLive = Layer.mergeAll(
-  RpcClient.layerProtocolHttp({                   // not shown above; ships in RpcClient
-    url: "http://localhost:3000/rpc",
-    protocol: "websocket",
-  }),
-  RpcSerialization.layer(RpcSerialization.json),
+  RpcClient.layerProtocolHttp({ url: "http://localhost:3000/rpc" }),
+  RpcSerialization.layerJson,
   FetchHttpClient.layer,
-)
+);
 
-const program = Effect.gen(function*() {
-  const client = yield* RpcClient.make(UserApi)
-  const user = yield* client.GetUser({ id: "u1" })
-  console.log(user.name)
-})
+const program = Effect.gen(function* () {
+  const client = yield* RpcClient.make(UserApi);
+  const user = yield* client.GetUser({ id: "u1" });
+  console.log(user.name);
+}).pipe(Effect.provide(ClientLive));
 ```
 
-The returned `client` is a record indexed by procedure tag. Each method is `(payload) => Effect<Success, Error | RpcClientError>`. Streaming procedures return `Stream<A, E>` instead.
+The returned `client` is a record indexed by procedure tag. Each method is
+`(payload) => Effect<Success, Error | RpcClientError>`. Streaming procedures return `Stream<A, E>`
+instead.
 
 ## Streaming responses
 
 ```ts
-import { RpcSchema } from "effect/unstable/rpc"
-import { Schema } from "effect"
+import { Rpc, RpcClient, RpcGroup } from "effect/rpc"
+import { Effect, Schema, Stream } from "effect"
 
 const Tail = Rpc.make("Tail", {
   payload: { file: Schema.String },
@@ -160,12 +184,14 @@ const Tail = Rpc.make("Tail", {
   stream: true,                                 // server returns Stream / Queue
 })
 
+const TailApi = RpcGroup.make(Tail)
+
 // Server handler (toLayer)
 const handlers = { Tail: ({ file }) => Stream.fromAsyncIterable(...) }
 
 // Client
 const program = Effect.gen(function*() {
-  const client = yield* RpcClient.make(MyGroup)
+  const client = yield* RpcClient.make(TailApi)
   yield* client.Tail({ file: "/var/log/app.log" }).pipe(
     Stream.tap((line) => Effect.logInfo(line)),
     Stream.runDrain,
@@ -173,59 +199,71 @@ const program = Effect.gen(function*() {
 })
 ```
 
-`Effect`-of-`Queue.Dequeue` is also accepted as a stream handler return type — useful when the producer needs explicit lifecycle control.
+`Effect`-of-`Queue.Dequeue` is also accepted as a stream handler return type — useful when the
+producer needs explicit lifecycle control.
 
 ## Middleware
 
 ```ts
-import { RpcMiddleware } from "effect/unstable/rpc"
-import { Context, Effect, Schema } from "effect"
+import { RpcMiddleware } from "effect/rpc";
+import { Context, Effect, Layer, Schema } from "effect";
 
 class CurrentUser extends Context.Service<CurrentUser, { id: string }>()("CurrentUser") {}
 
-const AuthMiddleware = RpcMiddleware.make({
-  failure: Schema.String,                       // error type added to procedures
-  provides: CurrentUser,                        // service exposed to handlers
-})((options) =>
-  Effect.gen(function*() {
-    const auth = options.headers["authorization"]
-    if (!auth) return yield* Effect.fail("missing auth")
-    return CurrentUser.of({ id: parseUserId(auth) })
-  }),
-)
+class AuthMiddleware extends RpcMiddleware.Service<
+  AuthMiddleware,
+  {
+    provides: CurrentUser;
+  }
+>()("AuthMiddleware", { error: Schema.String }) {}
 
-const SecureApi = UserApi.middleware(AuthMiddleware)
+const AuthLayer = Layer.succeed(AuthMiddleware)(
+  AuthMiddleware.of((effect, options) => {
+    const auth = options.headers.authorization;
+    if (auth === undefined) return Effect.fail("missing auth");
+    return Effect.provideService(effect, CurrentUser, { id: parseUserId(auth) });
+  }),
+);
+
+const SecureApi = UserApi.middleware(AuthMiddleware);
 // All procedures in SecureApi now receive CurrentUser in their handler context.
 ```
 
 ## Serialization
 
 ```ts
-import { RpcSerialization } from "effect/unstable/rpc"
+import { RpcSerialization } from "effect/rpc";
 
-RpcSerialization.json                           // default
-RpcSerialization.ndjson                         // newline-delimited JSON
-RpcSerialization.jsonRpc()                      // JSON-RPC 2.0 wire format
-RpcSerialization.makeMsgPack({ useRecords: false }) // MessagePack via msgpackr
+RpcSerialization.json; // serializer value used by layerJson
+RpcSerialization.ndjson; // newline-delimited JSON
+RpcSerialization.jsonRpc(); // JSON-RPC 2.0 wire format
+RpcSerialization.layerSchemaBinary({ maxFrameSize: 16 * 1024 * 1024 });
 ```
 
-Provide via `RpcSerialization.layer(...)` on both server and client. Wire format must match — mismatched serializers give cryptic errors.
+Provide `layerJson`, `layerNdjson`, or `layerJsonRpc(...)` on both server and client. The
+`layerSchemaBinary(...)` constructor is also a Layer. Wire format must match. Custom serializers
+must implement `codecFor`; built-in JSON codecs already do.
 
-> **Cloudflare Workers note:** `makeMsgPack({ useRecords: false })` disables msgpackr's JIT codegen (which uses `new Function`), required for CF Workers with `compatibility_date >= 2025-06-01`.
+> SchemaBinary is the current compact binary option. It fingerprints RPC envelopes, allows optional
+> payload fingerprints, and defaults to a 16 MiB frame limit; use `"unbounded"` only when the
+> transport already supplies an appropriate limit.
 
 ## Workers
 
 ```ts
-import { RpcWorker } from "effect/unstable/rpc"
-import { Schema } from "effect"
+import { RpcWorker } from "effect/rpc";
+import { Effect, Schema } from "effect";
 
-// Server side (inside the worker)
+// Client side: encode an initial message for the worker.
 class WorkerInit extends Schema.Class<WorkerInit>("WorkerInit")({
   config: Schema.String,
 }) {}
 
-const InitLayer = RpcWorker.layerInitialMessage(WorkerInit)
-// Server reads the initial message from main thread and provides it.
+const InitLayer = RpcWorker.layerInitialMessage(
+  WorkerInit,
+  Effect.succeed(new WorkerInit({ config: "worker-config" })),
+);
+// The worker side reads it with RpcWorker.initialMessage(WorkerInit).
 ```
 
 Pair with `RpcServer.layer` (no HTTP) and a Worker-flavored `Protocol`.
@@ -233,21 +271,25 @@ Pair with `RpcServer.layer` (no HTTP) and a Worker-flavored `Protocol`.
 ## Testing handlers
 
 ```ts
-import { RpcTest } from "effect/unstable/rpc"
+import { Effect } from "effect";
+import { RpcTest } from "effect/rpc";
 
-const testClient = yield* RpcTest.makeClient(UserApi, {
+const Handlers = UserApi.toLayer({
   GetUser: ({ id }) => Effect.succeed({ id, name: "test" }),
   // ...rest
-})
+});
 
-const user = yield* testClient.GetUser({ id: "u1" })
+const program = Effect.gen(function* () {
+  const testClient = yield* RpcTest.makeClient(UserApi).pipe(Effect.provide(Handlers));
+  return yield* testClient.GetUser({ id: "u1" });
+});
 // No network, no serialization. Direct dispatch.
 ```
 
 ## Typed errors on the client
 
 ```ts
-import { RpcClientError } from "effect/unstable/rpc"
+import { RpcClientError } from "effect/rpc"
 
 const program = client.GetUser({ id: "u1" }).pipe(
   Effect.catchTag("RpcClientError", (e) => Effect.logError("rpc failed", e)),
@@ -255,18 +297,27 @@ const program = client.GetUser({ id: "u1" }).pipe(
 )
 ```
 
-`RpcClientError` covers serialization, transport, and protocol failures. `RpcClientDefect` is for hard programming errors (e.g. bad codec).
+`RpcClientError` covers serialization, transport, and protocol failures. `RpcClientDefect` is for
+hard programming errors (e.g. bad codec). HTTP clients now defect if the response stream closes
+before a terminal RPC response message arrives; do not treat early-close as a typed service error.
 
 ## Pitfalls
 
-- **Server and client must share the same `RpcGroup` value.** Define procedures in a shared package; import from both.
-- **Serialization on both ends.** Forgetting to provide `RpcSerialization.layer(...)` on the client is the most common "it just hangs" bug.
-- **Stream handlers must consume their downstream.** A handler returning a `Stream` that's never started won't push data. Use `RpcSchema.Stream` and ensure the producer is lazy.
-- **WebSocket vs HTTP.** `protocol: "http"` is request/response. `protocol: "websocket"` is the only way to support streaming + interruption. If you don't stream, HTTP is simpler.
-- **Middleware type-leak.** `group.middleware(M)` mutates the requirements of every procedure. Putting middleware behind `prefix` is fine; mixing prefixed and unprefixed in the same group with different middleware sets gets confusing fast — split into multiple groups.
+- **Server and client must share the same `RpcGroup` value.** Define procedures in a shared package;
+  import from both.
+- **Serialization on both ends.** Forgetting to provide the same `RpcSerialization.layer*` on the
+  client is the most common "it just hangs" bug.
+- **Stream handlers must consume their downstream.** A handler returning a `Stream` that's never
+  started won't push data. Use `RpcSchema.Stream` and ensure the producer is lazy.
+- **WebSocket vs HTTP.** `protocol: "http"` is request/response. `protocol: "websocket"` is the only
+  way to support streaming + interruption. If you don't stream, HTTP is simpler.
+- **Middleware type-leak.** `group.middleware(M)` mutates the requirements of every procedure.
+  Putting middleware behind `prefix` is fine; mixing prefixed and unprefixed in the same group with
+  different middleware sets gets confusing fast — split into multiple groups.
 
 ## See Also
 
-- [Platform](./platform.md) — `HttpRouter`, `HttpClient` services that the HTTP RPC transport builds on
+- [Platform](./platform.md) — `HttpRouter`, `HttpClient` services that the HTTP RPC transport builds
+  on
 - [Schema](../schema/schema.md) — payload / success / error schemas
 - [Stream](../streaming/stream.md) — streaming RPC results

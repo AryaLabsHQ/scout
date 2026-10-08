@@ -1,0 +1,6 @@
+interface:
+  display_name: "Effect"
+  short_description: "Effect-TS v4 patterns, layers, and architecture."
+  default_prompt: "Use $effect for Effect-TS v4 guidance on this TypeScript work."
+policy:
+  allow_implicit_invocation: false
