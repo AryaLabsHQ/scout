@@ -1,0 +1,48 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "triggerOnUpdates": true,
+  "statusCheck": true,
+  "updateExistingSummaryComment": true,
+  "disabledLabels": ["no-greptile"],
+  "ignorePatterns": "**/node_modules/**\n**/.turbo/**\n**/dist/**\n**/.output/**\n**/.nitro/**\n**/.tanstack/**\n**/.vinxi/**\n**/coverage/**\n**/.wrangler/**\n**/.scratchpad/**\n**/routeTree.gen.ts\n**/*.gen.ts\n**/bun.lock",
+  "instructions": "Scout is a self-hosted Bun + Effect control plane (apps/agent, apps/hub, apps/web; packages/plugin-*; e2e lab; deploy kit). Follow root AGENTS.md and the nearest scoped AGENTS.md. Prefer logic findings over style.",
+  "rules": [
+    {
+      "id": "scout-effect-services",
+      "rule": "Services use Effect Context.Service with a static layer, composed with Layer.provide, Layer.provideMerge, or Layer.mergeAll from apps/agent/src/main.ts and apps/hub/src/app.ts. Flag ad-hoc singletons, app-local service registries, and dependencies hand-wired inside route handlers or React components.",
+      "scope": ["apps/**", "packages/**"],
+      "severity": "high"
+    },
+    {
+      "id": "scout-shared-contracts",
+      "rule": "Cross-runtime payload and result shapes live in packages/shared or packages/plugin-sdk. Flag new system, alert, terminal, operator, or plugin contracts declared inside an app when a shared schema or exported type should own them.",
+      "scope": ["apps/**", "packages/shared/**", "packages/plugin-sdk/**"],
+      "severity": "high"
+    },
+    {
+      "id": "scout-rest-vs-rpc",
+      "rule": "REST in apps/hub/src/routes.ts is bootstrap and diagnostics. Live browser and agent traffic goes through the shared RPC groups (browser to hub, agent to hub, hub to agent) and the hub, agent, and web RPC layers. Flag new websocket behavior added in routes.ts or as a bespoke browser socket.",
+      "scope": ["apps/hub/**", "apps/agent/**", "apps/web/**", "packages/shared/src/rpc/**"],
+      "severity": "high"
+    },
+    {
+      "id": "scout-plugin-surface",
+      "rule": "A plugin's manifest.ts and contracts.ts are its public surface. Plugin ids, actions, streams, and permission names stay there. Flag duplicates that drift from the contract, and app-specific imports inside package contracts.",
+      "scope": [
+        "packages/plugin-sdk/**",
+        "packages/plugin-docker/**",
+        "packages/plugin-edge/**",
+        "packages/plugin-k8s/**",
+        "packages/plugin-systemd/**"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "scout-deploy-generic",
+      "rule": "deploy/ is a generic self-host kit: systemd unit templates, env examples, and a Caddyfile example. Flag host-specific config, real tokens, audience tags, or site secrets committed under deploy/. Examples stay placeholders.",
+      "scope": ["deploy/**"],
+      "severity": "high"
+    }
+  ]
+}
