@@ -1,0 +1,103 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Root agent guide: topology, Effect and contract invariants, dev commands.",
+      "scope": ["**/*"]
+    },
+    {
+      "path": "apps/agent/AGENTS.md",
+      "description": "Node agent runtime, collectors, plugin host, and hub connection.",
+      "scope": ["apps/agent/**"]
+    },
+    {
+      "path": "apps/hub/AGENTS.md",
+      "description": "Hub service graph, database, REST bootstrap, and plugin registry.",
+      "scope": ["apps/hub/**"]
+    },
+    {
+      "path": "apps/hub/src/rpc/AGENTS.md",
+      "description": "Browser and agent websocket RPC layers.",
+      "scope": ["apps/hub/src/rpc/**"]
+    },
+    {
+      "path": "apps/hub/src/services/AGENTS.md",
+      "description": "Hub services, including operator runtime, sessions, models, and skills.",
+      "scope": ["apps/hub/src/services/**"]
+    },
+    {
+      "path": "apps/web/AGENTS.md",
+      "description": "Dashboard structure, SSR bootstrap, and AtomRpc client usage.",
+      "scope": ["apps/web/**"]
+    },
+    {
+      "path": "apps/web/src/routes/AGENTS.md",
+      "description": "Route-file conventions and page boundaries.",
+      "scope": ["apps/web/src/routes/**"]
+    },
+    {
+      "path": "apps/web/src/components/operator/AGENTS.md",
+      "description": "Operator chat UI components and tiptap extensions.",
+      "scope": ["apps/web/src/components/operator/**"]
+    },
+    {
+      "path": "packages/shared/AGENTS.md",
+      "description": "Shared Effect Schema models and RPC groups.",
+      "scope": ["packages/shared/**"]
+    },
+    {
+      "path": "packages/shared/src/rpc/AGENTS.md",
+      "description": "RPC group definitions and the duplex socket adapter.",
+      "scope": ["packages/shared/src/rpc/**"]
+    },
+    {
+      "path": "packages/shared/src/schemas/AGENTS.md",
+      "description": "Canonical Effect Schema wire models.",
+      "scope": ["packages/shared/src/schemas/**"]
+    },
+    {
+      "path": "packages/plugin-sdk/AGENTS.md",
+      "description": "Plugin runtime, loader, and manifest helpers.",
+      "scope": ["packages/plugin-sdk/**"]
+    },
+    {
+      "path": "packages/plugin-docker/AGENTS.md",
+      "description": "Docker plugin manifest, contracts, and runtime adapters.",
+      "scope": ["packages/plugin-docker/**"]
+    },
+    {
+      "path": "packages/plugin-edge/AGENTS.md",
+      "description": "Edge plugin for cloudflared and Caddy health.",
+      "scope": ["packages/plugin-edge/**"]
+    },
+    {
+      "path": "packages/plugin-k8s/AGENTS.md",
+      "description": "Kubernetes plugin manifest, contracts, and runtime adapters.",
+      "scope": ["packages/plugin-k8s/**"]
+    },
+    {
+      "path": "packages/plugin-systemd/AGENTS.md",
+      "description": "systemd plugin manifest, contracts, and runtime adapters.",
+      "scope": ["packages/plugin-systemd/**"]
+    },
+    {
+      "path": "docs/architecture.md",
+      "description": "System architecture: hub, web, agent, and the same-origin proxy split.",
+      "scope": ["apps/**", "packages/**", "deploy/**", "e2e/**"]
+    },
+    {
+      "path": "docs/operator/architecture.md",
+      "description": "Operator harness, durable approvals, and session projection.",
+      "scope": [
+        "apps/hub/src/services/**",
+        "apps/web/src/components/operator/**",
+        "packages/shared/src/schemas/operator.ts"
+      ]
+    },
+    {
+      "path": "e2e/AGENTS.md",
+      "description": "Local Docker lab. Privileged and host-coupled; not production behavior.",
+      "scope": ["e2e/**"]
+    }
+  ]
+}
