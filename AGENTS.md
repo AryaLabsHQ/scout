@@ -1,7 +1,7 @@
 # SCOUT KNOWLEDGE BASE
 
-**Generated:** 2026-04-07
-**Commit:** c0c923b
+**Generated:** 2026-10-08
+**Commit:** 25932e9
 
 ## OVERVIEW
 
@@ -22,8 +22,7 @@ scout/
 │   ├── plugin-sdk/ # plugin contracts, loader, execution/runtime helpers
 │   ├── plugin-*    # concrete plugins: docker, edge, k8s, systemd
 │   └── shared/     # Effect Schema models and RPC groups shared by all runtimes
-├── e2e/            # multi-node Docker harness for end-to-end testing
-└── .scratchpad/    # ephemeral research and milestone notes; not product code
+└── e2e/            # multi-node Docker harness for end-to-end testing
 ```
 
 ## WHERE TO LOOK
