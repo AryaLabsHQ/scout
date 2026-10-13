@@ -90,7 +90,6 @@ Services are built with `Context.Service`, dependencies are composed with `Layer
 - `typescript` is pinned to the same exact 7.x version in every workspace, and every `typecheck` script runs TS 7's native `tsc`. TS 7 does not ship the TypeScript 5/6 JS API (`import "typescript"` exports only `version`); a tool that needs that API gets a scoped `typescript@6` alias for that tool alone.
 - `bunfig.toml` turns off Bun's global install store: `bun-types` and several React libraries import undeclared type packages (`undici-types`, `@types/react`), which only resolve from the per-repo `node_modules/.bun` store.
 - This is a Bun workspace repo with Turbo orchestration. Root scripts cover `dev`, `build`, `typecheck`, and formatting/linting; most tests run from workspace roots.
-- `.scratchpad/` is active working memory and research, not shipped code. Do not rely on it for product behavior.
 - New shared system, alert, terminal, or plugin contracts belong in `packages/shared` first, then consumers update from there.
 - New plugin surfaces should keep the existing export shape from `src/index.ts` and avoid app-specific imports inside package contracts.
 
