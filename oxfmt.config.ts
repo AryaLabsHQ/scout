@@ -12,8 +12,6 @@ export default defineConfig({
   trailingComma: "all",
   sortPackageJson: true,
   ignorePatterns: [
-    // Shared, gitignored agent working memory.
-    ".scratchpad/**",
     // Vendored agent skills, installed from skills-lock.json.
     ".agents/**",
     ".claude/**",
