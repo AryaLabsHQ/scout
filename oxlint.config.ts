@@ -11,8 +11,6 @@ export default defineConfig({
     "react/react-in-jsx-scope": "off",
   },
   ignorePatterns: [
-    // Shared, gitignored agent working memory.
-    ".scratchpad/**",
     // Vendored agent skills, installed from skills-lock.json.
     ".agents/**",
     ".claude/**",

@@ -5,7 +5,7 @@
   "statusCheck": true,
   "updateExistingSummaryComment": true,
   "disabledLabels": ["no-greptile"],
-  "ignorePatterns": "**/node_modules/**\n**/.turbo/**\n**/dist/**\n**/.output/**\n**/.nitro/**\n**/.tanstack/**\n**/.vinxi/**\n**/coverage/**\n**/.wrangler/**\n**/.scratchpad/**\n**/routeTree.gen.ts\n**/*.gen.ts\n**/bun.lock",
+  "ignorePatterns": "**/node_modules/**\n**/.turbo/**\n**/dist/**\n**/.output/**\n**/.nitro/**\n**/.tanstack/**\n**/.vinxi/**\n**/coverage/**\n**/.wrangler/**\n**/routeTree.gen.ts\n**/*.gen.ts\n**/bun.lock",
   "instructions": "Scout is a self-hosted Bun + Effect control plane (apps/agent, apps/hub, apps/web; packages/plugin-*; e2e lab; deploy kit). Follow root AGENTS.md and the nearest scoped AGENTS.md. Prefer logic findings over style.",
   "rules": [
     {
