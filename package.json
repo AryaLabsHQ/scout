@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run test",
+    "typecheck": "tsc --noEmit && turbo run typecheck",
     "test": "turbo run test",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",

@@ -8,7 +8,7 @@ lives in the `AGENTS.md` files and `docs/`.
 Install Bun at the version in `package.json`'s `packageManager`, then:
 
 ```bash
-bun install
+bun install --frozen-lockfile
 ```
 
 The README's [Typical Local Flow](./README.md#typical-local-flow) runs the hub and dashboard
@@ -19,15 +19,25 @@ locally. The [E2E lab](./e2e/README.md) adds disposable Docker nodes when you ne
 CI runs these on every pull request. Run them before you push:
 
 ```bash
-bun run format:check   # `bun run format` fixes it
-bun run lint
-bun run typecheck
-bun run test
-bun run --cwd apps/web build
+bun run check
+bun run build
 ```
 
-Add or update tests with behavior changes. The E2E lab is not part of CI; mention in the pull
-request if you exercised a change there.
+`check` runs `format:check`, `lint`, `typecheck`, and the normal offline `test` suite. Use
+`bun run format` or `bun run lint:fix` to apply fixes. `typecheck` checks root tooling configs and
+scripts with the workspace's TypeScript version, then checks the workspaces. `build` compiles
+the hub and agent binaries and produces the web app output.
+
+Add or update tests with behavior changes. The Docker E2E lab is a separate, manual check; follow
+[`e2e/README.md`](./e2e/README.md) and mention in the pull request if you exercised it. Specialized
+checks added as package scripts should use explicit suffixes such as `test:e2e`.
+
+## Distribution
+
+Scout is an application installed from source; see the [self-hosting guide](./deploy/README.md).
+The workspace packages are internal source dependencies, not an npm release surface. Package
+artifact checks and `release:version` / `release:publish` commands do not apply. CI validates
+contributions and builds the application; it does not publish packages or deploy Scout.
 
 ## Pull requests
 

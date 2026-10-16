@@ -78,10 +78,13 @@ bun install
 # Run all workspace dev tasks
 bun run dev
 
-# Build all workspaces
+# Run the contributor gate (format, lint, types, offline tests)
+bun run check
+
+# Build hub/agent binaries and the web app
 bun run build
 
-# Typecheck all workspaces
+# Typecheck root tooling and all workspaces
 bun run typecheck
 
 # Run every workspace's tests
