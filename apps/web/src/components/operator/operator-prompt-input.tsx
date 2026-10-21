@@ -38,7 +38,7 @@ import {
 } from "./tiptap"
 import "./tiptap/prompt-input.css"
 import { formatImageBytes, readDraftImage, validatePrompt, type DraftImage } from "./operator-image-input"
-import type { PendingPrompt } from "./operator-prompt-drafts"
+import type { PendingPrompt, PromptDraft } from "./operator-prompt-drafts"
 import { OperatorImagePreview } from "./operator-image-preview"
 
 const HISTORY_KEY = "scout:operator:prompt-history"
@@ -75,6 +75,8 @@ interface OperatorPromptInputProps {
   admissionError: string | null
   storageError: string | null
   pendingAttempt: PendingPrompt | null
+  conflicts: ReadonlyArray<PromptDraft>
+  onRecover: (draftId: string) => void
   onRetry: () => void
   onDiscard: () => void
   setDraft: (v: string) => void
@@ -113,6 +115,8 @@ export function OperatorPromptInput({
   admissionError,
   storageError,
   pendingAttempt,
+  conflicts,
+  onRecover,
   onRetry,
   onDiscard,
   setDraft,
@@ -447,6 +451,29 @@ export function OperatorPromptInput({
         <p role="alert" className="px-4 pt-3 text-xs text-err">
           {admissionError}
         </p>
+      ) : null}
+      {conflicts.length ? (
+        <section
+          aria-label="Saved operator drafts"
+          className="space-y-2 px-4 pt-3 text-xs text-muted-foreground"
+        >
+          <p role="status">
+            Conflicting drafts were preserved. Restore one to edit it; your current edits stay saved
+            separately.
+          </p>
+          {conflicts.map((saved) => (
+            <Button
+              key={saved.id}
+              size="sm"
+              variant="outline"
+              className="block max-w-full truncate"
+              onClick={() => onRecover(saved.id)}
+            >
+              Restore saved draft: {saved.text.slice(0, 100) || "Image-only prompt"} · {saved.images.length}{" "}
+              images
+            </Button>
+          ))}
+        </section>
       ) : null}
       {pendingAttempt ? (
         <div className="space-y-2 px-4 pt-3 text-xs text-muted-foreground">

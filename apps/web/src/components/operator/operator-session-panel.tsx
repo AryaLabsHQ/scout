@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useHotkeys } from "react-hotkeys-hook"
 import { Link } from "@tanstack/react-router"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -103,6 +103,9 @@ function OperatorSessionPanelContent({
   const [isUpdatingSkills, setIsUpdatingSkills] = useState(false)
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null)
+
+  // Resizable groups are registered globally; page and drawer must have distinct IDs.
+  const layoutId = useId()
 
   // Collapsible metadata panel
   const metaPanelRef = usePanelRef()
@@ -518,8 +521,16 @@ function OperatorSessionPanelContent({
         }
       />
 
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" id="operator-session">
-        <ResizablePanel id="operator-timeline" minSize="300px" defaultSize="70%">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="min-h-0 flex-1"
+        id={`operator-session-${layoutId}`}
+      >
+        <ResizablePanel
+          id={`${layoutId}-timeline`}
+          minSize="300px"
+          defaultSize={variant === "page" ? "70%" : "100%"}
+        >
           <div className="flex h-full min-h-0 flex-col">
             <div
               ref={scrollContainerRef}
@@ -611,6 +622,8 @@ function OperatorSessionPanelContent({
               admissionError={promptDraft.error}
               storageError={promptDraft.storageError}
               pendingAttempt={promptDraft.pending}
+              conflicts={promptDraft.conflicts}
+              onRecover={controller.recover}
               onRetry={() => void controller.retry(sendPrompt)}
               onDiscard={controller.discard}
               setDraft={setDraft}
@@ -641,7 +654,7 @@ function OperatorSessionPanelContent({
           <>
             <ResizableHandle />
             <ResizablePanel
-              id="operator-sidebar"
+              id={`${layoutId}-sidebar`}
               panelRef={metaPanelRef}
               minSize="200px"
               defaultSize="30%"

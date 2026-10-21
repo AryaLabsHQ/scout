@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { OperatorPromptDraftProvider } from "@/components/operator/use-operator-prompt-draft"
 import { OperatorShell } from "@/components/operator/operator-shell"
 
 import appCss from "@/styles.css?url"
@@ -110,25 +111,27 @@ function AppLayout() {
   const { initialSystems, initialAlerts } = Route.useLoaderData()
   return (
     <AtomProvider initialState={{ systems: initialSystems, alerts: initialAlerts }}>
-      <OperatorProvider>
-        <TerminalProvider>
-          <CommandPaletteProvider>
-            <TooltipProvider>
-              <ConfirmProvider>
-                <div className="flex h-dvh flex-col">
-                  <TopBar />
-                  <SessionBanner />
-                  <AppContent />
-                </div>
-                <BottomNav />
-                <OperatorDrawer />
-                <CommandPalette />
-                <Toaster />
-              </ConfirmProvider>
-            </TooltipProvider>
-          </CommandPaletteProvider>
-        </TerminalProvider>
-      </OperatorProvider>
+      <OperatorPromptDraftProvider>
+        <OperatorProvider>
+          <TerminalProvider>
+            <CommandPaletteProvider>
+              <TooltipProvider>
+                <ConfirmProvider>
+                  <div className="flex h-dvh flex-col">
+                    <TopBar />
+                    <SessionBanner />
+                    <AppContent />
+                  </div>
+                  <BottomNav />
+                  <OperatorDrawer />
+                  <CommandPalette />
+                  <Toaster />
+                </ConfirmProvider>
+              </TooltipProvider>
+            </CommandPaletteProvider>
+          </TerminalProvider>
+        </OperatorProvider>
+      </OperatorPromptDraftProvider>
     </AtomProvider>
   )
 }

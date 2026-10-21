@@ -47,6 +47,8 @@ function renderInput(overrides: Partial<Parameters<typeof OperatorPromptInput>[0
       admissionError: null,
       storageError: null,
       pendingAttempt: null,
+      conflicts: [],
+      onRecover: () => {},
       onRetry: () => {},
       onDiscard: () => {},
       ...overrides,
@@ -90,6 +92,17 @@ describe("operator composer component boundary", () => {
     expect(html).toContain("original")
     expect(html).toContain("Connection lost")
     expect(html).toContain("Reload recovery unavailable")
+  })
+
+  it("shows conflict recovery beside the active composer without exposing image bytes or session IDs", () => {
+    const html = renderInput({
+      conflicts: [{ id: "other-draft", text: "preserved question", images: [image] }],
+    })
+    expect(html).toContain("Saved operator drafts")
+    expect(html).toContain("Conflicting drafts were preserved")
+    expect(html).toContain("Restore saved draft: preserved question")
+    expect(html).toContain("1 images")
+    expect(html).not.toContain(image.data)
   })
 
   it("shows fixed model capability and queued image counts", () => {

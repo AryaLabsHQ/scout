@@ -33,6 +33,219 @@ async function controller(sessionId = "session-a", database = new IDBFactory()) 
 }
 
 describe("recoverable operator admission", () => {
+  it("preserves another restored controller's uncertain attempt when saving newer edits", async () => {
+    const { value: first, database } = await controller()
+    const { value: second } = await controller("session-a", database)
+    first.edit("original A", [image])
+    let original: unknown
+    await first.submit(DEFAULT_IMAGE_INPUT, async (payload) => {
+      original = payload
+      throw new Error("lost acknowledgement")
+    })
+    second.edit("independent B", [{ ...image, id: "b", data: "BAUG" }])
+    await second.flush()
+    const restored = new PromptDraftController("session-a", database)
+    await restored.restore()
+    expect(restored.getSnapshot().pending?.draft.text).toBe("original A")
+    expect(restored.getSnapshot().draft.text).toBe("independent B")
+    let retried: unknown
+    await restored.retry(async (payload) => {
+      retried = payload
+    })
+    expect(retried).toEqual(original)
+    expect(restored.getSnapshot().draft.images[0]?.data).toBe("BAUG")
+  })
+
+  it("atomically chooses one attempt across controllers restored before either sends", async () => {
+    const { value: first, database } = await controller()
+    const { value: second } = await controller("session-a", database)
+    first.edit("A", [image])
+    second.edit("B", [{ ...image, id: "b", data: "BAUG" }])
+    let calls = 0
+    await Promise.all(
+      [first, second].map((value) =>
+        value.submit(DEFAULT_IMAGE_INPUT, async () => {
+          calls++
+          throw new Error("lost acknowledgement")
+        }),
+      ),
+    )
+    expect(calls).toBe(1)
+    const saved = await readPromptDraft(database, "session-a")
+    expect(saved?.pending).not.toBeNull()
+    const restored = new PromptDraftController("session-a", database)
+    await restored.restore()
+    expect([restored.getSnapshot().draft.text, restored.getSnapshot().pending?.draft.text].sort()).toEqual([
+      "A",
+      "B",
+    ])
+  })
+
+  it("a delayed acknowledgement cannot clear a replacement attempt from another controller", async () => {
+    const { value: first, database } = await controller()
+    first.edit("A", [image])
+    const started = deferred<void>()
+    const admission = deferred<void>()
+    const sending = first.submit(DEFAULT_IMAGE_INPUT, async () => {
+      started.resolve()
+      await admission.promise
+    })
+    await started.promise
+    const { value: second } = await controller("session-a", database)
+    second.discard()
+    second.edit("B", [{ ...image, id: "b", data: "BAUG" }])
+    await second.submit(DEFAULT_IMAGE_INPUT, async () => {
+      throw new Error("offline")
+    })
+    const replacement = second.getSnapshot().pending
+    admission.resolve()
+    await sending
+    expect((await readPromptDraft(database, "session-a"))?.pending).toEqual(replacement)
+  })
+
+  it("preserves both independently edited drafts and lets recovery swap them without losing bytes", async () => {
+    const database = new IDBFactory()
+    await writePromptDraft(database, "session-a", { version: 1, draft, pending: null })
+    const { value: first } = await controller("session-a", database)
+    const { value: second } = await controller("session-a", database)
+    first.edit("A", [image])
+    second.edit("B", [{ ...image, id: "b", data: "BAUG" }])
+    await Promise.all([first.flush(), second.flush()])
+    const { value: restored } = await controller("session-a", database)
+    const before = restored.getSnapshot()
+    expect([before.draft.text, ...before.conflicts.map((other) => other.text)].sort()).toEqual(["A", "B"])
+    const conflict = before.conflicts[0]!
+    restored.recover(conflict.id)
+    await restored.flush()
+    const { value: reloaded } = await controller("session-a", database)
+    expect(reloaded.getSnapshot().draft).toEqual(conflict)
+    expect(reloaded.getSnapshot().conflicts).toEqual([before.draft])
+  })
+
+  it("sends only one new ID for the same saved draft restored in two controllers, without notifications", async () => {
+    const database = new IDBFactory()
+    await writePromptDraft(database, "session-a", { version: 1, draft, pending: null })
+    const { value: first } = await controller("session-a", database)
+    const { value: second } = await controller("session-a", database)
+    const admission = deferred<void>()
+    const started = deferred<void>()
+    const sent: string[] = []
+    const send = async (payload: { requestId?: string }) => {
+      sent.push(payload.requestId!)
+      started.resolve()
+      await admission.promise
+    }
+    const firstSending = first.submit(DEFAULT_IMAGE_INPUT, send)
+    const secondSending = second.submit(DEFAULT_IMAGE_INPUT, send)
+    await started.promise
+    expect(sent).toHaveLength(1)
+    admission.resolve()
+    await Promise.all([firstSending, secondSending])
+    expect(sent).toHaveLength(1)
+    // A stale retry must also consult IndexedDB after the winner acknowledged.
+    await second.retry(async () => {
+      throw new Error("must not resend settled draft")
+    })
+    expect(second.getSnapshot().pending).toBeNull()
+    expect((await readPromptDraft(database, "session-a"))?.pending).toBeNull()
+  })
+
+  it("a stale discard cannot clear another tab's newer pending envelope", async () => {
+    const { value: first, database } = await controller()
+    first.edit("A", [image])
+    await first.submit(DEFAULT_IMAGE_INPUT, async () => {
+      throw new Error("offline")
+    })
+    const { value: stale } = await controller("session-a", database)
+    const { value: second } = await controller("session-a", database)
+    second.discard()
+    second.edit("B", [{ ...image, data: "BAUG" }])
+    await second.submit(DEFAULT_IMAGE_INPUT, async () => {
+      throw new Error("offline")
+    })
+    const replacement = second.getSnapshot().pending
+    stale.discard()
+    await stale.flush()
+    expect((await readPromptDraft(database, "session-a"))?.pending).toEqual(replacement)
+    expect(stale.getSnapshot().pending).toEqual(replacement)
+    let payload: unknown
+    await stale.retry(async (sent) => {
+      payload = sent
+    })
+    expect(payload).toMatchObject({
+      requestId: replacement?.requestId,
+      text: "B",
+      images: [{ data: "BAUG" }],
+    })
+  })
+
+  it("retries the same in-memory envelope after storage recovers and retains newer saved edits", async () => {
+    const { value, database } = await controller()
+    const failingWrite = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError")
+    })
+    let original: unknown
+    try {
+      value.edit("A", [image])
+      await value.submit(DEFAULT_IMAGE_INPUT, async (payload) => {
+        original = payload
+        throw new Error("offline")
+      })
+    } finally {
+      failingWrite.mockRestore()
+    }
+    value.edit("B", [{ ...image, data: "BAUG" }])
+    await value.flush()
+    expect(value.getSnapshot().storageError).not.toBeNull()
+    let retried: unknown
+    await value.retry(async (payload) => {
+      retried = payload
+    })
+    expect(retried).toEqual(original)
+    const { value: restored } = await controller("session-a", database)
+    expect(restored.getSnapshot().draft.text).toBe("B")
+    expect(restored.getSnapshot().draft.images[0]?.data).toBe("BAUG")
+    expect(restored.getSnapshot().pending).toBeNull()
+  })
+
+  it("upgrades an actual version-one database and retains a legacy pending key and image bytes", async () => {
+    const database = new IDBFactory()
+    await new Promise<void>((resolve, reject) => {
+      const open = database.open("scout:operator:prompt-drafts", 1)
+      open.onupgradeneeded = () => open.result.createObjectStore("sessions")
+      open.onerror = () => reject(open.error)
+      open.onsuccess = () => {
+        const transaction = open.result.transaction("sessions", "readwrite")
+        transaction
+          .objectStore("sessions")
+          .put(
+            { version: 1, draft: null, pending: { sessionId: "session-a", requestId: "legacy-key", draft } },
+            "session-a",
+          )
+        transaction.oncomplete = () => {
+          open.result.close()
+          resolve()
+        }
+        transaction.onerror = () => reject(transaction.error)
+      }
+    })
+    const { value } = await controller("session-a", database)
+    value.edit("new B", [{ ...image, data: "BAUG" }])
+    let retried: unknown
+    await value.retry(async (payload) => {
+      retried = payload
+    })
+    expect(retried).toEqual({
+      sessionId: "session-a",
+      requestId: "legacy-key",
+      text: draft.text,
+      images: [{ mimeType: image.mimeType, data: image.data }],
+    })
+    const { value: restored } = await controller("session-a", database)
+    expect(restored.getSnapshot().draft.text).toBe("new B")
+    expect((await readPromptDraft(database, "session-a"))?.version).toBe(2)
+  })
+
   it("keeps the immutable original bytes and request ID after an uncertain response", async () => {
     const { value } = await controller()
     value.edit("inspect", [image])
@@ -56,13 +269,41 @@ describe("recoverable operator admission", () => {
     const { value } = await controller()
     value.edit("inspect", [image])
     const admission = deferred<void>()
-    const sent = value.submit(DEFAULT_IMAGE_INPUT, () => admission.promise)
+    let calls = 0
+    const sent = value.submit(DEFAULT_IMAGE_INPUT, () => {
+      calls++
+      return admission.promise
+    })
     value.edit("changed", [image])
     value.edit("inspect", [image])
     admission.resolve()
     await sent
+    expect(calls).toBe(1)
     expect(value.getSnapshot().draft.text).toBe("inspect")
     expect(value.getSnapshot().draft.images).toEqual([image])
+  })
+
+  it("reserves the submitted revision before notifying views that may edit the composer", async () => {
+    const { value, database } = await controller()
+    value.edit("original", [image])
+    let edited = false
+    const unsubscribe = value.subscribe(() => {
+      if (!edited && value.getSnapshot().sending) {
+        edited = true
+        value.edit("newer edit", [{ ...image, data: "BAUG" }])
+      }
+    })
+    let calls = 0
+    await value.submit(DEFAULT_IMAGE_INPUT, async (payload) => {
+      calls++
+      expect(payload.text).toBe("original")
+      expect(payload.images?.[0]?.data).toBe(image.data)
+    })
+    unsubscribe()
+    expect(calls).toBe(1)
+    const { value: restored } = await controller("session-a", database)
+    expect(restored.getSnapshot().draft.text).toBe("newer edit")
+    expect(restored.getSnapshot().draft.images[0]?.data).toBe("BAUG")
   })
 
   it("saves pending admission before invoking RPC and reloads it without duplicate payload copies", async () => {
