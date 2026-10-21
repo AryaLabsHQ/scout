@@ -16,7 +16,7 @@
  * owning both lifecycle (DB state) and typed client storage.
  */
 
-import { Effect, Fiber, Layer, Ref } from "effect"
+import { Effect, Fiber, Layer, Ref, Semaphore } from "effect"
 import * as Context from "effect/Context"
 import { eq } from "drizzle-orm"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
@@ -32,7 +32,7 @@ import { HubConfig } from "../config.js"
 import { agentMayConnectAs } from "../auth/http-gate.js"
 import { Database } from "../services/database.js"
 import * as schema from "../../drizzle/schema.js"
-import { AgentHandlersLive } from "./agent-handlers.js"
+import { AgentConnectionIdentity, AgentHandlersLive } from "./agent-handlers.js"
 
 // ── RPC client type alias ─────────────────────────────────────────────────────
 
@@ -276,7 +276,7 @@ export class RegisterAgent extends Context.Service<
     info: AgentInfo,
     capabilities: AgentCapabilities,
     pluginCapabilities: ReadonlyArray<PluginCapability>,
-  ) => Effect.Effect<{ readonly systemId: string }>
+  ) => Effect.Effect<{ readonly systemId: string }, AgentConnectError>
 >()("@scout/RegisterAgent") {}
 
 // ── agent.connect handler override ────────────────────────────────────────────
@@ -344,6 +344,9 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
     readonly client: HubAgentClient
   } | null>(null)
 
+  const identity = yield* Ref.make<string | null>(null)
+  const registrationLock = yield* Semaphore.make(1)
+
   yield* Effect.scoped(
     Effect.gen(function* () {
       const { serverProtocol, clientProtocol, closed } = yield* makeDuplexRpcProtocols(socket)
@@ -357,12 +360,31 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
         info: AgentInfo,
         capabilities: AgentCapabilities,
         pluginCapabilities: ReadonlyArray<PluginCapability>,
-      ): Effect.Effect<{ readonly systemId: string }> =>
+      ): Effect.Effect<{ readonly systemId: string }, AgentConnectError> =>
         Effect.gen(function* () {
+          const registered = yield* Ref.get(identity)
+          if (registered !== null) {
+            if (registered !== info.systemId) {
+              return yield* Effect.fail(
+                new AgentConnectError({
+                  reason: "already-connected",
+                  message: `Socket is already registered as "${registered}"`,
+                }),
+              )
+            }
+            // Equivalent registration is idempotent; it must not reclaim routing
+            // from a newer socket that has replaced this connection.
+            return { systemId: registered }
+          }
+          // Registration can publish the client before its database write fails.
+          // Track cleanup first; failed retries must not leave earlier routes behind.
           yield* Ref.set(registeredRef, { agentId: info.systemId, client: hubAgentClient })
-          yield* registry.register(info, capabilities, pluginCapabilities, hubAgentClient)
+          yield* registry
+            .register(info, capabilities, pluginCapabilities, hubAgentClient)
+            .pipe(Effect.onError(() => registry.unregister(info.systemId, hubAgentClient)))
+          yield* Ref.set(identity, info.systemId)
           return { systemId: info.systemId }
-        })
+        }).pipe(registrationLock.withPermits(1))
 
       const RegisterAgentLive = Layer.succeed(RegisterAgent)(registerAgentFn)
 
@@ -374,7 +396,8 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
       yield* RpcServer.make(AgentHubRpcs, {
         disableFatalDefects: true,
       }).pipe(
-        Effect.provide(AgentHandlersLive),
+        Effect.provide(Layer.fresh(AgentHandlersLive)),
+        Effect.provideService(AgentConnectionIdentity, identity),
         Effect.provide(Layer.fresh(AgentConnectHandlerLive)),
         Effect.provide(RegisterAgentLive),
         Effect.provide(serverProtocol),

@@ -32,7 +32,14 @@ export const AgentPluginCollectionPayload = Schema.Struct({
 
 export class AgentConnectError extends Schema.Error<AgentConnectError>("AgentConnectError")({
   _tag: Schema.tag("AgentConnectError"),
-  reason: Schema.Literals(["invalid-token", "internal"]),
+  reason: Schema.Literals(["invalid-token", "already-connected", "internal"]),
+  message: Schema.String,
+}) {}
+
+/** A report is rejected in full before ingestion, broadcast, or alert evaluation. */
+export class AgentReportError extends Schema.Error<AgentReportError>("AgentReportError")({
+  _tag: Schema.tag("AgentReportError"),
+  reason: Schema.Literals(["not-connected", "system-mismatch", "node-mismatch"]),
   message: Schema.String,
 }) {}
 
@@ -44,8 +51,10 @@ export const AgentHubRpcs = RpcGroup.make(
   }),
   Rpc.make("agent.report", {
     payload: CoreMetricsPayloadSchema,
+    error: AgentReportError,
   }),
   Rpc.make("agent.reportPluginCollection", {
     payload: AgentPluginCollectionPayload,
+    error: AgentReportError,
   }),
 )
