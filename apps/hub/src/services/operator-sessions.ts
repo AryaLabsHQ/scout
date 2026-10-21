@@ -15,6 +15,7 @@ import {
   ManagementError,
   type OperatorImage,
   type OperatorImageGetParams,
+  type OperatorImageMetadata,
   type OperatorApprovalMode,
   type OperatorApprovalRequest,
   type OperatorPlanMode,
@@ -119,6 +120,7 @@ export const projectSession = (
   meta: OperatorSessionMeta,
   view: ConversationView,
   approvals: Approvals | undefined,
+  imageMetadataCache = new Map<string, ReadonlyArray<OperatorImageMetadata>>(),
 ): Omit<
   OperatorSessionDetail,
   "availableSkills" | "availableResources" | "availableModels" | "imageInput"
@@ -198,14 +200,23 @@ export const projectSession = (
   for (const entry of view.entries) {
     const message = entry.model?.[0]
     if (entry.kind === "pi.user" && message?.role === "user") {
+      const entryId = String(entry.id)
+      let images = imageMetadataCache.get(entryId)
+      if (images === undefined) {
+        images =
+          typeof message.content === "string"
+            ? []
+            : message.content.filter((block) => block.type === "image").map(imageMetadata)
+        // Store metadata only, shared across viewers for this harness; native entries are immutable.
+        if (imageMetadataCache.size >= 2048)
+          imageMetadataCache.delete(imageMetadataCache.keys().next().value!)
+        imageMetadataCache.set(entryId, images)
+      }
       timeline.push({
         kind: "user",
         entryId: String(entry.id),
         text: textOf(message.content),
-        images:
-          typeof message.content === "string"
-            ? []
-            : message.content.filter((block) => block.type === "image").map(imageMetadata),
+        images,
         createdAt: message.timestamp,
       })
     } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
@@ -297,6 +308,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
       const resources = yield* OperatorResources
       const admission = yield* Semaphore.make(1)
 
+      const imageMetadataCache = new Map<string, ReadonlyArray<OperatorImageMetadata>>()
       const available = Effect.all({ skillList: skills.list(), resourceList: resources.list() }).pipe(
         Effect.map(({ skillList, resourceList }) => ({
           availableSkills: skillList,
@@ -341,7 +353,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
       ) =>
         available.pipe(
           Effect.map((state) => ({
-            ...projectSession(sessionId, meta, view, approvals),
+            ...projectSession(sessionId, meta, view, approvals, imageMetadataCache),
             ...state,
             imageInput: imageInputFor(modelSettings.models.getModel(meta.modelProviderId, meta.modelId)),
           })),
@@ -578,7 +590,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             agent.model === undefined
               ? undefined
               : modelSettings.models.getModel(agent.model.provider, agent.model.modelId)
-          yield* Effect.try({
+          yield* Effect.tryPromise({
             try: () =>
               validateOperatorInput(text, images, imageInputFor(model), {
                 sessionId,
@@ -722,7 +734,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
                     }
                     const approvals = sources.approvals?.value ?? undefined
                     Queue.offerUnsafe(queue, {
-                      ...projectSession(sessionId, meta, sources.view.value, approvals),
+                      ...projectSession(sessionId, meta, sources.view.value, approvals, imageMetadataCache),
                       ...state,
                       imageInput: imageInputFor(
                         modelSettings.models.getModel(meta.modelProviderId, meta.modelId),

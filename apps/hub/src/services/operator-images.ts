@@ -1,5 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai"
 import { imageSize } from "image-size"
+import { decodeOperatorImage } from "./operator-image-codecs.js"
 import {
   ManagementError,
   OPERATOR_IMAGE_LIMITS,
@@ -85,7 +86,22 @@ export const imageMetadata = (image: OperatorImage, index: number): OperatorImag
       if (kind === "ANIM" || kind === "ANMF" || (kind === "VP8X" && (bytes[offset + 8]! & 2) !== 0)) {
         throw invalid("Animated WebP is not supported")
       }
-      if (kind === "VP8 " || kind === "VP8L") frames++
+      if (kind === "VP8 " || kind === "VP8L") {
+        frames++
+        // VP8X canvas dimensions must not conceal a larger compressed frame from the pixel cap.
+        const header = Buffer.alloc(12)
+        header.write("RIFF")
+        header.writeUInt32LE(4 + end - offset, 4)
+        header.write("WEBP", 8)
+        let frame: ReturnType<typeof imageSize>
+        try {
+          frame = imageSize(Buffer.concat([header, bytes.subarray(offset, end)]))
+        } catch {
+          throw invalid(`Image ${index + 1} has an invalid WebP frame header`)
+        }
+        if (frame.width !== dimensions.width || frame.height !== dimensions.height)
+          throw invalid(`Image ${index + 1} has inconsistent WebP dimensions`)
+      }
       offset = end + (size % 2)
     }
     if (offset !== bytes.length || frames !== 1) throw invalid(`Image ${index + 1} is an invalid WebP`)
@@ -93,12 +109,12 @@ export const imageMetadata = (image: OperatorImage, index: number): OperatorImag
   return { index, mimeType, byteLength: bytes.length, width: dimensions.width, height: dimensions.height }
 }
 
-export const validateOperatorInput = (
+export const validateOperatorInput = async (
   text: string,
   images: ReadonlyArray<OperatorImage>,
   limits: OperatorImageInput,
   envelope?: { readonly sessionId: string; readonly requestId?: string },
-): ReadonlyArray<OperatorImageMetadata> => {
+): Promise<ReadonlyArray<OperatorImageMetadata>> => {
   if (text.trim().length === 0 && images.length === 0) throw invalid("Enter text or attach an image")
   if (Buffer.byteLength(JSON.stringify({ ...envelope, text, images })) > limits.maxSerializedBytes) {
     throw invalid(`Submission exceeds the ${limits.maxSerializedBytes} byte serialized limit`)
@@ -107,7 +123,8 @@ export const validateOperatorInput = (
     throw invalid("This session's fixed model does not accept images")
   if (images.length > limits.maxImages) throw invalid(`Attach at most ${limits.maxImages} images`)
   let total = 0
-  return images.map((image, index) => {
+  const validated: Array<OperatorImageMetadata> = []
+  for (const [index, image] of images.entries()) {
     if (
       image.data.length === 0 ||
       image.data.length > Math.ceil(limits.maxImageBytes / 3) * 4 ||
@@ -132,6 +149,16 @@ export const validateOperatorInput = (
     ) {
       throw invalid(`Image ${index + 1} exceeds this model's image dimension or size limit`)
     }
-    return metadata
-  })
+    try {
+      // Keep peak decoder allocations bounded to one image per admission.
+      // oxlint-disable-next-line no-await-in-loop
+      await decodeOperatorImage(bytes, metadata)
+    } catch {
+      throw invalid(
+        `Image ${index + 1} has invalid compressed pixel data or exceeds the decode resource limits`,
+      )
+    }
+    validated.push(metadata)
+  }
+  return validated
 }

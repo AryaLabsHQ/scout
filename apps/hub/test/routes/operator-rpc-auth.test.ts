@@ -278,6 +278,56 @@ describe("operator RPCs behind Cloudflare Access", () => {
   )
 
   it.live(
+    "rejects corrupt compressed pixels before admission or provider execution over real RPC",
+    () =>
+      Effect.gen(function* () {
+        const { corruptCompressedImages, png } = yield* Effect.promise(
+          () => import("../helpers/operator-images.js"),
+        )
+        let calls = 0
+        faux.setResponses([
+          (context) => {
+            calls++
+            expect(context.messages.find((message) => message.role === "user")?.content).toEqual([
+              { type: "image", ...png },
+            ])
+            return fauxAssistantMessage("Valid retry")
+          },
+        ])
+        const client = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
+        const { session } = yield* client["operator.sessions.create"]({})
+        for (const image of corruptCompressedImages) {
+          expect(
+            yield* client["operator.prompt"]({
+              sessionId: session.id,
+              text: "",
+              images: [image],
+              requestId: "rejected",
+            }).pipe(Effect.flip),
+          ).toMatchObject({ code: "operator-input-invalid" })
+          const detail = yield* client["operator.sessions.get"]({ sessionId: session.id })
+          expect(detail?.timeline).toEqual([])
+          expect(detail?.queuedInputs).toBe(0)
+          expect(detail?.session.status).toBe("idle")
+          expect(calls).toBe(0)
+        }
+        // Rejection must not reserve the key. An edited valid envelope can still use it.
+        yield* client["operator.prompt"]({
+          sessionId: session.id,
+          text: "",
+          images: [png],
+          requestId: "rejected",
+        })
+        for (let i = 0; i < 300; i++) {
+          if (calls > 0) break
+          yield* Effect.sleep("10 millis")
+        }
+        expect(calls).toBe(1)
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "compressed-corruption.sqlite")))),
+    20_000,
+  )
+
+  it.live(
     "rejects images for a text-only session at the real RPC boundary",
     () =>
       Effect.gen(function* () {

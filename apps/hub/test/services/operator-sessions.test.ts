@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Effect, Fiber, Stream } from "effect"
 import {
   fauxAssistantMessage,
@@ -9,6 +9,9 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux"
 import type { OperatorSessionDetail, OperatorTimelineItem } from "@scout/shared"
+import * as imagesBoundary from "../../src/services/operator-images.js"
+import * as imageCodecs from "../../src/services/operator-image-codecs.js"
+import { Database } from "bun:sqlite"
 import { OperatorSessions } from "../../src/services/operator-sessions.js"
 import { executed, faux, operatorLayer } from "../helpers/operator.js"
 
@@ -463,6 +466,74 @@ describe("native operator image input", () => {
         expect(yield* sessions.getImage({ sessionId: fork.session.id, entryId, imageIndex: 0 })).toEqual(png)
       }),
     )
+  })
+
+  it("rejects corrupt pixels before durable admission, user/run state or provider calls", async () => {
+    const { corruptCompressedImages } = await import("../helpers/operator-images.js")
+    let calls = 0
+    script(() => {
+      calls++
+      return fauxAssistantMessage("Must not run")
+    })
+    await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        const id = yield* createSession(sessions)
+        const db = new Database(storagePath, { readonly: true })
+        try {
+          const before = {
+            entries: db.query("SELECT * FROM entries").all(),
+            tasks: db.query("SELECT * FROM tasks").all(),
+            submissions: db.query("SELECT * FROM submissions").all(),
+            documents: db.query("SELECT * FROM documents").all(),
+          }
+          for (const image of corruptCompressedImages) {
+            expect(yield* sessions.prompt(id, "", "invalid", [image]).pipe(Effect.flip)).toMatchObject({
+              code: "operator-input-invalid",
+            })
+            expect(db.query("SELECT * FROM entries").all()).toEqual(before.entries)
+            expect(db.query("SELECT * FROM tasks").all()).toEqual(before.tasks)
+            expect(db.query("SELECT * FROM submissions").all()).toEqual(before.submissions)
+            expect(db.query("SELECT * FROM documents").all()).toEqual(before.documents)
+            const detail = yield* sessions.get(id)
+            expect(detail?.timeline).toEqual([])
+            expect(detail?.queuedInputs).toBe(0)
+            expect(detail?.session.status).toBe("idle")
+          }
+          expect(calls).toBe(0)
+        } finally {
+          db.close()
+        }
+      }),
+    )
+  })
+
+  it("reuses bounded metadata across reads/watchers without decoding stored pixels", async () => {
+    const { png } = await import("../helpers/operator-images.js")
+    script(fauxAssistantMessage("Stored"))
+    const inspect = vi.spyOn(imagesBoundary, "imageMetadata")
+    const decode = vi.spyOn(imageCodecs, "decodeOperatorImage")
+    try {
+      await withOperator(storagePath, (sessions) =>
+        Effect.gen(function* () {
+          const id = yield* createSession(sessions)
+          yield* sessions.prompt(id, "", "metadata-cache", [png])
+          yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Stored")
+          expect(decode).toHaveBeenCalledTimes(1)
+          inspect.mockClear()
+          decode.mockClear()
+          for (let i = 0; i < 5; i++) {
+            const detail = yield* sessions.get(id)
+            expect(JSON.stringify(detail)).not.toContain(png.data)
+            yield* sessions.watch(id).pipe(Stream.take(1), Stream.runCollect)
+          }
+          expect(inspect).not.toHaveBeenCalled()
+          expect(decode).not.toHaveBeenCalled()
+        }),
+      )
+    } finally {
+      inspect.mockRestore()
+      decode.mockRestore()
+    }
   })
 
   it("survives queued image-only input and pending approval restart, admits retries once and rejects changed keys", async () => {

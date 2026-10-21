@@ -18,6 +18,7 @@
     "@earendil-works/pi-ai": "1.0.2",
     "@earendil-works/pi-durable": "1.0.2",
     "@effect/platform-bun": "4.0.0",
+    "@imagemagick/magick-wasm": "0.0.45",
     "@scout/plugin-sdk": "workspace:*",
     "@scout/shared": "workspace:*",
     "@xterm/headless": "^6.0.0",

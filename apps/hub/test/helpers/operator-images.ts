@@ -34,6 +34,7 @@ export const largeDimensionsPng = {
 export const paddedPng = (byteLength: number) => {
   const original = Buffer.from(png.data, "base64")
   const padding = Buffer.alloc(byteLength - original.length - 12, 120)
+  padding.write("Comment\0", 0, "ascii")
   const kind = Buffer.from("tEXt")
   const chunk = Buffer.alloc(padding.length + 12)
   chunk.writeUInt32BE(padding.length)
@@ -45,3 +46,36 @@ export const paddedPng = (byteLength: number) => {
     data: Buffer.concat([original.subarray(0, -12), chunk, original.subarray(-12)]).toString("base64"),
   }
 }
+
+/** Preserve PNG framing and CRCs while destroying the compressed zlib stream. */
+export const corruptPng = (() => {
+  const bytes = Buffer.from(png.data, "base64")
+  let offset = 8
+  while (offset + 12 <= bytes.length) {
+    const size = bytes.readUInt32BE(offset)
+    const end = offset + size + 12
+    if (bytes.toString("ascii", offset + 4, offset + 8) === "IDAT") {
+      bytes.fill(0, offset + 8, end - 4)
+      bytes.writeUInt32BE(Bun.hash.crc32(bytes.subarray(offset + 4, end - 4)), end - 4)
+    }
+    offset = end
+  }
+  return { ...png, data: bytes.toString("base64") }
+})()
+
+/** Keep SOF dimensions, SOS and EOI, but replace the entropy stream with an invalid marker. */
+export const corruptJpeg = (() => {
+  const bytes = Buffer.from(jpeg.data, "base64")
+  const scan = bytes.indexOf(Buffer.from([0xff, 0xda]))
+  const start = scan + 2 + bytes.readUInt16BE(scan + 2)
+  bytes.fill(0xff, start, bytes.length - 2)
+  return { ...jpeg, data: bytes.toString("base64") }
+})()
+
+/** Keep RIFF length, VP8L signature and dimensions, but destroy the lossless coding data. */
+export const corruptWebp = (() => {
+  const bytes = Buffer.from(webp.data, "base64")
+  bytes.fill(0, 25, bytes.length - 1)
+  return { ...webp, data: bytes.toString("base64") }
+})()
+export const corruptCompressedImages = [corruptPng, corruptJpeg, corruptWebp]
