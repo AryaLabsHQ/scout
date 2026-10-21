@@ -85,16 +85,26 @@ const serveHub = (storagePath: string, modelId = "faux-1") => {
   )
 }
 
-const connectRpc = (token: string) =>
+const connectRpc = (token: string, loseFirstResponse = false) =>
   Effect.gen(function* () {
     const url = yield* HttpServer.addressFormattedWith((address) =>
       Effect.succeed(`${address.replace(/^http/, "ws")}/ws/rpc`),
     )
     const socket = yield* Socket.makeWebSocket(url).pipe(
-      Effect.provideService(
-        Socket.WebSocketConstructor,
-        (target) => new globalThis.WebSocket(target, { headers: { "cf-access-jwt-assertion": token } }),
-      ),
+      Effect.provideService(Socket.WebSocketConstructor, (target) => {
+        const socket = new globalThis.WebSocket(target, { headers: { "cf-access-jwt-assertion": token } })
+        if (loseFirstResponse)
+          socket.addEventListener(
+            "message",
+            (event) => {
+              // Lose the native RPC acknowledgement after the real handler has durably admitted the input.
+              event.stopImmediatePropagation()
+              socket.close(1000, "fixture lost response")
+            },
+            { once: true },
+          )
+        return socket
+      }),
     )
     const protocol = yield* Layer.build(
       RpcClient.layerProtocolSocket().pipe(
@@ -199,8 +209,10 @@ describe("operator RPCs behind Cloudflare Access", () => {
         )
         const { session } = yield* first["operator.sessions.create"]({})
         const payload = { sessionId: session.id, text: "", images: [png], requestId: "lost-ack-image" }
-        yield* first["operator.prompt"](payload)
-        // The submitting view loses its acknowledgement; a new connection retries the immutable envelope.
+        const disconnected = yield* connectRpc(token, true)
+        const lostResponse = yield* disconnected["operator.prompt"](payload).pipe(Effect.exit)
+        expect(Exit.isFailure(lostResponse)).toBe(true)
+        // The first peer received no acknowledgement; another authenticated connection retries unchanged.
         yield* second["operator.prompt"](payload)
         let entryId = ""
         for (let i = 0; i < 300; i++) {
@@ -281,6 +293,55 @@ describe("operator RPCs behind Cloudflare Access", () => {
         expect(error).toMatchObject({ code: "operator-input-invalid" })
         expect((yield* client["operator.sessions.get"]({ sessionId: session.id }))?.timeline).toEqual([])
       }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "text-model.sqlite"), "faux-text"))),
+    20_000,
+  )
+  it.live(
+    "bounds real transport bytes and keeps large images out of watch snapshots",
+    () =>
+      Effect.gen(function* () {
+        const { paddedPng } = yield* Effect.promise(() => import("../helpers/operator-images.js"))
+        const large = paddedPng(2 * 1024 * 1024)
+        faux.setResponses([
+          (context) => {
+            const user = context.messages.find((message) => message.role === "user")
+            expect(user?.content).toEqual([
+              { type: "image", ...large },
+              { type: "image", ...large },
+            ])
+            return fauxAssistantMessage("Large images received")
+          },
+        ])
+        const client = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
+        const { session } = yield* client["operator.sessions.create"]({})
+        yield* client["operator.prompt"]({
+          sessionId: session.id,
+          text: "",
+          requestId: "max-valid",
+          images: [large, large],
+        })
+        const snapshots = yield* client["operator.sessions.watch"]({ sessionId: session.id }).pipe(
+          Stream.take(1),
+          Stream.runCollect,
+        )
+        expect(Buffer.byteLength(JSON.stringify(snapshots))).toBeLessThan(20_000)
+        expect(JSON.stringify(snapshots)).not.toContain(large.data)
+        const medium = paddedPng(1_100_000)
+        const error = yield* client["operator.prompt"]({
+          sessionId: session.id,
+          text: "",
+          requestId: "decoded-total",
+          images: [medium, medium, medium, medium],
+        }).pipe(Effect.flip)
+        expect(error).toMatchObject({ code: "operator-input-invalid" })
+        expect(error.message).toContain("combined decoded")
+        const missing = yield* connectRpc("")
+        const denied = yield* missing["operator.images.get"]({
+          sessionId: session.id,
+          entryId: "1",
+          imageIndex: 0,
+        }).pipe(Effect.exit)
+        expect(Exit.isFailure(denied)).toBe(true)
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "image-byte-limits.sqlite")))),
     20_000,
   )
 })

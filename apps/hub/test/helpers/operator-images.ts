@@ -29,3 +29,19 @@ export const largeDimensionsPng = {
   mimeType: "image/png",
   data: "iVBORw0KGgoAAAANSUhEUgAAE4gAABOICAYAAABdmIfLAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
 }
+
+/** Add a valid ancillary chunk without changing pixels, to exercise decoded transport byte limits. */
+export const paddedPng = (byteLength: number) => {
+  const original = Buffer.from(png.data, "base64")
+  const padding = Buffer.alloc(byteLength - original.length - 12, 120)
+  const kind = Buffer.from("tEXt")
+  const chunk = Buffer.alloc(padding.length + 12)
+  chunk.writeUInt32BE(padding.length)
+  kind.copy(chunk, 4)
+  padding.copy(chunk, 8)
+  chunk.writeUInt32BE(Bun.hash.crc32(Buffer.concat([kind, padding])), chunk.length - 4)
+  return {
+    mimeType: "image/png",
+    data: Buffer.concat([original.subarray(0, -12), chunk, original.subarray(-12)]).toString("base64"),
+  }
+}

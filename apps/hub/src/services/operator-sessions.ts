@@ -620,13 +620,13 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             if (admitted) return
           }
           if (images.length > 0 && model?.inputLimits !== undefined) {
-            const current = yield* durable("operator-model", (context) => conversation.context(context))
             const view = yield* readView(conversation)
+            const messages = view.entries.flatMap((entry) => entry.model ?? [])
             const inbox = view.docs["pi.inbox"] as InboxState | undefined
             const queued = (inbox?.items ?? []).flatMap((item) =>
               item.mode === "write" ? [] : [{ role: "user" as const, content: item.content }],
             )
-            const previousImages = [...current.messages, ...queued].reduce(
+            const previousImages = [...messages, ...queued].reduce(
               (count, message) =>
                 count +
                 (typeof message.content === "string"
@@ -638,7 +638,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
               previousImages + images.length > (model.inputLimits.images?.maxPerRequest ?? Infinity) ||
               Buffer.byteLength(
                 JSON.stringify({
-                  messages: [...current.messages, ...queued, { role: "user", content }],
+                  messages: [...messages, ...queued, { role: "user", content }],
                   tools: agent.tools,
                 }),
               ) > (model.inputLimits.maxRequestBytes ?? Infinity)

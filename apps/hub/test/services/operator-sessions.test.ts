@@ -440,6 +440,18 @@ describe("native operator image input", () => {
         expect(yield* sessions.getImage({ sessionId: id, entryId, imageIndex: 1 })).toEqual(second)
         const fork = yield* sessions.fork(id, entryId)
         expect(yield* sessions.getImage({ sessionId: fork.session.id, entryId, imageIndex: 0 })).toEqual(png)
+        script(fauxAssistantMessage("A later image"))
+        yield* sessions.prompt(id, "later", "later-image", [png])
+        const later = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "A later image",
+        )
+        const laterUser = later.timeline.filter((item) => item.kind === "user").at(-1)!
+        const pastFork = yield* sessions
+          .getImage({ sessionId: fork.session.id, entryId: laterUser.entryId, imageIndex: 0 })
+          .pipe(Effect.flip)
+        expect(pastFork.code).toBe("image-not-found")
         const other = yield* createSession(sessions)
         const wrong = yield* sessions.getImage({ sessionId: other, entryId, imageIndex: 0 }).pipe(Effect.flip)
         expect(wrong.code).toBe("image-not-found")
