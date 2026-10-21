@@ -14,21 +14,42 @@ import { OperatorModelRegistry } from "../../src/services/operator-model-registr
 import { OperatorResources } from "../../src/services/operator-resources.js"
 import { OperatorSessions } from "../../src/services/operator-sessions.js"
 import { OperatorSkills } from "../../src/services/operator-skills.js"
+import { imageInputFor } from "../../src/services/operator-images.js"
 import { openBunSqliteStorage } from "../../src/services/operator-storage.js"
 import { PluginRegistry } from "../../src/services/plugin-registry.js"
 import { TestDatabaseLayer } from "./test-database.js"
 
-export const faux = fauxProvider()
+export const faux = fauxProvider({
+  models: [
+    { id: "faux-1", input: ["text", "image"] },
+    { id: "faux-text", input: ["text"] },
+    {
+      id: "faux-strict",
+      input: ["text", "image"],
+      inputLimits: {
+        images: { maxPerMessage: 1, maxPerRequest: 1, resize: { maxWidth: 2, maxHeight: 2, maxBytes: 200 } },
+        maxRequestBytes: 64_000,
+      },
+    },
+  ],
+})
 const models = createModels()
 models.setProvider(faux.provider)
 
-const ModelLayer = Layer.succeed(OperatorModelRegistry, {
-  models,
-  available: [{ providerId: "faux", modelId: "faux-1", label: "faux/faux-1", reasoning: false }],
-  defaultModel: { providerId: "faux", modelId: "faux-1" },
-  thinkingLevel: "off",
-  systemPrompt: "You are a test operator.",
-})
+const modelLayer = (modelId: string) =>
+  Layer.succeed(OperatorModelRegistry, {
+    models,
+    available: faux.models.map((model) => ({
+      providerId: model.provider,
+      modelId: model.id,
+      label: `faux/${model.id}`,
+      reasoning: model.reasoning,
+      imageInput: imageInputFor(model),
+    })),
+    defaultModel: { providerId: "faux", modelId },
+    thinkingLevel: "off",
+    systemPrompt: "You are a test operator.",
+  })
 
 const dockerManifest = {
   id: "docker",
@@ -90,12 +111,12 @@ export const AgentLayer = Layer.succeed(AgentRegistry, {
 } as never)
 
 /** OperatorSessions and everything it needs, over the operator storage at `path`. */
-export const operatorLayer = (path: string) => {
+export const operatorLayer = (path: string, modelId = "faux-1") => {
   const base = Layer.mergeAll(
     TestDatabaseLayer,
     PluginLayer,
     AgentLayer,
-    ModelLayer,
+    modelLayer(modelId),
     MetricsIngestion.layer.pipe(Layer.provide(TestDatabaseLayer)),
     OperatorExtensions.layer.pipe(Layer.provide(PluginLayer)),
     OperatorSkills.layer.pipe(Layer.provide(PluginLayer)),

@@ -38,6 +38,7 @@ const UNAUDITED_RPCS: ReadonlySet<ClientRpcTag> = new Set<ClientRpcTag>([
   "systems.metrics",
   "operator.sessions.list",
   "operator.sessions.get",
+  "operator.images.get",
   "operator.skills.list",
   "operator.models.list",
   "alerts.list",

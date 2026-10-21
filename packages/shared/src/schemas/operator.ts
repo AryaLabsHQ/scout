@@ -71,12 +71,53 @@ export const OperatorTerminalOutputSchema = Schema.Struct({
   base64Chunks: Schema.Array(Schema.String),
 })
 
+export const OPERATOR_IMAGE_LIMITS = {
+  maxImages: 4,
+  maxImageBytes: 2 * 1024 * 1024,
+  maxTotalImageBytes: 4 * 1024 * 1024,
+  maxSerializedBytes: 6 * 1024 * 1024,
+  maxPixels: 20_000_000,
+} as const
+
+export const OperatorImageSchema = Schema.Struct({
+  mimeType: Schema.String,
+  /** Raw base64, never a URL or data URL. Validated authoritatively by the hub. */
+  data: Schema.String,
+})
+
+export const OperatorImageMetadataSchema = Schema.Struct({
+  index: Schema.Number,
+  mimeType: Schema.String,
+  byteLength: Schema.Number,
+  width: Schema.Number,
+  height: Schema.Number,
+})
+
+export const OperatorImageInputSchema = Schema.Struct({
+  supported: Schema.Boolean,
+  maxImages: Schema.Number,
+  maxImageBytes: Schema.Number,
+  maxTotalImageBytes: Schema.Number,
+  maxSerializedBytes: Schema.Number,
+  maxPixels: Schema.Number,
+  maxWidth: Schema.optionalKey(Schema.Number),
+  maxHeight: Schema.optionalKey(Schema.Number),
+  maxBase64Bytes: Schema.optionalKey(Schema.Number),
+})
+
+export const OperatorImageGetParamsSchema = Schema.Struct({
+  sessionId: Schema.String,
+  entryId: Schema.String,
+  imageIndex: Schema.Number,
+})
+
 export const OperatorTimelineItemSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("user"),
     /** Durable entry id; fork targets. */
     entryId: Schema.String,
     text: Schema.String,
+    images: Schema.optionalKey(Schema.Array(OperatorImageMetadataSchema)),
     createdAt: Schema.Number,
   }),
   Schema.Struct({
@@ -130,6 +171,7 @@ export const OperatorModelDescriptorSchema = Schema.Struct({
   modelId: Schema.String,
   label: Schema.String,
   reasoning: Schema.Boolean,
+  imageInput: OperatorImageInputSchema,
 })
 
 export const OperatorSessionSummarySchema = Schema.Struct({
@@ -154,6 +196,9 @@ export const OperatorSessionDetailSchema = Schema.Struct({
   approvals: Schema.Array(OperatorApprovalRequestSchema),
   /** Inputs queued behind the running answer. */
   queuedInputs: Schema.Number,
+  queuedImages: Schema.Number,
+  /** Capability of this session's fixed model, including stricter model limits. */
+  imageInput: OperatorImageInputSchema,
   availableSkills: Schema.Array(OperatorSkillSchema),
   availableResources: Schema.Array(OperatorResourceSchema),
   availableModels: Schema.Array(OperatorModelDescriptorSchema),
@@ -184,6 +229,7 @@ export const OperatorSessionSetSkillsParamsSchema = Schema.Struct({
 export const OperatorPromptParamsSchema = Schema.Struct({
   sessionId: Schema.String,
   text: Schema.String,
+  images: Schema.optionalKey(Schema.Array(OperatorImageSchema)),
   /** Client-generated idempotency key: a retried prompt with the same key is admitted once. */
   requestId: Schema.optionalKey(Schema.String),
 })
@@ -235,3 +281,8 @@ export type OperatorApprovalResolveParams = typeof OperatorApprovalResolveParams
 export type OperatorSessionSetApprovalModeParams = typeof OperatorSessionSetApprovalModeParamsSchema.Type
 export type OperatorSessionSetPlanModeParams = typeof OperatorSessionSetPlanModeParamsSchema.Type
 export type OperatorSessionSetTitleParams = typeof OperatorSessionSetTitleParamsSchema.Type
+
+export type OperatorImage = typeof OperatorImageSchema.Type
+export type OperatorImageMetadata = typeof OperatorImageMetadataSchema.Type
+export type OperatorImageInput = typeof OperatorImageInputSchema.Type
+export type OperatorImageGetParams = typeof OperatorImageGetParamsSchema.Type

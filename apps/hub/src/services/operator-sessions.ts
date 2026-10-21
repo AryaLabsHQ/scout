@@ -1,4 +1,4 @@
-import { Cause, Effect, Layer, Queue, Stream } from "effect"
+import { Cause, Effect, Layer, Queue, Semaphore, Stream } from "effect"
 import * as Context from "effect/Context"
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai"
 import {
@@ -6,12 +6,15 @@ import {
   type AgentChange,
   type Conversation,
   type ConversationId,
+  type EntryId,
   type ConversationView,
   type InboxState,
   type LiveState,
 } from "@earendil-works/pi-durable"
 import {
   ManagementError,
+  type OperatorImage,
+  type OperatorImageGetParams,
   type OperatorApprovalMode,
   type OperatorApprovalRequest,
   type OperatorPlanMode,
@@ -25,6 +28,7 @@ import {
 import { durable, OperatorHarness } from "./operator-harness.js"
 import {
   OperatorApprovalsDoc,
+  OperatorInputRequestsDoc,
   type OperatorApprovalRecord,
   type OperatorSessionMeta,
   OperatorSessionsDoc,
@@ -32,6 +36,8 @@ import {
 import { OperatorModelRegistry } from "./operator-model-registry.js"
 import { OperatorResources } from "./operator-resources.js"
 import { OperatorSkills } from "./operator-skills.js"
+import { imageInputFor, imageMetadata, validateOperatorInput } from "./operator-images.js"
+import { createHash } from "node:crypto"
 import { toolNodeIds } from "./operator-tools.js"
 
 // ── Projection: durable state → wire detail ─────────────────────────────────
@@ -113,7 +119,10 @@ export const projectSession = (
   meta: OperatorSessionMeta,
   view: ConversationView,
   approvals: Approvals | undefined,
-): Omit<OperatorSessionDetail, "availableSkills" | "availableResources" | "availableModels"> => {
+): Omit<
+  OperatorSessionDetail,
+  "availableSkills" | "availableResources" | "availableModels" | "imageInput"
+> => {
   const live = view.docs["pi.live"] as LiveState | undefined
   const inbox = view.docs["pi.inbox"] as InboxState | undefined
   const results = new Map<string, { readonly entryId: string; readonly message: ToolResultMessage }>()
@@ -193,6 +202,10 @@ export const projectSession = (
         kind: "user",
         entryId: String(entry.id),
         text: textOf(message.content),
+        images:
+          typeof message.content === "string"
+            ? []
+            : message.content.filter((block) => block.type === "image").map(imageMetadata),
         createdAt: message.timestamp,
       })
     } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
@@ -210,6 +223,14 @@ export const projectSession = (
       .map((record) => toApprovalRequest(id, record))
       .sort((left, right) => left.requestedAt - right.requestedAt),
     queuedInputs: (inbox?.items ?? []).filter((item) => item.mode !== "write").length,
+    queuedImages: (inbox?.items ?? []).reduce(
+      (count, item) =>
+        count +
+        (item.mode === "write" || typeof item.content === "string"
+          ? 0
+          : item.content.filter((block) => block.type === "image").length),
+      0,
+    ),
   }
 }
 
@@ -249,7 +270,9 @@ export interface OperatorSessionsShape {
     sessionId: string,
     text: string,
     requestId?: string,
+    images?: ReadonlyArray<OperatorImage>,
   ) => Effect.Effect<void, ManagementError>
+  readonly getImage: (params: OperatorImageGetParams) => Effect.Effect<OperatorImage, ManagementError>
   /** Abort the running answer and every tool call it owns; pending approvals become canceled. */
   readonly abort: (sessionId: string) => Effect.Effect<void, ManagementError>
   readonly resolveApproval: (params: {
@@ -272,6 +295,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
       const modelSettings = yield* OperatorModelRegistry
       const skills = yield* OperatorSkills
       const resources = yield* OperatorResources
+      const admission = yield* Semaphore.make(1)
 
       const available = Effect.all({ skillList: skills.list(), resourceList: resources.list() }).pipe(
         Effect.map(({ skillList, resourceList }) => ({
@@ -316,7 +340,11 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
         approvals: Approvals | undefined,
       ) =>
         available.pipe(
-          Effect.map((state) => ({ ...projectSession(sessionId, meta, view, approvals), ...state })),
+          Effect.map((state) => ({
+            ...projectSession(sessionId, meta, view, approvals),
+            ...state,
+            imageInput: imageInputFor(modelSettings.models.getModel(meta.modelProviderId, meta.modelId)),
+          })),
         )
 
       const readView = (conversation: Conversation) =>
@@ -513,14 +541,121 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           )
         })
 
-      const prompt = (sessionId: string, text: string, requestId?: string) =>
+      const getImage: OperatorSessionsShape["getImage"] = ({ sessionId, entryId, imageIndex }) =>
         Effect.gen(function* () {
           const { conversation } = yield* requireSession(sessionId)
+          const id = Number(entryId)
+          if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(imageIndex) || imageIndex < 0) {
+            return yield* Effect.fail(
+              new ManagementError({ code: "image-not-found", message: "Image not found" }),
+            )
+          }
+          return yield* durable("operator-image", async (context) => {
+            // Conversation.entries applies inherited fork bounds; a global entry lookup would leak other sessions.
+            const page = await conversation.entries(
+              { minEntryId: id as EntryId, maxEntryId: id as EntryId },
+              1,
+              undefined,
+              context,
+            )
+            const entry = page.items[0]
+            const message = entry?.kind === "pi.user" ? entry.model?.[0] : undefined
+            const image =
+              message?.role === "user" && typeof message.content !== "string"
+                ? message.content.filter((block) => block.type === "image")[imageIndex]
+                : undefined
+            if (image === undefined)
+              throw new ManagementError({ code: "image-not-found", message: "Image not found" })
+            return { mimeType: image.mimeType, data: image.data }
+          })
+        })
+
+      const prompt: OperatorSessionsShape["prompt"] = (sessionId, text, requestId, images = []) =>
+        Effect.gen(function* () {
+          const { conversation } = yield* requireSession(sessionId)
+          const agent = yield* durable("operator-model", (context) => conversation.agent(context))
+          const model =
+            agent.model === undefined
+              ? undefined
+              : modelSettings.models.getModel(agent.model.provider, agent.model.modelId)
+          yield* Effect.try({
+            try: () =>
+              validateOperatorInput(text, images, imageInputFor(model), {
+                sessionId,
+                ...(requestId === undefined ? {} : { requestId }),
+              }),
+            catch: (error) =>
+              error instanceof ManagementError
+                ? error
+                : new ManagementError({ code: "operator-input-invalid", message: "Invalid operator input" }),
+          })
+          const content: UserMessage["content"] = [
+            ...(text.length === 0 ? [] : [{ type: "text" as const, text }]),
+            ...images.map((image) => ({
+              type: "image" as const,
+              mimeType: image.mimeType,
+              data: image.data,
+            })),
+          ]
+          if (requestId !== undefined) {
+            const hash = createHash("sha256").update(JSON.stringify(content)).digest("hex")
+            const admitted = yield* durable("operator-prompt", (context) =>
+              harness.commit(async (tx) => {
+                const submission = await tx.submissionByRequest(conversation.id, requestId)
+                const requests = await tx.doc(OperatorInputRequestsDoc, conversation.id)
+                const previous = requests.hashes[requestId]
+                if (
+                  (previous !== undefined && previous !== hash) ||
+                  (submission !== undefined && previous === undefined)
+                )
+                  throw new ManagementError({
+                    code: "operator-request-conflict",
+                    message:
+                      "This request ID already belongs to a different prompt; send edited content with a new ID",
+                  })
+                requests.hashes[requestId] = hash
+                return submission !== undefined
+              }, context),
+            )
+            if (admitted) return
+          }
+          if (images.length > 0 && model?.inputLimits !== undefined) {
+            const current = yield* durable("operator-model", (context) => conversation.context(context))
+            const view = yield* readView(conversation)
+            const inbox = view.docs["pi.inbox"] as InboxState | undefined
+            const queued = (inbox?.items ?? []).flatMap((item) =>
+              item.mode === "write" ? [] : [{ role: "user" as const, content: item.content }],
+            )
+            const previousImages = [...current.messages, ...queued].reduce(
+              (count, message) =>
+                count +
+                (typeof message.content === "string"
+                  ? 0
+                  : message.content.filter((block) => block.type === "image").length),
+              0,
+            )
+            if (
+              previousImages + images.length > (model.inputLimits.images?.maxPerRequest ?? Infinity) ||
+              Buffer.byteLength(
+                JSON.stringify({
+                  messages: [...current.messages, ...queued, { role: "user", content }],
+                  tools: agent.tools,
+                }),
+              ) > (model.inputLimits.maxRequestBytes ?? Infinity)
+            ) {
+              return yield* Effect.fail(
+                new ManagementError({
+                  code: "operator-input-invalid",
+                  message: "Images exceed the model's remaining request limit in this conversation",
+                }),
+              )
+            }
+          }
           yield* durable("operator-prompt", (context) =>
             conversation.submit(
               {
                 type: "input",
-                content: text,
+                content,
                 whenBusy: "followUp",
                 ...(requestId === undefined ? {} : { requestId }),
               },
@@ -528,7 +663,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             ),
           )
           yield* updateMeta(sessionId, () => {})
-        })
+        }).pipe(admission.withPermit)
 
       const resolveApproval: OperatorSessionsShape["resolveApproval"] = (params) =>
         Effect.gen(function* () {
@@ -589,6 +724,9 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
                     Queue.offerUnsafe(queue, {
                       ...projectSession(sessionId, meta, sources.view.value, approvals),
                       ...state,
+                      imageInput: imageInputFor(
+                        modelSettings.models.getModel(meta.modelProviderId, meta.modelId),
+                      ),
                     })
                   }
                   const schedule = () => {
@@ -633,6 +771,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
           }),
         delete: remove,
         prompt,
+        getImage,
         abort,
         resolveApproval,
         watch,

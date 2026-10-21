@@ -399,3 +399,122 @@ describe("OperatorSessions on pi-durable", () => {
     expect(lastAssistantText(snapshots.at(-1)!)).toBe("Streamed answer.")
   })
 })
+
+describe("native operator image input", () => {
+  it("delivers exact mixed bytes and order to the provider, then retrieves them after reopen and fork", async () => {
+    const { png, secondPng: second } = await import("../helpers/operator-images.js")
+    const seen: Array<unknown> = []
+    script((context) => {
+      const user = context.messages.find((message) => message.role === "user")
+      seen.push(user?.content)
+      return fauxAssistantMessage("Saw both images")
+    })
+    const { id, entryId } = await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        const id = yield* createSession(sessions)
+        yield* sessions.prompt(id, "Compare", "mixed-images", [png, second])
+        const done = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Saw both images",
+        )
+        const user = done.timeline.find((item) => item.kind === "user")!
+        expect(user.kind).toBe("user")
+        if (user.kind !== "user") throw new Error("Missing input")
+        expect(user.images).toHaveLength(2)
+        expect(JSON.stringify(done)).not.toContain(png.data)
+        expect(JSON.stringify(done)).not.toContain('"data":')
+        expect(yield* sessions.getImage({ sessionId: id, entryId: user.entryId, imageIndex: 0 })).toEqual(png)
+        return { id, entryId: user.entryId }
+      }),
+    )
+    expect(seen).toEqual([
+      [
+        { type: "text", text: "Compare" },
+        { type: "image", ...png },
+        { type: "image", ...second },
+      ],
+    ])
+    await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        expect(yield* sessions.getImage({ sessionId: id, entryId, imageIndex: 1 })).toEqual(second)
+        const fork = yield* sessions.fork(id, entryId)
+        expect(yield* sessions.getImage({ sessionId: fork.session.id, entryId, imageIndex: 0 })).toEqual(png)
+        const other = yield* createSession(sessions)
+        const wrong = yield* sessions.getImage({ sessionId: other, entryId, imageIndex: 0 }).pipe(Effect.flip)
+        expect(wrong.code).toBe("image-not-found")
+        const badIndex = yield* sessions.getImage({ sessionId: id, entryId, imageIndex: 2 }).pipe(Effect.flip)
+        expect(badIndex.code).toBe("image-not-found")
+        yield* sessions.delete(id)
+        expect(yield* sessions.get(id)).toBeNull()
+        // Session deletion unlists the parent; native inherited entries remain available to its fork.
+        expect(yield* sessions.getImage({ sessionId: fork.session.id, entryId, imageIndex: 0 })).toEqual(png)
+      }),
+    )
+  })
+
+  it("survives queued image-only input and pending approval restart, admits retries once and rejects changed keys", async () => {
+    const { png } = await import("../helpers/operator-images.js")
+    script(mutatingBash("restart"))
+    const id = await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        const id = yield* createSession(sessions)
+        yield* sessions.prompt(id, "Ask approval", "first")
+        yield* waitFor(sessions, id, (detail) => detail.session.status === "waiting_for_user")
+        yield* sessions.prompt(id, "", "queued-image", [png])
+        yield* sessions.prompt(id, "", "queued-image", [png])
+        const waiting = yield* sessions.get(id)
+        expect(waiting?.queuedInputs).toBe(1)
+        expect(waiting?.queuedImages).toBe(1)
+        expect(JSON.stringify(waiting)).not.toContain(png.data)
+        const conflict = yield* sessions.prompt(id, "Changed", "queued-image", [png]).pipe(Effect.flip)
+        expect(conflict.code).toBe("operator-request-conflict")
+        return id
+      }),
+    )
+    const seen: Array<unknown> = []
+    script(fauxAssistantMessage("Rejected operation"), (context) => {
+      seen.push(context.messages.filter((message) => message.role === "user").at(-1)?.content)
+      return fauxAssistantMessage("Saw queued image")
+    })
+    await withOperator(storagePath, (sessions) =>
+      Effect.gen(function* () {
+        const waiting = yield* sessions.get(id)
+        expect(waiting?.queuedImages).toBe(1)
+        yield* sessions.prompt(id, "", "queued-image", [png])
+        const approval = waiting!.approvals[0]!
+        yield* sessions.resolveApproval({ sessionId: id, approvalId: approval.id, decision: "rejected" })
+        const done = yield* waitFor(
+          sessions,
+          id,
+          (detail) => isIdle(detail) && lastAssistantText(detail) === "Saw queued image",
+        )
+        expect(done.timeline.filter((item) => item.kind === "user")).toHaveLength(2)
+        expect(done.queuedImages).toBe(0)
+        expect(executed).toEqual([])
+      }),
+    )
+    expect(seen).toEqual([[{ type: "image", ...png }]])
+  })
+  it("acknowledges an exact retry under a strict model without counting its existing image twice", async () => {
+    const { png } = await import("../helpers/operator-images.js")
+    script(fauxAssistantMessage("Saw strict image"))
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const sessions = yield* OperatorSessions
+          const id = yield* createSession(sessions)
+          yield* sessions.prompt(id, "", "strict-retry", [png])
+          yield* waitFor(
+            sessions,
+            id,
+            (detail) => isIdle(detail) && lastAssistantText(detail) === "Saw strict image",
+          )
+          yield* sessions.prompt(id, "", "strict-retry", [png])
+          const tooMany = yield* sessions.prompt(id, "", "new-image", [png]).pipe(Effect.flip)
+          expect(tooMany.code).toBe("operator-input-invalid")
+        }),
+      ).pipe(Effect.provide(operatorLayer(storagePath, "faux-strict"))),
+    )
+  })
+})

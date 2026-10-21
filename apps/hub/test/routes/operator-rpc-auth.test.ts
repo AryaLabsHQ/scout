@@ -64,9 +64,9 @@ const TestBrowserAuthLayer = Layer.effect(
   }),
 )
 
-const serveHub = (storagePath: string) => {
+const serveHub = (storagePath: string, modelId = "faux-1") => {
   const services = Layer.mergeAll(
-    operatorLayer(storagePath),
+    operatorLayer(storagePath, modelId),
     MetricsBroadcast.layer,
     AlertEngine.layer.pipe(Layer.provide(Layer.merge(TestDatabaseLayer, MetricsBroadcast.layer))),
   )
@@ -176,6 +176,111 @@ describe("operator RPCs behind Cloudflare Access", () => {
         expect(Exit.isFailure(exit)).toBe(true)
         expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain("Cloudflare Access session expired")
       }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "watch.sqlite")))),
+    20_000,
+  )
+  it.live(
+    "admits native images over two authenticated peers and confines lazy retrieval",
+    () =>
+      Effect.gen(function* () {
+        const { png } = yield* Effect.promise(() => import("../helpers/operator-images.js"))
+        const seen: Array<unknown> = []
+        faux.setResponses([
+          (context) => {
+            seen.push(context.messages.find((message) => message.role === "user")?.content)
+            return fauxAssistantMessage("Image received")
+          },
+        ])
+        const token = yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds())))
+        const first = yield* connectRpc(token)
+        const second = yield* connectRpc(
+          yield* Effect.promise(() =>
+            signer.sign(accessClaims(nowSeconds(), { sub: "second-peer", email: "second@example.com" })),
+          ),
+        )
+        const { session } = yield* first["operator.sessions.create"]({})
+        const payload = { sessionId: session.id, text: "", images: [png], requestId: "lost-ack-image" }
+        yield* first["operator.prompt"](payload)
+        // The submitting view loses its acknowledgement; a new connection retries the immutable envelope.
+        yield* second["operator.prompt"](payload)
+        let entryId = ""
+        for (let i = 0; i < 300; i++) {
+          const detail = yield* second["operator.sessions.get"]({ sessionId: session.id })
+          const users = detail?.timeline.filter((item) => item.kind === "user") ?? []
+          if (detail?.session.status === "idle" && users.length > 0) {
+            expect(users).toHaveLength(1)
+            entryId = users[0]!.entryId
+            expect(JSON.stringify(detail)).not.toContain(png.data)
+            break
+          }
+          yield* Effect.sleep("10 millis")
+        }
+        expect(entryId).not.toBe("")
+        expect(seen).toEqual([[{ type: "image", ...png }]])
+        expect(
+          yield* second["operator.images.get"]({ sessionId: session.id, entryId, imageIndex: 0 }),
+        ).toEqual(png)
+        const snapshot = yield* first["operator.sessions.watch"]({ sessionId: session.id }).pipe(
+          Stream.take(1),
+          Stream.runCollect,
+        )
+        expect(JSON.stringify(snapshot)).not.toContain(png.data)
+        const other = yield* first["operator.sessions.create"]({})
+        for (const params of [
+          { sessionId: other.session.id, entryId, imageIndex: 0 },
+          { sessionId: session.id, entryId, imageIndex: 1 },
+          { sessionId: session.id, entryId, imageIndex: -1 },
+        ]) {
+          const error = yield* second["operator.images.get"](params).pipe(Effect.flip)
+          expect(error).toMatchObject({ code: "image-not-found" })
+        }
+        const changed = yield* second["operator.prompt"]({ ...payload, text: "edited" }).pipe(Effect.flip)
+        expect(changed).toMatchObject({ code: "operator-request-conflict" })
+        for (const invalid of [
+          { ...payload, requestId: "invalid-base64", images: [{ ...png, data: "bad" }] },
+          { ...payload, requestId: "remote", images: [{ ...png, data: "https://example.com/a.png" }] },
+          { ...payload, requestId: "mime", images: [{ ...png, mimeType: "image/svg+xml" }] },
+          { ...payload, requestId: "count", images: Array(5).fill(png) },
+          {
+            ...payload,
+            requestId: "size",
+            images: [{ ...png, data: Buffer.alloc(2 * 1024 * 1024 + 1).toString("base64") }],
+          },
+          { ...payload, requestId: "serialized", text: "x".repeat(6 * 1024 * 1024) },
+        ])
+          expect(yield* second["operator.prompt"](invalid).pipe(Effect.flip)).toMatchObject({
+            code: "operator-input-invalid",
+          })
+        const expired = yield* connectRpc(
+          yield* Effect.promise(() =>
+            signer.sign(accessClaims(nowSeconds() - 3600, { exp: nowSeconds() - 31 })),
+          ),
+        )
+        const denied = yield* expired["operator.images.get"]({
+          sessionId: session.id,
+          entryId,
+          imageIndex: 0,
+        }).pipe(Effect.exit)
+        expect(Exit.isFailure(denied)).toBe(true)
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "images.sqlite")))),
+    20_000,
+  )
+
+  it.live(
+    "rejects images for a text-only session at the real RPC boundary",
+    () =>
+      Effect.gen(function* () {
+        const { png } = yield* Effect.promise(() => import("../helpers/operator-images.js"))
+        const client = yield* connectRpc(yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds()))))
+        const { session, imageInput } = yield* client["operator.sessions.create"]({})
+        expect(imageInput.supported).toBe(false)
+        const error = yield* client["operator.prompt"]({
+          sessionId: session.id,
+          text: "",
+          images: [png],
+        }).pipe(Effect.flip)
+        expect(error).toMatchObject({ code: "operator-input-invalid" })
+        expect((yield* client["operator.sessions.get"]({ sessionId: session.id }))?.timeline).toEqual([])
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "text-model.sqlite"), "faux-text"))),
     20_000,
   )
 })

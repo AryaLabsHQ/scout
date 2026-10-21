@@ -60,3 +60,13 @@ export const OperatorApprovalsDoc = defineDoc<{ requests: Record<string, Operato
   fork: "initial",
   initial: () => ({ requests: {} }),
 })
+
+/** A hash reserves each client retry key before native admission; no image bytes are duplicated. */
+export const OperatorInputRequestsDoc = defineDoc<{ hashes: Record<string, string> }>({
+  kind: "scout.operator.input-requests",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({ hashes: {} }),
+})
