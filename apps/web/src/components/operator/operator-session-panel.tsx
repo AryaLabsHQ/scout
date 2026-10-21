@@ -36,20 +36,28 @@ import { ManageSkillsDialog } from "./operator-dialogs"
 import { OperatorApprovalCard, OperatorTimelineItemCard } from "./operator-timeline-item"
 import { OperatorPromptInput } from "./operator-prompt-input"
 import { OperatorSessionMeta } from "./operator-session-meta"
+import { useOperatorPromptDraft } from "./use-operator-prompt-draft"
+import type { SubmitPrompt } from "./operator-prompt-drafts"
 
-export function OperatorSessionPanel({
-  sessionId,
-  variant,
-  fallbackSummary,
-  onCreateSession,
-  onSelectSession,
-}: {
+type OperatorSessionPanelProps = {
   sessionId: string
   variant: OperatorShellVariant
   fallbackSummary: OperatorSessionSummary | null
   onCreateSession: () => void
   onSelectSession: (sessionId: string) => void
-}) {
+}
+
+export function OperatorSessionPanel(props: OperatorSessionPanelProps) {
+  return <OperatorSessionPanelContent key={props.sessionId} {...props} />
+}
+
+function OperatorSessionPanelContent({
+  sessionId,
+  variant,
+  fallbackSummary,
+  onCreateSession,
+  onSelectSession,
+}: OperatorSessionPanelProps) {
   const systemsResult = useAtomValue(HubClient.query("systems.list", undefined))
   const systems: ReadonlyArray<System> = systemsResult._tag === "Success" ? systemsResult.value : []
 
@@ -80,11 +88,17 @@ export function OperatorSessionPanel({
   })
   const { openOperatorProjection, updateOperatorProjection } = useTerminalPanel()
   const { optimisticSession, setOptimisticSession } = useOperator()
-  const [draft, setDraft] = useState("")
+  const promptDraft = useOperatorPromptDraft(sessionId)
+  const { controller, draft, sending: isSubmitting } = promptDraft
+  const setDraft = useCallback(
+    (text: string) => {
+      controller.edit(text, controller.getSnapshot().draft.images)
+    },
+    [controller],
+  )
   const fillRef = useRef<((text: string) => void) | null>(null)
   const [isSkillsDialogOpen, setIsSkillsDialogOpen] = useState(false)
   const [draftSkillIds, setDraftSkillIds] = useState<ReadonlyArray<string>>([])
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAborting, setIsAborting] = useState(false)
   const [isUpdatingSkills, setIsUpdatingSkills] = useState(false)
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
@@ -252,32 +266,26 @@ export function OperatorSessionPanel({
     }
   }, [])
 
-  const handlePromptSubmit = async () => {
-    const text = draft.trim()
-    if (!text) return
-
-    // Detect if this is the first user prompt in the session
+  const sendPrompt: SubmitPrompt = async (payload) => {
     const isFirstPrompt = !timeline.some((item) => item.kind === "user")
-
-    setIsSubmitting(true)
-    try {
-      await promptMutation({
-        payload: { sessionId, text, requestId: crypto.randomUUID() },
+    await promptMutation({
+      payload,
+      reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
+    })
+    if (isFirstPrompt) {
+      const text = payload.text.trim() || "Image investigation"
+      const title = text.length > 50 ? `${text.slice(0, 50)}...` : text
+      void setTitle({
+        payload: { sessionId, title },
         reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
+      }).catch(() => {
+        /* Admission already succeeded; title updates do not change its outcome. */
       })
-      setDraft("")
-
-      // The hub does not generate titles; name the session after its first prompt.
-      if (isFirstPrompt) {
-        const fallbackTitle = text.length > 50 ? `${text.slice(0, 50)}...` : text
-        void setTitle({
-          payload: { sessionId, title: fallbackTitle },
-          reactivityKeys: [SESSION_LIST_REACTIVITY_KEY, `operator:session:${sessionId}`],
-        })
-      }
-    } finally {
-      setIsSubmitting(false)
     }
+  }
+
+  const handlePromptSubmit = () => {
+    if (resolvedDetail) void controller.submit(resolvedDetail.imageInput, sendPrompt)
   }
 
   const handleAbort = useCallback(async () => {
@@ -552,6 +560,7 @@ export function OperatorSessionPanel({
                       <OperatorTimelineItemCard
                         key={timelineItemKey(item)}
                         item={item}
+                        sessionId={sessionId}
                         approval={
                           item.kind === "tool" && item.approvalId
                             ? approvalById.get(item.approvalId)
@@ -592,7 +601,18 @@ export function OperatorSessionPanel({
             )}
 
             <OperatorPromptInput
-              draft={draft}
+              key={sessionId}
+              draft={draft.text}
+              images={draft.images}
+              imageInput={resolvedDetail.imageInput}
+              onImagesChange={(images) => controller.edit(controller.getSnapshot().draft.text, images)}
+              onInputError={controller.setError}
+              isRestoring={!promptDraft.ready}
+              admissionError={promptDraft.error}
+              storageError={promptDraft.storageError}
+              pendingAttempt={promptDraft.pending}
+              onRetry={() => void controller.retry(sendPrompt)}
+              onDiscard={controller.discard}
               setDraft={setDraft}
               isSubmitting={isSubmitting}
               onSubmit={() => void handlePromptSubmit()}
@@ -600,6 +620,7 @@ export function OperatorSessionPanel({
               isAborting={isAborting}
               onAbort={() => void handleAbort()}
               queuedInputs={resolvedDetail.queuedInputs}
+              queuedImages={resolvedDetail.queuedImages}
               approvalMode={resolvedDetail.session.approvalMode}
               onApprovalModeChange={(mode) => void handleApprovalModeChange(mode)}
               planMode={resolvedDetail.session.planMode}

@@ -25,7 +25,7 @@ OperatorSessions                 session lifecycle, projection to the wire contr
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `operator-storage.ts`        | `bun:sqlite` adapter for pi-durable's async `SqliteDatabase` facade; proven by pi-durable's storage conformance suite (`test/services/operator-storage.test.ts`)                                                                                                                    |
 | `operator-harness.ts`        | `OperatorHarness` service: opens the Harness over `SCOUT_OPERATOR_DB_PATH` (default `scout-operator.db` next to `SCOUT_DB_PATH`), installs the extensions, calls `resume()`, closes on scope release. `durable()` bridges Effect fiber interruption to a Chord context abort signal |
-| `operator-docs.ts`           | Scout's durable documents: `scout.operator.sessions` (session metadata) and `scout.operator.approvals` (approval requests and decisions)                                                                                                                                            |
+| `operator-docs.ts`           | Scout's durable documents: `scout.operator.sessions` (session metadata), `scout.operator.approvals` (approval requests and decisions), and `scout.operator.input-requests` (retry-key hashes)                                                                                       |
 | `operator-tools.ts`          | Tools, approval gate, execution guard, prompt sections, plugin hooks, plan-mode extension                                                                                                                                                                                           |
 | `operator-sessions.ts`       | `OperatorSessions` service and the pure projection from durable state to `OperatorSessionDetail`                                                                                                                                                                                    |
 | `operator-model-registry.ts` | pi-ai `builtinModels()`; lists models whose provider has credentials                                                                                                                                                                                                                |
@@ -56,6 +56,16 @@ node scope, skills, approval mode, plan mode, model, archived flag, fork lineage
 | delete    | abort, then remove the metadata entry. The transcript stays in storage, unlisted (pi-durable has no conversation deletion) |
 
 There is no in-session "branch": forking replaces it.
+
+## Native input and recovery
+
+`operator.prompt` accepts text plus ordered `{ mimeType, data }` images (raw canonical base64). The hub validates PNG/JPEG/WebP signature, container structure, dimensions, animation flags and byte limits before `conversation.submit()` receives native text/image content arrays. The small `image-size` parser reads metadata; Scout performs no pixel transformations. The model is resolved from the conversation's actual agent. Its input modalities and stricter input limits constrain admission; existing active context and queued images count toward a model's per-request limit. Input admissions are serialized so concurrent peers cannot bypass those counts.
+
+The defaults live in shared `OPERATOR_IMAGE_LIMITS`: four static images, 2 MiB each, 4 MiB combined decoded, 6 MiB serialized, 20 MP each. Model resize dimensions/encoded-byte bounds are treated as rejection bounds, preserving byte identity rather than resampling. Provider serialization and subsequent tool outputs can differ from the admission context estimate; provider errors still appear in the durable timeline.
+
+Native `pi.inbox` and `pi.user` records contain the image bytes. A conversation-scoped `scout.operator.input-requests` document reserves a SHA-256 hash for each request ID before native admission. A crash between reservation and admission leaves the original envelope retryable; native admission owns exactly-once deduplication. Changed content under a reserved key fails explicitly. Forks inherit native entries through their fork point and start with an empty retry-key document. Session deletion removes metadata only; transcript/image storage persists.
+
+The web composer keeps the draft and immutable pending envelope in IndexedDB under the session ID. It persists before sending and retains the same ID/bytes after uncertain responses. Edits create distinct revisions, so acknowledging an older attempt cannot clear new content. Pending bytes are stored once when the draft still equals the attempt; acknowledgement removes that pending copy. Storage failures are surfaced separately from submission failures and preserve in-memory content. There is no service worker, upload store, or alternate RPC transport.
 
 ## Tools
 
@@ -132,6 +142,8 @@ of durable state:
 - `session.status`: `archived`, else `waiting_for_user` with a pending approval, else `running` while a run is
   live, else `failed` if the last answer errored, else `idle`.
 
+User timeline items contain image indexes, MIME types, dimensions and decoded byte counts; `queuedImages` counts queued native blocks. Base64 never enters `get`/`watch` projections. `operator.images.get({ sessionId, entryId, imageIndex })` reads the native entry lazily through the conversation's fork-aware history bounds, rejecting foreign sessions, entries past the fork point and invalid indexes.
+
 `operator.sessions.watch` streams the full detail: one snapshot on subscribe, then one per durable change of the
 conversation view, the approvals document, or the session metadata, coalesced at 50 ms with a sliding buffer of
 one. pi-durable commits partial answers and tool output at most every 100 ms.
@@ -141,7 +153,7 @@ one. pi-durable commits partial answers and tool output at most every 100 ms.
 | `operator.sessions.list` / `get`                                                                                                    | Query    |
 | `operator.sessions.create` / `fork` / `setTitle` / `setApprovalMode` / `setPlanMode` / `setSkills` / `archive` / `delete` / `abort` | Mutation |
 | `operator.prompt` / `operator.approvals.resolve`                                                                                    | Mutation |
-| `operator.skills.list` / `operator.models.list`                                                                                     | Query    |
+| `operator.images.get` / `operator.skills.list` / `operator.models.list`                                                             | Query    |
 | `operator.sessions.watch`                                                                                                           | Stream   |
 
 ## Access and Audit
@@ -151,9 +163,9 @@ Operator RPCs are part of `ClientHubRpcs`, so every call runs behind `ClientAuth
 re-verified per RPC and the identity is provided as `CurrentIdentity`.
 
 - Read-only operator RPCs (`operator.sessions.list` / `get`, `operator.skills.list`, `operator.models.list`,
-  `operator.sessions.watch`) are in `UNAUDITED_RPCS`. Every other operator RPC (create, prompt, abort, fork,
+  `operator.sessions.watch`, `operator.images.get`) are in `UNAUDITED_RPCS`. Every other operator RPC (create, prompt, abort, fork,
   approvals, mode and skill changes, archive, delete) is audit-logged with the actor and identifier fields
-  (`sessionId`, `approvalId`, `decision`, ...); prompt text and answers are never logged.
+  (`sessionId`, `approvalId`, `decision`, ...); prompt text, answers and image bytes are never logged.
 - Approval decisions store the actor durably in `scout.operator.approvals` and show it in the UI.
 - `operator.sessions.watch` is a stream RPC: when the caller's Access JWT expires it fails with `Unauthorized`
   ("Cloudflare Access session expired"), and its view subscriptions are released. The browser reconnects with a

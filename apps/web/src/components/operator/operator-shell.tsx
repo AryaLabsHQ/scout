@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 import type { OperatorShellVariant } from "./operator-utils"
 import { SESSION_LIST_REACTIVITY_KEY, SESSION_STATUS } from "./operator-utils"
 import { OperatorSessionPanel } from "./operator-session-panel"
+import { OperatorPromptDraftProvider } from "./use-operator-prompt-draft"
 
 export function OperatorShell({
   variant,
@@ -100,17 +101,19 @@ export function OperatorShell({
   }, [createSession, navigate, openDrawer, setActiveSessionId, setOptimisticSession, variant])
 
   return (
-    <div className={cn("h-full min-h-0 overflow-hidden bg-background", className)}>
-      <OperatorSessionSurface
-        variant={variant}
-        activeSessionId={resolvedSessionId}
-        sessions={sessions}
-        onlineSystemCount={onlineSystems.length}
-        isCreating={isCreating}
-        onCreateSession={() => void handleCreateSession()}
-        onSelectSession={handleSelectSession}
-      />
-    </div>
+    <OperatorPromptDraftProvider>
+      <div className={cn("h-full min-h-0 overflow-hidden bg-background", className)}>
+        <OperatorSessionSurface
+          variant={variant}
+          activeSessionId={resolvedSessionId}
+          sessions={sessions}
+          onlineSystemCount={onlineSystems.length}
+          isCreating={isCreating}
+          onCreateSession={() => void handleCreateSession()}
+          onSelectSession={handleSelectSession}
+        />
+      </div>
+    </OperatorPromptDraftProvider>
   )
 }
 
@@ -225,9 +228,10 @@ function SessionRow({ session, onSelect }: { session: OperatorSessionSummary; on
 
   const onDelete = async () => {
     const confirmed = await confirm({
-      title: `Delete “${session.title}”?`,
-      description: "The session and its whole history are deleted. This cannot be undone.",
-      confirmLabel: "Delete",
+      title: `Remove “${session.title}” from the list?`,
+      description:
+        "Its transcript and image bytes remain in the operator database. Existing forks keep their inherited history.",
+      confirmLabel: "Remove session",
       destructive: true,
     })
     if (!confirmed) return

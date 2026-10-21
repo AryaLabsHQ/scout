@@ -3,6 +3,9 @@ import { Streamdown } from "streamdown"
 import { code } from "@streamdown/code"
 import { cjk } from "@streamdown/cjk"
 import { HugeiconsIcon } from "@hugeicons/react"
+import { useAtomValue, useAtomRefresh } from "@effect/atom-react"
+import { HubClient } from "@/rpc/client"
+import { OperatorImagePreview } from "./operator-image-preview"
 import {
   ArrowDown01Icon,
   Copy01Icon,
@@ -63,6 +66,7 @@ OperatorMarkdown.displayName = "OperatorMarkdown"
 
 export function OperatorTimelineItemCard({
   item,
+  sessionId,
   approval,
   forkingEntryId,
   resolvingApprovalId,
@@ -71,6 +75,7 @@ export function OperatorTimelineItemCard({
   onMirrorTerminal,
 }: {
   item: OperatorTimelineItem
+  sessionId: string
   /** The approval referenced by a tool item's `approvalId`. */
   approval?: OperatorApprovalRequest
   forkingEntryId: string | null
@@ -81,7 +86,14 @@ export function OperatorTimelineItemCard({
 }) {
   switch (item.kind) {
     case "user":
-      return <UserMessageCard item={item} isForking={forkingEntryId === item.entryId} onFork={onFork} />
+      return (
+        <UserMessageCard
+          item={item}
+          sessionId={sessionId}
+          isForking={forkingEntryId === item.entryId}
+          onFork={onFork}
+        />
+      )
     case "assistant":
       return (
         <AssistantMessageCard
@@ -129,6 +141,7 @@ function HoverActions({
                 variant="ghost"
                 className="size-6 text-muted-foreground"
                 disabled={isForking}
+                aria-label="Fork session"
                 onClick={() => void onFork(forkEntryId)}
               />
             }
@@ -146,6 +159,7 @@ function HoverActions({
                 size="icon"
                 variant="ghost"
                 className="size-6 text-muted-foreground"
+                aria-label="Copy message"
                 onClick={() => void navigator.clipboard.writeText(content)}
               />
             }
@@ -161,10 +175,12 @@ function HoverActions({
 
 function UserMessageCard({
   item,
+  sessionId,
   isForking,
   onFork,
 }: {
   item: UserItem
+  sessionId: string
   isForking: boolean
   onFork: (entryId: string) => Promise<void>
 }) {
@@ -183,11 +199,72 @@ function UserMessageCard({
           />
         </div>
       </div>
-      <p className="whitespace-pre-wrap border-l-2 border-border-strong pl-3 text-sm text-foreground">
-        {item.text}
-      </p>
+      {item.text ? (
+        <p className="whitespace-pre-wrap border-l-2 border-border-strong pl-3 text-sm text-foreground">
+          {item.text}
+        </p>
+      ) : null}
+      {item.images?.length ? (
+        <div className="flex flex-wrap gap-2 pl-3">
+          {item.images.map((image) => (
+            <TimelineImage key={image.index} sessionId={sessionId} entryId={item.entryId} image={image} />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
+}
+
+function TimelineImage({
+  sessionId,
+  entryId,
+  image,
+}: {
+  sessionId: string
+  entryId: string
+  image: NonNullable<UserItem["images"]>[number]
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-2">
+      <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        {open ? "Hide" : "View"} image {image.index + 1} · {image.width} × {image.height}
+      </Button>
+      {open ? (
+        <RetrievedTimelineImage sessionId={sessionId} entryId={entryId} imageIndex={image.index} />
+      ) : null}
+    </div>
+  )
+}
+
+function RetrievedTimelineImage({
+  sessionId,
+  entryId,
+  imageIndex,
+}: {
+  sessionId: string
+  entryId: string
+  imageIndex: number
+}) {
+  const atom = HubClient.query("operator.images.get", { sessionId, entryId, imageIndex })
+  const result = useAtomValue(atom)
+  const refresh = useAtomRefresh(atom)
+  if (result._tag === "Failure")
+    return (
+      <div role="alert" className="text-xs text-err">
+        Image could not be loaded. Check your connection or sign in again.{" "}
+        <Button size="sm" variant="ghost" onClick={refresh}>
+          Retry image
+        </Button>
+      </div>
+    )
+  if (result._tag !== "Success")
+    return (
+      <p role="status" className="text-xs text-muted-foreground">
+        Loading image…
+      </p>
+    )
+  return <OperatorImagePreview image={result.value} alt={`Submitted image ${imageIndex + 1}`} />
 }
 
 function AssistantMessageCard({
