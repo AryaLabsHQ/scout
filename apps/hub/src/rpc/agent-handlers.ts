@@ -2,7 +2,7 @@
  * AgentHubRpcs handler implementations — hub-side handlers for RPCs that
  * agents initiate.
  *
- * Only `agent.report` is implemented here. The `agent.connect` handler
+ * Core and plugin reports are guarded here. The `agent.connect` handler
  * lives in `agent-bridge.ts` because it needs per-connection closure
  * over the typed HubAgentClient and the AgentRegistry to register the
  * agent in one shot.
@@ -65,10 +65,9 @@ const CoreMetricsHandlerLive = AgentHubRpcs.toLayerHandler(
     return (payload) =>
       Effect.gen(function* () {
         yield* requireSystem(identity, payload.systemId)
-        const typedPayload = payload as Parameters<typeof mi.ingest>[0]
-        yield* mi.ingest(typedPayload)
-        yield* broadcast.publishMetrics(typedPayload.sample)
-        yield* alerts.evaluate(typedPayload.systemId, alertMetricSamplesFromCoreMetrics(typedPayload.sample))
+        yield* mi.ingest(payload)
+        yield* broadcast.publishMetrics(payload.sample)
+        yield* alerts.evaluate(payload.systemId, alertMetricSamplesFromCoreMetrics(payload.sample))
       })
   }),
 )

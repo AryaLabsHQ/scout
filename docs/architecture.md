@@ -139,12 +139,17 @@ Scout has two data lanes that work together to eliminate cold-start races while 
 2. The single WebSocket carries two RPC directions via `DuplexRpcSocket`:
    - **Agent -> Hub** (`AgentHubRpcs`): `agent.connect`, `agent.report`, `agent.reportPluginCollection`
    - **Hub -> Agent** (`HubAgentRpcs`): `terminal.open`, `terminal.input`, `terminal.resize`, `terminal.close`, `plugins.runAction`, `plugins.logs`
+
 3. Agent reports core metrics every 15 seconds via `agent.report`
 4. Plugin collection results flow via `agent.reportPluginCollection`
 5. Hub-initiated commands (terminal sessions, plugin actions) are routed through `AgentRegistry` to the correct agent's RPC client
 6. Liveness: the agent sends an RPC `Ping` every 4 seconds and drops the session when the hub sends nothing for a full interval, so a hub that hangs without closing the socket is detected within 8 seconds. Socket closes are detected immediately.
 7. Reconnect: the agent redials as soon as a session ends, then backs off from 500ms up to a 4s cap (±20% jitter) while the hub stays unreachable. The backoff resets after every handshake, and `agent.connect` registers the agent again.
 8. Hub shutdown interrupts open WebSocket handlers instead of draining them (`disablePreemptiveShutdown`), so agents see a 1001 close the moment the hub stops rather than after the 20s graceful-shutdown timeout in `@effect/platform-bun`
+
+Before either report RPC is accepted, `agent.connect` must successfully register the socket. Its host identity is immutable for that connection. Repeating `agent.connect` for the same hostname with valid credentials returns the existing system ID without updating metadata or reclaiming management routing from a replacement socket; another hostname returns `AgentConnectError` with reason `already-connected`.
+
+Both report RPCs require the outer `systemId` to match the registered host. Plugin collections also require every entity reference, metric/event entity reference and relationship target `nodeId` to match that host. The entire collection is validated before any persistence, metrics broadcast or alert evaluation. Rejection uses the shared `AgentReportError` (`not-connected`, `system-mismatch` or `node-mismatch`); no records are partially accepted and rejected samples do not advance alert counters. Entityless plugin metrics/events and valid bundled collections remain supported. Reconnecting creates a fresh identity slot and fresh handler layers, while `AgentRegistry` keeps management calls associated with the current connection for each host.
 
 ## RPC Surface
 
