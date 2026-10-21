@@ -376,8 +376,12 @@ export const handleAgentRpcWebSocket = Effect.gen(function* () {
             // from a newer socket that has replaced this connection.
             return { systemId: registered }
           }
-          yield* registry.register(info, capabilities, pluginCapabilities, hubAgentClient)
+          // Registration can publish the client before its database write fails.
+          // Track cleanup first; failed retries must not leave earlier routes behind.
           yield* Ref.set(registeredRef, { agentId: info.systemId, client: hubAgentClient })
+          yield* registry
+            .register(info, capabilities, pluginCapabilities, hubAgentClient)
+            .pipe(Effect.onError(() => registry.unregister(info.systemId, hubAgentClient)))
           yield* Ref.set(identity, info.systemId)
           return { systemId: info.systemId }
         }).pipe(registrationLock.withPermits(1))

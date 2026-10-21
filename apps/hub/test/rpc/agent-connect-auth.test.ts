@@ -326,6 +326,72 @@ describe("agent report connection attribution", () => {
 })
 
 describe("agent connection lifecycle and routing", () => {
+  for (const replaceBeforeClose of [false, true]) {
+    it.live(
+      `cleans failed registration retries and preserves ${replaceBeforeClose ? "the replacement" : "another node"} on close`,
+      () =>
+        Effect.gen(function* () {
+          const db = yield* Database
+          const registry = yield* AgentRegistry
+          const calls: string[] = []
+          const other = yield* openAgent(NODE_2_TOKEN, (id) => calls.push(`two:${id}`))
+          yield* other["agent.connect"](registration("node-2", NODE_2_TOKEN))
+          const failedScope = yield* Scope.make()
+          yield* Effect.addFinalizer(() => Scope.close(failedScope, Exit.void))
+          const failed = yield* openAgent(NODE_1_TOKEN).pipe(Effect.provideService(Scope.Scope, failedScope))
+          db.$client.exec(`
+            CREATE TRIGGER reject_registration BEFORE INSERT ON systems
+            WHEN NEW.id = 'node-1'
+            BEGIN SELECT RAISE(ABORT, 'injected registration failure'); END;
+          `)
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const result = yield* failed["agent.connect"](registration("node-1", NODE_1_TOKEN)).pipe(
+              Effect.exit,
+            )
+            expect(Exit.isFailure(result)).toBe(true)
+            expectReportRejection(
+              yield* failed["agent.report"](makeCoreMetricsPayload("node-1")).pipe(Effect.exit),
+              "not-connected",
+            )
+            expectReportRejection(
+              yield* failed["agent.reportPluginCollection"]({ systemId: "node-1", collection: {} }).pipe(
+                Effect.exit,
+              ),
+              "not-connected",
+            )
+            expect(yield* registry.getClient("node-1")).toBeNull()
+          }
+          expect(
+            db
+              .select()
+              .from(tables.systems)
+              .all()
+              .map((row) => row.id),
+          ).toEqual(["node-2"])
+          expect(db.select().from(tables.systemMetrics).all()).toEqual([])
+          db.$client.exec("DROP TRIGGER reject_registration")
+          if (replaceBeforeClose) {
+            const replacement = yield* openAgent(NODE_1_TOKEN, (id) => calls.push(`new:${id}`))
+            yield* replacement["agent.connect"](registration("node-1", NODE_1_TOKEN))
+          }
+          yield* Scope.close(failedScope, Exit.void)
+          yield* other["agent.report"](makeCoreMetricsPayload("node-2"))
+          expect(yield* connectedHostnames).toEqual(replaceBeforeClose ? ["node-1", "node-2"] : ["node-2"])
+          for (const host of replaceBeforeClose ? ["node-1", "node-2"] : ["node-2"]) {
+            const client = yield* registry.getClient(host)
+            expect(client).not.toBeNull()
+            const sessionId = "after-failed-close"
+            yield* client!["terminal.close"]({ sessionId }).pipe(Effect.timeout("2 seconds"))
+          }
+          expect(calls).toEqual(
+            replaceBeforeClose
+              ? ["new:after-failed-close", "two:after-failed-close"]
+              : ["two:after-failed-close"],
+          )
+        }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+    )
+  }
+
   it.live(
     "keeps independent management clients, immutable identity and idempotent repeat connect across reconnect",
     () =>
