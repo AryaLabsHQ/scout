@@ -1,8 +1,15 @@
+import { Worker } from "node:worker_threads"
 import { deflateSync } from "node:zlib"
-import { describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { OPERATOR_IMAGE_LIMITS } from "@scout/shared"
-import * as codecs from "../../src/services/operator-image-codecs.js"
-import { imageInputFor, validateOperatorInput } from "../../src/services/operator-images.js"
+import { Effect, Exit, Scope } from "effect"
+import { OperatorImageCodecs } from "../../src/services/operator-image-codecs.js"
+import { OPERATOR_IMAGE_DECODE_TIMEOUT_MS } from "../../src/services/operator-image-codec-protocol.js"
+import {
+  imageInputFor,
+  imageMetadata,
+  validateOperatorInput as validate,
+} from "../../src/services/operator-images.js"
 
 import {
   corruptCompressedImages,
@@ -12,10 +19,23 @@ import {
   animatedPng,
   animatedWebp,
   largeDimensionsPng,
+  maxPixelsPng,
 } from "../helpers/operator-images.js"
 const limits = { ...OPERATOR_IMAGE_LIMITS, supported: true }
 
 describe("operator image boundary", () => {
+  const scope = Scope.makeUnsafe()
+  let codecs: OperatorImageCodecs["Service"]
+  beforeAll(async () => {
+    codecs = await Effect.runPromise(OperatorImageCodecs.make.pipe(Effect.provideService(Scope.Scope, scope)))
+  })
+  afterAll(() => Effect.runPromise(Scope.close(scope, Exit.void)))
+  const validateOperatorInput = (
+    text: Parameters<typeof validate>[0],
+    images: Parameters<typeof validate>[1],
+    inputLimits: Parameters<typeof validate>[2],
+  ) => validate(text, images, inputLimits, codecs)
+
   it("keeps text-only callers working and allows image-only input", async () => {
     expect(await validateOperatorInput("text", [], imageInputFor(undefined))).toEqual([])
     expect(await validateOperatorInput("", [png], limits)).toEqual([
@@ -77,26 +97,20 @@ describe("operator image boundary", () => {
       validateOperatorInput("", [{ ...webp, data: hiddenFrame.toString("base64") }], limits),
     ).rejects.toThrow("dimensions")
   })
-  it("decodes a valid image at the inclusive 20 MP limit", async () => {
-    const width = 5000
-    const height = 4000
-    const header = Buffer.from(png.data, "base64").subarray(0, 33)
-    header.writeUInt32BE(width, 16)
-    header.writeUInt32BE(height, 20)
-    header.writeUInt32BE(Bun.hash.crc32(header.subarray(12, 29)), 29)
-    const compressed = deflateSync(Buffer.alloc((width * 4 + 1) * height))
-    const chunk = Buffer.alloc(compressed.length + 12)
-    chunk.writeUInt32BE(compressed.length)
-    chunk.write("IDAT", 4)
-    compressed.copy(chunk, 8)
-    chunk.writeUInt32BE(Bun.hash.crc32(chunk.subarray(4, -4)), chunk.length - 4)
-    const data = Buffer.concat([header, chunk, Buffer.from(png.data, "base64").subarray(-12)]).toString(
-      "base64",
-    )
-    expect(await validateOperatorInput("", [{ ...png, data }], limits)).toMatchObject([{ width, height }])
+  it("keeps unrelated timers progressing while decoding a genuine image at the inclusive 20 MP limit", async () => {
+    await validateOperatorInput("", [png], limits)
+    const image = maxPixelsPng()
+    let ticks = 0
+    const timer = setInterval(() => ticks++, 5)
+    try {
+      expect(await validateOperatorInput("", [image], limits)).toMatchObject([{ width: 5000, height: 4000 }])
+      expect(ticks).toBeGreaterThan(0)
+    } finally {
+      clearInterval(timer)
+    }
   })
   it("applies pixel caps before calling any decoder", async () => {
-    const decode = vi.spyOn(codecs, "decodeOperatorImage")
+    const decode = vi.spyOn(codecs, "decode")
     try {
       await expect(validateOperatorInput("", [largeDimensionsPng], limits)).rejects.toThrow("dimension")
       expect(decode).not.toHaveBeenCalled()
@@ -115,5 +129,96 @@ describe("operator image boundary", () => {
     ).rejects.toThrow("serialized")
     await expect(validateOperatorInput("", [png], { ...limits, maxPixels: 0 })).rejects.toThrow("dimension")
     await expect(validateOperatorInput("", [png], { ...limits, maxWidth: 0 })).rejects.toThrow("dimension")
+  })
+})
+
+describe("scoped operator codec worker", () => {
+  let scope: Scope.Closeable
+  let codecs: OperatorImageCodecs["Service"]
+  beforeEach(async () => {
+    scope = Scope.makeUnsafe()
+    codecs = await Effect.runPromise(OperatorImageCodecs.make.pipe(Effect.provideService(Scope.Scope, scope)))
+  })
+  afterEach(async () => {
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+    vi.restoreAllMocks()
+  })
+
+  it("does not start codec work for text-only input or an already cancelled request", async () => {
+    const submit = vi.spyOn(Worker.prototype, "postMessage")
+    const abort = new AbortController()
+    abort.abort()
+    await expect(validate("text", [], limits, codecs)).resolves.toEqual([])
+    await expect(validate("", [png], limits, codecs, undefined, abort.signal)).rejects.toThrow("cancelled")
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it("reuses one worker, preserves source bytes and rejects excess work without a waiting queue", async () => {
+    const submit = vi.spyOn(Worker.prototype, "postMessage")
+    const terminate = vi.spyOn(Worker.prototype, "terminate")
+    await validate("", [png], limits, codecs)
+    const image = maxPixelsPng()
+    const bytes = Buffer.from(image.data, "base64")
+    const original = Buffer.from(bytes)
+    const decoding = codecs.decode(bytes, imageMetadata(image, 0))
+    const refused = await Promise.allSettled(
+      Array.from({ length: 16 }, () => validate("", [png], limits, codecs)),
+    )
+    for (const result of refused) {
+      expect(result).toMatchObject({ status: "rejected", reason: { code: "operator-input-busy" } })
+    }
+    await decoding
+    expect(bytes).toEqual(original)
+    await validate("", [jpeg, webp], limits, codecs)
+    expect(submit).toHaveBeenCalledTimes(4)
+    expect(new Set(submit.mock.contexts).size).toBe(1)
+    expect(terminate).not.toHaveBeenCalled()
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+    expect(terminate).toHaveBeenCalledTimes(1)
+    await expect(codecs.decode(bytes, imageMetadata(image, 0))).rejects.toThrow("closed")
+  })
+
+  it("settles an in-flight decode and awaits worker termination when its service scope closes", async () => {
+    const terminate = vi.spyOn(Worker.prototype, "terminate")
+    await validate("", [png], limits, codecs)
+    const image = maxPixelsPng()
+    const decoding = expect(validate("", [image], limits, codecs)).rejects.toThrow("shutting down")
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+    await decoding
+    expect(terminate).toHaveBeenCalledTimes(1)
+    await expect(terminate.mock.results[0]?.value).resolves.toBeTypeOf("number")
+  })
+
+  it("terminates active work on cancellation instead of leaving a detached decode", async () => {
+    const terminate = vi.spyOn(Worker.prototype, "terminate")
+    await validate("", [png], limits, codecs)
+    const image = maxPixelsPng()
+    const abort = new AbortController()
+    const decoding = expect(validate("", [image], limits, codecs, undefined, abort.signal)).rejects.toThrow(
+      "cancelled",
+    )
+    abort.abort()
+    await decoding
+    expect(terminate).toHaveBeenCalledTimes(1)
+    await expect(terminate.mock.results[0]?.value).resolves.toBeTypeOf("number")
+    // A replacement may start only after the cancelled worker has actually exited.
+    await expect(validate("", [png], limits, codecs)).resolves.toHaveLength(1)
+  })
+
+  it("bounds decode duration and terminates a worker that misses its deadline", async () => {
+    await validate("", [png], limits, codecs)
+    const image = maxPixelsPng()
+    const terminate = vi.spyOn(Worker.prototype, "terminate")
+    vi.useFakeTimers()
+    try {
+      const decoding = expect(validate("", [image], limits, codecs)).rejects.toThrow("timed out")
+      vi.advanceTimersByTime(OPERATOR_IMAGE_DECODE_TIMEOUT_MS)
+      await decoding
+    } finally {
+      vi.useRealTimers()
+    }
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+    expect(terminate).toHaveBeenCalledTimes(1)
+    await expect(terminate.mock.results[0]?.value).resolves.toBeTypeOf("number")
   })
 })

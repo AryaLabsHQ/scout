@@ -38,6 +38,7 @@ import { OperatorModelRegistry } from "./operator-model-registry.js"
 import { OperatorResources } from "./operator-resources.js"
 import { OperatorSkills } from "./operator-skills.js"
 import { imageInputFor, imageMetadata, validateOperatorInput } from "./operator-images.js"
+import { OperatorImageCodecs } from "./operator-image-codecs.js"
 import { createHash } from "node:crypto"
 import { toolNodeIds } from "./operator-tools.js"
 
@@ -307,6 +308,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
       const skills = yield* OperatorSkills
       const resources = yield* OperatorResources
       const admission = yield* Semaphore.make(1)
+      const codecs = yield* OperatorImageCodecs
 
       const imageMetadataCache = new Map<string, ReadonlyArray<OperatorImageMetadata>>()
       const available = Effect.all({ skillList: skills.list(), resourceList: resources.list() }).pipe(
@@ -591,11 +593,18 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
               ? undefined
               : modelSettings.models.getModel(agent.model.provider, agent.model.modelId)
           yield* Effect.tryPromise({
-            try: () =>
-              validateOperatorInput(text, images, imageInputFor(model), {
-                sessionId,
-                ...(requestId === undefined ? {} : { requestId }),
-              }),
+            try: (signal) =>
+              validateOperatorInput(
+                text,
+                images,
+                imageInputFor(model),
+                codecs,
+                {
+                  sessionId,
+                  ...(requestId === undefined ? {} : { requestId }),
+                },
+                signal,
+              ),
             catch: (error) =>
               error instanceof ManagementError
                 ? error
@@ -631,7 +640,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
             )
             if (admitted) return
           }
-          if (images.length > 0 && model?.inputLimits !== undefined) {
+          if (model?.inputLimits !== undefined) {
             const view = yield* readView(conversation)
             const messages = view.entries.flatMap((entry) => entry.model ?? [])
             const inbox = view.docs["pi.inbox"] as InboxState | undefined
@@ -658,7 +667,7 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
               return yield* Effect.fail(
                 new ManagementError({
                   code: "operator-input-invalid",
-                  message: "Images exceed the model's remaining request limit in this conversation",
+                  message: "Prompt exceeds the model's remaining request limit in this conversation",
                 }),
               )
             }
@@ -791,5 +800,5 @@ export class OperatorSessions extends Context.Service<OperatorSessions, Operator
     }),
   },
 ) {
-  static readonly layer = Layer.effect(this, this.make)
+  static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(OperatorImageCodecs.layer))
 }

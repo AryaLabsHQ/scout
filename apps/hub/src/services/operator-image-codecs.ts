@@ -1,52 +1,108 @@
+import { Worker } from "node:worker_threads"
+import { Context, Effect, Layer, Schema } from "effect"
+import { ManagementError, OPERATOR_IMAGE_LIMITS, type OperatorImageMetadata } from "@scout/shared"
 import {
-  initializeImageMagick,
-  MagickFormat,
-  MagickImage,
-  MagickReadSettings,
-  ResourceLimits,
-} from "@imagemagick/magick-wasm"
-import magickWasm from "@imagemagick/magick-wasm/magick.wasm" with { type: "file" }
-import { OPERATOR_IMAGE_LIMITS, type OperatorImageMetadata } from "@scout/shared"
+  OPERATOR_IMAGE_DECODE_TIMEOUT_MS,
+  OperatorImageDecodeResponse,
+} from "./operator-image-codec-protocol.js"
 
-let ready: Promise<void> | undefined
+const unavailable = (message: string) => new ManagementError({ code: "operator-input-busy", message })
 
-/** Decode for validity only; native admission retains the original compressed bytes. */
-export async function decodeOperatorImage(bytes: Buffer, metadata: OperatorImageMetadata) {
-  // Bun embeds this file in the executable, with no native addons or adjacent runtime assets.
-  ready ??= Bun.file(magickWasm)
-    .bytes()
-    .then(async (wasm) => {
-      await initializeImageMagick(wasm)
-      // ImageMagick's thresholds are exclusive; Scout admits exactly maxPixels, even at width 1.
-      const pixelThreshold = BigInt(OPERATOR_IMAGE_LIMITS.maxPixels) + 1n
-      ResourceLimits.area = pixelThreshold
-      ResourceLimits.width = pixelThreshold
-      ResourceLimits.height = pixelThreshold
-      ResourceLimits.memory = 384n * 1024n * 1024n
-      ResourceLimits.maxMemoryRequest = 256n * 1024n * 1024n
-      ResourceLimits.maxProfileSize = BigInt(OPERATOR_IMAGE_LIMITS.maxImageBytes)
-      ResourceLimits.disk = 0n
-      ResourceLimits.listLength = 5n
-    })
-  await ready
-  const format = {
-    "image/png": MagickFormat.Png,
-    "image/jpeg": MagickFormat.Jpeg,
-    "image/webp": MagickFormat.WebP,
-  }[metadata.mimeType]
-  if (format === undefined) throw new Error("Unsupported image codec")
-  const image = MagickImage.create()
-  try {
-    // Some codecs recover truncated pixels with a warning; admission must reject those too.
-    let warned = false
-    image.onWarning = () => {
-      warned = true
+const make = Effect.gen(function* () {
+  let closed = false
+  let worker: Worker | undefined
+  let stopping: Promise<void> | undefined
+  let pending: { complete: (error?: Error) => void } | undefined
+
+  const stop = (error: Error) => {
+    const current = worker
+    worker = undefined
+    pending?.complete(error)
+    if (current !== undefined) {
+      stopping = current.terminate().then(() => {
+        stopping = undefined
+      })
     }
-    image.read(bytes, new MagickReadSettings({ format, frameCount: 1 }))
-    if (warned || image.width !== metadata.width || image.height !== metadata.height) {
-      throw new Error("Invalid pixels or inconsistent image dimensions")
-    }
-  } finally {
-    image.dispose()
+    return stopping ?? Promise.resolve()
   }
+
+  yield* Effect.addFinalizer(() => {
+    closed = true
+    return Effect.promise(() => stop(unavailable("Image decoder is shutting down")))
+  })
+
+  return {
+    /** A single worker, no waiting jobs; saturation fails before copying compressed bytes. */
+    decode: async (bytes: Buffer, metadata: OperatorImageMetadata, signal?: AbortSignal) => {
+      if (closed) throw unavailable("Image decoder is closed")
+      if (pending !== undefined || stopping !== undefined)
+        throw unavailable("Image decoder is busy; retry this submission")
+      if (signal?.aborted) throw unavailable("Image decoding was cancelled; retry this submission")
+      if (
+        bytes.byteLength > OPERATOR_IMAGE_LIMITS.maxImageBytes ||
+        metadata.width <= 0 ||
+        metadata.height <= 0 ||
+        metadata.width * metadata.height > OPERATOR_IMAGE_LIMITS.maxPixels
+      )
+        throw new Error("Image exceeds codec limits")
+
+      if (worker === undefined) {
+        // Compile with this worker entrypoint and --entry-naming '[name].[ext]' so its URL is stable.
+        const current = new Worker(new URL("./operator-image-codec-worker.js", import.meta.url))
+        worker = current
+        current.on("message", (message: unknown) => {
+          if (worker !== current) return
+          try {
+            const response = Schema.decodeUnknownSync(OperatorImageDecodeResponse)(message)
+            if (response.status === "done") {
+              pending?.complete(response.valid ? undefined : new Error("Invalid image pixels"))
+            }
+          } catch {
+            void stop(new Error("Invalid image decoder response"))
+          }
+        })
+        current.on("error", (cause: Error) => {
+          if (worker === current) void stop(new Error("Image decoder worker failed", { cause }))
+        })
+        current.on("exit", () => {
+          if (worker !== current) return
+          worker = undefined
+          pending?.complete(new Error("Image decoder worker exited"))
+        })
+      }
+      const current = worker
+      return new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          void stop(unavailable("Image decoding was cancelled; retry this submission"))
+        }
+        const timer = setTimeout(() => {
+          void stop(unavailable("Image decoding timed out; retry this submission"))
+        }, OPERATOR_IMAGE_DECODE_TIMEOUT_MS)
+        pending = {
+          complete: (error) => {
+            clearTimeout(timer)
+            signal?.removeEventListener("abort", abort)
+            pending = undefined
+            if (error === undefined) resolve()
+            else reject(error)
+          },
+        }
+        signal?.addEventListener("abort", abort, { once: true })
+        try {
+          // Buffer views can retain larger backing stores; transfer only a bounded owned copy.
+          const input = Uint8Array.from(bytes)
+          current.postMessage({ bytes: input, metadata }, [input.buffer])
+        } catch {
+          void stop(new Error("Could not submit image to decoder"))
+        }
+      })
+    },
+  }
+})
+
+export class OperatorImageCodecs extends Context.Service<OperatorImageCodecs, Effect.Success<typeof make>>()(
+  "@scout/OperatorImageCodecs",
+  { make },
+) {
+  static readonly layer = Layer.effect(this, this.make)
 }

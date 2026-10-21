@@ -34,7 +34,7 @@ The prompt input supports:
 
 ### Images and limits
 
-Attach at most **4 images**, **2 MiB per image**, **4 MiB total decoded image bytes**, and **20 megapixels per image**. The complete serialized prompt is limited to **6 MiB**. Stricter limits advertised by the session's model also apply, including dimensions, encoded bytes and images already in its request context. Scout rejects animation, remote URLs, SVG and other documents. It does not compress, convert, upload to a blob service, or switch models automatically.
+Attach at most **4 images**, **2 MiB per image**, **4 MiB total decoded image bytes**, and **20 megapixels per image**. The complete serialized prompt is limited to **6 MiB**. Stricter limits advertised by the session's model also apply, including dimensions, encoded bytes, image counts and the estimated bytes of its existing conversation and queued input. These request limits also apply to text-only follow-ups. Scout rejects animation, remote URLs, SVG and other documents. It does not compress, convert, upload to a blob service, or switch models automatically.
 
 Images are stored as native content in the operator SQLite inbox and transcript. They survive queueing, hub restart, reload and forks. Timeline images load on demand through the authenticated session RPC; live session snapshots carry metadata and counts. **Deleting a session only unlists it. Its transcript and image bytes remain in the operator database**, including entries inherited by existing forks. Scout currently has no image erasure or separate image retention control.
 
@@ -42,7 +42,7 @@ Images are stored as native content in the operator SQLite inbox and transcript.
 
 The browser saves each session's draft and unacknowledged attempt in IndexedDB. If a response is lost, **Retry** sends the original request ID, text and ordered image bytes, so admission happens once. The original may already have reached the hub even when the browser has no acknowledgement. Edits remain a separate draft; discard the pending attempt before submitting edited content with a new ID. Discarding local recovery data does not cancel an already admitted turn.
 
-An acknowledgement clears only the submitted revision. Text or images edited while a send is in flight stay in the composer. Reload restores unsent drafts and offers Retry/Discard for uncertain attempts. If browser storage fails or is unavailable, a visible notice explains that reload recovery is unavailable; the in-memory draft remains usable. Clearing browser site data removes local recovery records.
+An acknowledgement clears only the submitted revision. Text or images edited while a send is in flight stay in the composer. Reload restores unsent drafts and offers Retry/Discard for uncertain attempts. If browser storage fails or is unavailable, a visible notice explains that reload recovery is unavailable; the in-memory draft remains usable. The full page and drawer share one draft. Across tabs, a saved attempt keeps its original key and bytes, and conflicting edits appear as saved drafts you can restore without losing your current edits. Clearing browser site data removes local recovery records.
 
 ## Tools
 

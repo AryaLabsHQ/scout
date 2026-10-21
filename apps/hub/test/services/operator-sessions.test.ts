@@ -10,8 +10,11 @@ import {
 } from "@earendil-works/pi-ai/providers/faux"
 import type { OperatorSessionDetail, OperatorTimelineItem } from "@scout/shared"
 import * as imagesBoundary from "../../src/services/operator-images.js"
-import * as imageCodecs from "../../src/services/operator-image-codecs.js"
 import { Database } from "bun:sqlite"
+import { createHash } from "node:crypto"
+import type { ConversationId, InboxState } from "@earendil-works/pi-durable"
+import { durable, OperatorHarness } from "../../src/services/operator-harness.js"
+import { OperatorInputRequestsDoc } from "../../src/services/operator-docs.js"
 import { OperatorSessions } from "../../src/services/operator-sessions.js"
 import { executed, faux, operatorLayer } from "../helpers/operator.js"
 
@@ -511,7 +514,7 @@ describe("native operator image input", () => {
     const { png } = await import("../helpers/operator-images.js")
     script(fauxAssistantMessage("Stored"))
     const inspect = vi.spyOn(imagesBoundary, "imageMetadata")
-    const decode = vi.spyOn(imageCodecs, "decodeOperatorImage")
+    const decode = vi.spyOn(imagesBoundary, "validateOperatorInput")
     try {
       await withOperator(storagePath, (sessions) =>
         Effect.gen(function* () {
@@ -578,6 +581,128 @@ describe("native operator image input", () => {
       }),
     )
     expect(seen).toEqual([[{ type: "image", ...png }]])
+  })
+  it.each([false, true])(
+    "bounds text-only follow-ups against image history and native queue (busy=%s)",
+    async (busy) => {
+      const { png } = await import("../helpers/operator-images.js")
+      let calls = 0
+      script(() => {
+        calls++
+        return busy ? mutatingBash("strict approval") : fauxAssistantMessage("Image received")
+      })
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const sessions = yield* OperatorSessions
+            const { harness } = yield* OperatorHarness
+            const id = yield* createSession(sessions)
+            yield* sessions.prompt(id, "", "prior-image", [png])
+            yield* waitFor(sessions, id, (detail) =>
+              busy ? detail.session.status === "waiting_for_user" : isIdle(detail),
+            )
+            if (busy) yield* sessions.prompt(id, "queued text", "queued-text")
+            const remaining = yield* durable("test-view", async (context) => {
+              const conversation = (await harness.conversation(Number(id) as ConversationId, context))!
+              const agent = await conversation.agent(context)
+              const view = await conversation.viewState(context)
+              try {
+                const messages = view.value.entries.flatMap((entry) => entry.model ?? [])
+                const inbox = view.value.docs["pi.inbox"] as InboxState | undefined
+                const queued = (inbox?.items ?? []).flatMap((item) =>
+                  item.mode === "write" ? [] : [{ role: "user", content: item.content }],
+                )
+                return (
+                  64_000 -
+                  Buffer.byteLength(
+                    JSON.stringify({
+                      messages: [
+                        ...messages,
+                        ...queued,
+                        { role: "user", content: [{ type: "text", text: "" }] },
+                      ],
+                      tools: agent.tools,
+                    }),
+                  )
+                )
+              } finally {
+                view.dispose()
+              }
+            })
+            expect(remaining).toBeGreaterThan(0)
+            expect(remaining).toBeLessThan(63_000)
+            const db = new Database(storagePath, { readonly: true })
+            try {
+              const before = {
+                entries: db.query("SELECT * FROM entries").all(),
+                submissions: db.query("SELECT * FROM submissions").all(),
+              }
+              const oversized = "x".repeat(remaining + 1)
+              expect(
+                Buffer.byteLength(
+                  JSON.stringify({ sessionId: id, requestId: "oversized-text", text: oversized, images: [] }),
+                ),
+              ).toBeLessThan(64_000)
+              const rejected = yield* sessions
+                .prompt(id, oversized, "oversized-text")
+                .pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }))
+              expect(rejected?.code).toBe("operator-input-invalid")
+              expect(db.query("SELECT * FROM entries").all()).toEqual(before.entries)
+              expect(db.query("SELECT * FROM submissions").all()).toEqual(before.submissions)
+              expect(calls).toBe(1)
+              // Exactly the known-context bound is admitted, including native queued input.
+              const atBoundary = "x".repeat(remaining)
+              if (!busy) script(fauxAssistantMessage("Boundary received"))
+              yield* sessions.prompt(id, atBoundary, "boundary-text")
+              yield* sessions.prompt(id, atBoundary, "boundary-text")
+              expect(db.query("SELECT * FROM submissions").all()).toHaveLength(
+                (before.submissions as Array<unknown>).length + 1,
+              )
+              if (busy) expect((yield* sessions.get(id))?.queuedInputs).toBe(2)
+            } finally {
+              db.close()
+            }
+          }),
+        ).pipe(Effect.provide(operatorLayer(storagePath, "faux-strict"))),
+      )
+    },
+  )
+
+  it("admits an unchanged reserved key after restart while rejecting changed content", async () => {
+    const text = "Reserved before a crash"
+    const requestId = "reserved-crash"
+    const content = [{ type: "text", text }]
+    const id = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const sessions = yield* OperatorSessions
+          const { harness } = yield* OperatorHarness
+          const id = yield* createSession(sessions)
+          yield* durable("test-reservation", (context) =>
+            harness.commit(async (tx) => {
+              const requests = await tx.doc(OperatorInputRequestsDoc, Number(id) as ConversationId)
+              requests.hashes[requestId] = createHash("sha256").update(JSON.stringify(content)).digest("hex")
+            }, context),
+          )
+          return id
+        }),
+      ).pipe(Effect.provide(operatorLayer(storagePath, "faux-strict"))),
+    )
+    script(fauxAssistantMessage("Resumed"))
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const sessions = yield* OperatorSessions
+          expect((yield* sessions.prompt(id, "changed", requestId).pipe(Effect.flip)).code).toBe(
+            "operator-request-conflict",
+          )
+          yield* sessions.prompt(id, text, requestId)
+          yield* waitFor(sessions, id, (detail) => isIdle(detail) && lastAssistantText(detail) === "Resumed")
+          yield* sessions.prompt(id, text, requestId)
+          expect((yield* sessions.get(id))?.timeline.filter((item) => item.kind === "user")).toHaveLength(1)
+        }),
+      ).pipe(Effect.provide(operatorLayer(storagePath, "faux-strict"))),
+    )
   })
   it("acknowledges an exact retry under a strict model without counting its existing image twice", async () => {
     const { png } = await import("../helpers/operator-images.js")

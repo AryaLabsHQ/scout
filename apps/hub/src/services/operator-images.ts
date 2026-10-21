@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai"
 import { imageSize } from "image-size"
-import { decodeOperatorImage } from "./operator-image-codecs.js"
+import type { OperatorImageCodecs } from "./operator-image-codecs.js"
 import {
   ManagementError,
   OPERATOR_IMAGE_LIMITS,
@@ -113,7 +113,9 @@ export const validateOperatorInput = async (
   text: string,
   images: ReadonlyArray<OperatorImage>,
   limits: OperatorImageInput,
+  codecs: OperatorImageCodecs["Service"],
   envelope?: { readonly sessionId: string; readonly requestId?: string },
+  signal?: AbortSignal,
 ): Promise<ReadonlyArray<OperatorImageMetadata>> => {
   if (text.trim().length === 0 && images.length === 0) throw invalid("Enter text or attach an image")
   if (Buffer.byteLength(JSON.stringify({ ...envelope, text, images })) > limits.maxSerializedBytes) {
@@ -150,10 +152,11 @@ export const validateOperatorInput = async (
       throw invalid(`Image ${index + 1} exceeds this model's image dimension or size limit`)
     }
     try {
-      // Keep peak decoder allocations bounded to one image per admission.
+      // The shared scoped worker admits only one image at a time across all sessions.
       // oxlint-disable-next-line no-await-in-loop
-      await decodeOperatorImage(bytes, metadata)
-    } catch {
+      await codecs.decode(bytes, metadata, signal)
+    } catch (error) {
+      if (error instanceof ManagementError) throw error
       throw invalid(
         `Image ${index + 1} has invalid compressed pixel data or exceeds the decode resource limits`,
       )

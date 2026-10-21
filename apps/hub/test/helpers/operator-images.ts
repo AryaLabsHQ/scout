@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib"
+
 export const png = {
   mimeType: "image/png",
   data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
@@ -79,3 +81,23 @@ export const corruptWebp = (() => {
   return { ...webp, data: bytes.toString("base64") }
 })()
 export const corruptCompressedImages = [corruptPng, corruptJpeg, corruptWebp]
+
+/** Genuine RGBA pixels at the inclusive pixel limit; compression keeps transport bytes bounded. */
+export const maxPixelsPng = () => {
+  const width = 5000
+  const height = 4000
+  const header = Buffer.from(png.data, "base64").subarray(0, 33)
+  header.writeUInt32BE(width, 16)
+  header.writeUInt32BE(height, 20)
+  header.writeUInt32BE(Bun.hash.crc32(header.subarray(12, 29)), 29)
+  const compressed = deflateSync(Buffer.alloc((width * 4 + 1) * height))
+  const chunk = Buffer.alloc(compressed.length + 12)
+  chunk.writeUInt32BE(compressed.length)
+  chunk.write("IDAT", 4)
+  compressed.copy(chunk, 8)
+  chunk.writeUInt32BE(Bun.hash.crc32(chunk.subarray(4, -4)), chunk.length - 4)
+  return {
+    ...png,
+    data: Buffer.concat([header, chunk, Buffer.from(png.data, "base64").subarray(-12)]).toString("base64"),
+  }
+}

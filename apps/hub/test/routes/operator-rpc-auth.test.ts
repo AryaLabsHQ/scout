@@ -8,7 +8,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { vi } from "vitest"
+import * as imagesBoundary from "../../src/services/operator-images.js"
+import { Effect, Exit, Fiber, Layer, Redacted, Stream } from "effect"
 import { BunHttpServer } from "@effect/platform-bun"
 import * as HttpRouter from "effect/http/HttpRouter"
 import * as HttpServer from "effect/http/HttpServer"
@@ -324,6 +326,57 @@ describe("operator RPCs behind Cloudflare Access", () => {
         }
         expect(calls).toBe(1)
       }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "compressed-corruption.sqlite")))),
+    20_000,
+  )
+
+  it.live(
+    "serves an unrelated authenticated RPC during max-sized image decoding",
+    () =>
+      Effect.gen(function* () {
+        const { png, maxPixelsPng } = yield* Effect.promise(() => import("../helpers/operator-images.js"))
+        const token = yield* Effect.promise(() => signer.sign(accessClaims(nowSeconds())))
+        const first = yield* connectRpc(token)
+        const second = yield* connectRpc(token)
+        const { session } = yield* first["operator.sessions.create"]({})
+        const unrelated = yield* second["operator.sessions.create"]({})
+        faux.setResponses([fauxAssistantMessage("Warmed"), fauxAssistantMessage("Decoded")])
+        yield* first["operator.prompt"]({ sessionId: session.id, text: "", images: [png], requestId: "warm" })
+        const image = maxPixelsPng()
+        let started!: () => void
+        const decoding = new Promise<void>((resolve) => {
+          started = resolve
+        })
+        let finished = false
+        const validate = imagesBoundary.validateOperatorInput
+        const inspect = vi
+          .spyOn(imagesBoundary, "validateOperatorInput")
+          .mockImplementation(async (...args) => {
+            started()
+            try {
+              return await validate(...args)
+            } finally {
+              finished = true
+            }
+          })
+        try {
+          const admission = yield* first["operator.prompt"]({
+            sessionId: session.id,
+            text: "",
+            images: [image, image, image, image],
+            requestId: "decode-max",
+          }).pipe(Effect.forkScoped)
+          yield* Effect.promise(() => decoding)
+          const detail = yield* second["operator.sessions.get"]({ sessionId: unrelated.session.id })
+          expect(detail?.session.id).toBe(unrelated.session.id)
+          expect(finished).toBe(false)
+          yield* Fiber.join(admission)
+          expect(finished).toBe(true)
+          const accepted = yield* first["operator.sessions.get"]({ sessionId: session.id })
+          expect(accepted?.timeline.filter((item) => item.kind === "user").at(-1)?.images).toHaveLength(4)
+        } finally {
+          inspect.mockRestore()
+        }
+      }).pipe(Effect.scoped, Effect.provide(serveHub(join(directory, "worker-responsive.sqlite")))),
     20_000,
   )
 

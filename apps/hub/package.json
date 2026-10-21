@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/main.ts",
     "dev:test": "bun --env-file=.env.test run db:push && bun --env-file=.env.test --hot src/main.ts",
-    "build": "bun build --compile src/main.ts --outfile dist/scout-hub",
+    "build": "bun build --compile src/main.ts src/services/operator-image-codec-worker.ts --entry-naming '[name].[ext]' --outfile dist/scout-hub",
     "typecheck": "tsc --noEmit",
     "test": "bun --bun vitest run",
     "test:watch": "bun --bun vitest",
