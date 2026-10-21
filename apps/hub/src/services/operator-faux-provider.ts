@@ -16,7 +16,9 @@ import {
  * - Anything else is echoed back.
  */
 export const scriptedFauxProvider = (): Provider => {
-  const faux = fauxProvider({ models: [{ id: "scripted", name: "Scripted operator (faux)" }] })
+  const faux = fauxProvider({
+    models: [{ id: "scripted", name: "Scripted operator (faux)", input: ["text", "image"] }],
+  })
   const respond: FauxResponseFactory = (context) => {
     // Keep exactly one factory queued so the script never runs out.
     faux.appendResponses([respond])

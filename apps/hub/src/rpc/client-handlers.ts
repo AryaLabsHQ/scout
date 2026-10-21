@@ -215,6 +215,8 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
           Effect.map((rows) => (rows.length > 0 ? rowToSystem(rows[0]!) : null)),
         ),
 
+      "operator.images.get": (params) => operatorSessions.getImage(params),
+
       "operator.sessions.list": () => operatorSessions.list().pipe(Effect.orDie),
 
       "operator.sessions.get": ({ sessionId }) => operatorSessions.get(sessionId).pipe(Effect.orDie),
@@ -416,8 +418,8 @@ export const ClientHandlersLive = ClientHubRpcs.toLayer(
 
       "operator.sessions.delete": ({ sessionId }) => operatorSessions.delete(sessionId),
 
-      "operator.prompt": ({ sessionId, text, requestId }) =>
-        operatorSessions.prompt(sessionId, text, requestId),
+      "operator.prompt": ({ sessionId, text, requestId, images }) =>
+        operatorSessions.prompt(sessionId, text, requestId, images),
 
       "operator.sessions.abort": ({ sessionId }) => operatorSessions.abort(sessionId),
 

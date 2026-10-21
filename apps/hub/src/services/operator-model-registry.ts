@@ -4,6 +4,7 @@ import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai"
 import type { Models } from "@earendil-works/pi-ai/models"
 import { builtinModels } from "@earendil-works/pi-ai/providers/all"
 import type { OperatorModelDescriptor } from "@scout/shared"
+import { imageInputFor } from "./operator-images.js"
 import { scriptedFauxProvider } from "./operator-faux-provider.js"
 
 export interface OperatorModelRef {
@@ -44,6 +45,7 @@ const describe = (model: Model<Api>): OperatorModelDescriptor => ({
   modelId: model.id,
   label: `${model.provider}/${model.id}`,
   reasoning: Boolean(model.reasoning),
+  imageInput: imageInputFor(model),
 })
 
 /** The configured model, else a reasoning model of a preferred configured provider, else any available. */

@@ -5,6 +5,8 @@ import { ClientAuthMiddleware } from "./client-auth.js"
 
 import {
   OperatorApprovalResolveParamsSchema,
+  OperatorImageGetParamsSchema,
+  OperatorImageSchema,
   OperatorModelDescriptorSchema,
   OperatorPromptParamsSchema,
   OperatorSessionCreateParamsSchema,
@@ -98,6 +100,11 @@ export const ClientHubRpcs = RpcGroup.make(
   }),
   Rpc.make("operator.skills.list", {
     success: Schema.Array(OperatorSkillSchema),
+  }),
+  Rpc.make("operator.images.get", {
+    payload: OperatorImageGetParamsSchema,
+    success: OperatorImageSchema,
+    error: ManagementError,
   }),
   Rpc.make("operator.models.list", {
     success: Schema.Array(OperatorModelDescriptorSchema),

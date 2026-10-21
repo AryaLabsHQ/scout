@@ -29,8 +29,20 @@ The prompt input supports:
 
 - **@mentions**: Type `@` followed by a node hostname to reference a specific system in your prompt. Mentions are rendered as pills and resolved to system IDs.
 - **/commands**: Type `/` to open the slash command menu. Built-in commands include `/clear`. Attached skills also appear as slash commands.
-- **Image paste**: Paste or drag images into the editor to attach them to your prompt (e.g., screenshots of dashboards or error messages).
+- **Images**: Use the attachment picker, paste, or drop static PNG, JPEG, or WebP images. Send images alone or with text; they reach the model in the order shown. The session's fixed model must support images.
 - **History navigation**: Press **Up/Down** arrow keys (when the editor is empty) to cycle through your last 50 prompts. History is persisted in localStorage.
+
+### Images and limits
+
+Attach at most **4 images**, **2 MiB per image**, **4 MiB total decoded image bytes**, and **20 megapixels per image**. The complete serialized prompt is limited to **6 MiB**. Stricter limits advertised by the session's model also apply, including dimensions, encoded bytes, image counts and the estimated bytes of its existing conversation and queued input. These request limits also apply to text-only follow-ups. Scout rejects animation, remote URLs, SVG and other documents. It does not compress, convert, upload to a blob service, or switch models automatically.
+
+Images are stored as native content in the operator SQLite inbox and transcript. They survive queueing, hub restart, reload and forks. Timeline images load on demand through the authenticated session RPC; live session snapshots carry metadata and counts. **Deleting a session only unlists it. Its transcript and image bytes remain in the operator database**, including entries inherited by existing forks. Scout currently has no image erasure or separate image retention control.
+
+### Draft recovery and retry
+
+The browser saves each session's draft and unacknowledged attempt in IndexedDB. If a response is lost, **Retry** sends the original request ID, text and ordered image bytes, so admission happens once. The original may already have reached the hub even when the browser has no acknowledgement. Edits remain a separate draft; discard the pending attempt before submitting edited content with a new ID. Discarding local recovery data does not cancel an already admitted turn.
+
+An acknowledgement clears only the submitted revision. Text or images edited while a send is in flight stay in the composer. Reload restores unsent drafts and offers Retry/Discard for uncertain attempts. If browser storage fails or is unavailable, a visible notice explains that reload recovery is unavailable; the in-memory draft remains usable. The full page and drawer share one draft. Across tabs, a saved attempt keeps its original key and bytes, and conflicting edits appear as saved drafts you can restore without losing your current edits. Clearing browser site data removes local recovery records.
 
 ## Tools
 

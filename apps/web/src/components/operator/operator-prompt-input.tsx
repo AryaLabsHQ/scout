@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
+import type { Editor } from "@tiptap/core"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
 import Mention from "@tiptap/extension-mention"
@@ -15,6 +16,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import type {
   OperatorApprovalMode,
+  OperatorImageInput,
   OperatorModelDescriptor,
   OperatorPlanMode,
   OperatorSkill,
@@ -32,10 +34,12 @@ import {
   createNodeMentionSuggestion,
   createSlashSuggestion,
   PromptKeyboard,
-  AttachmentHandler,
   type SlashCommandItem,
 } from "./tiptap"
 import "./tiptap/prompt-input.css"
+import { formatImageBytes, readDraftImage, validatePrompt, type DraftImage } from "./operator-image-input"
+import type { PendingPrompt, PromptDraft } from "./operator-prompt-drafts"
+import { OperatorImagePreview } from "./operator-image-preview"
 
 const HISTORY_KEY = "scout:operator:prompt-history"
 const MAX_HISTORY = 50
@@ -63,6 +67,18 @@ const APPROVAL_MODE_OPTIONS: ReadonlyArray<{
 
 interface OperatorPromptInputProps {
   draft: string
+  images: ReadonlyArray<DraftImage>
+  imageInput: OperatorImageInput
+  onImagesChange: (images: ReadonlyArray<DraftImage>) => void
+  onInputError: (error: string | null) => void
+  isRestoring: boolean
+  admissionError: string | null
+  storageError: string | null
+  pendingAttempt: PendingPrompt | null
+  conflicts: ReadonlyArray<PromptDraft>
+  onRecover: (draftId: string) => void
+  onRetry: () => void
+  onDiscard: () => void
   setDraft: (v: string) => void
   isSubmitting: boolean
   onSubmit: () => void
@@ -72,6 +88,7 @@ interface OperatorPromptInputProps {
   onAbort?: () => void
   /** Prompts queued behind the running answer. */
   queuedInputs?: number
+  queuedImages?: number
   approvalMode: OperatorApprovalMode
   onApprovalModeChange?: (mode: OperatorApprovalMode) => void
   planMode?: OperatorPlanMode
@@ -90,6 +107,18 @@ interface OperatorPromptInputProps {
 
 export function OperatorPromptInput({
   draft,
+  images,
+  imageInput,
+  onImagesChange,
+  onInputError,
+  isRestoring,
+  admissionError,
+  storageError,
+  pendingAttempt,
+  conflicts,
+  onRecover,
+  onRetry,
+  onDiscard,
   setDraft,
   isSubmitting,
   onSubmit,
@@ -97,6 +126,7 @@ export function OperatorPromptInput({
   isAborting = false,
   onAbort,
   queuedInputs = 0,
+  queuedImages = 0,
   approvalMode,
   onApprovalModeChange,
   planMode,
@@ -111,7 +141,64 @@ export function OperatorPromptInput({
   onNodeToggle,
   fillRef,
 }: OperatorPromptInputProps) {
-  const [attachments, setAttachments] = useState<File[]>([])
+  const [isReadingImages, setIsReadingImages] = useState(false)
+  const fileReadsRef = useRef(Promise.resolve())
+  const mountedRef = useRef(true)
+  const inputRef = useRef({ draft, images, imageInput, onImagesChange, onInputError })
+  inputRef.current = { draft, images, imageInput, onImagesChange, onInputError }
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const addFiles = useCallback((files: ReadonlyArray<File>) => {
+    if (!files.length) return
+    setIsReadingImages(true)
+    fileReadsRef.current = fileReadsRef.current.then(async () => {
+      if (!mountedRef.current) return
+      const current = inputRef.current
+      const limits = current.imageInput
+      try {
+        if (!limits.supported) throw new Error("This session's model does not support images.")
+        if (current.images.length + files.length > limits.maxImages)
+          throw new Error(`Attach at most ${limits.maxImages} images.`)
+        if (
+          current.images.reduce((sum, image) => sum + image.byteLength, 0) +
+            files.reduce((sum, file) => sum + file.size, 0) >
+          limits.maxTotalImageBytes
+        )
+          throw new Error(`Images must total at most ${formatImageBytes(limits.maxTotalImageBytes)}.`)
+        const added = await Promise.all(files.map((file) => readDraftImage(file, limits)))
+        if (!mountedRef.current) return
+        const latest = inputRef.current
+        const next = [...latest.images, ...added]
+        const error = validatePrompt(
+          {
+            sessionId: "",
+            text: latest.draft,
+            images: next.map(({ mimeType, data }) => ({ mimeType, data })),
+          },
+          next,
+          limits,
+        )
+        if (error) throw new Error(error)
+        inputRef.current = { ...latest, images: next }
+        latest.onImagesChange(next)
+        latest.onInputError(null)
+      } catch (error) {
+        if (mountedRef.current)
+          inputRef.current.onInputError(
+            error instanceof Error ? error.message : "The images could not be read. Try another file.",
+          )
+      }
+    })
+    const lastRead = fileReadsRef.current
+    void lastRead.finally(() => {
+      if (mountedRef.current && fileReadsRef.current === lastRead) setIsReadingImages(false)
+    })
+  }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
@@ -123,7 +210,9 @@ export function OperatorPromptInput({
     try {
       const stored = localStorage.getItem(HISTORY_KEY)
       if (stored) {
-        historyRef.current = JSON.parse(stored) as string[]
+        const history: unknown = JSON.parse(stored)
+        if (Array.isArray(history) && history.every((entry): entry is string => typeof entry === "string"))
+          historyRef.current = history.slice(-MAX_HISTORY)
       }
     } catch {
       // ignore
@@ -153,7 +242,7 @@ export function OperatorPromptInput({
 
       const ed = editorRef.current
       if (historyIndexRef.current === -1) {
-        savedDraftRef.current = ed?.getText() ?? ""
+        savedDraftRef.current = ed?.getText({ blockSeparator: "\n" }) ?? ""
       }
 
       const newIndex =
@@ -169,7 +258,7 @@ export function OperatorPromptInput({
 
       const content = newIndex === -1 ? savedDraftRef.current : (history[newIndex] ?? "")
 
-      ed?.commands.setContent(content ? `<p>${content}</p>` : "")
+      ed?.commands.setContent(textDocument(content))
       setDraft(content)
       return true
     },
@@ -180,22 +269,17 @@ export function OperatorPromptInput({
   handleSubmitRef.current = onSubmit
 
   const isSubmittingRef = useRef(isSubmitting)
-  isSubmittingRef.current = isSubmitting
+  isSubmittingRef.current = isSubmitting || isRestoring || isReadingImages || !!pendingAttempt
 
   const handleSubmit = useCallback(() => {
     if (isSubmittingRef.current) return
     const ed = editorRef.current
-    const text = ed?.getText().trim() ?? ""
-    if (!text) return
+    const text = ed?.getText({ blockSeparator: "\n" }).trim() ?? ""
+    if (!text && inputRef.current.images.length === 0) return
     pushHistory(text)
     historyIndexRef.current = -1
     handleSubmitRef.current()
-    // Clear editor after submit
-    requestAnimationFrame(() => {
-      ed?.commands.clearContent()
-      setDraft("")
-    })
-  }, [pushHistory, setDraft])
+  }, [pushHistory])
 
   const handleSubmitStableRef = useRef(handleSubmit)
   handleSubmitStableRef.current = handleSubmit
@@ -271,57 +355,77 @@ export function OperatorPromptInput({
         onHistoryUp: () => navigateHistoryStableRef.current(-1),
         onHistoryDown: () => navigateHistoryStableRef.current(1),
       }),
-      AttachmentHandler.configure({
-        onAttachment: (file: File) => setAttachments((prev) => [...prev, file]),
-      }),
     ],
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: "text-xs text-foreground focus:outline-none",
       },
     },
     onUpdate: ({ editor: e }) => {
-      setDraft(e.getText())
+      setDraft(e.getText({ blockSeparator: "\n" }))
     },
   })
 
-  // Keep editorRef in sync
-  useEffect(() => {
+  useLayoutEffect(() => {
     editorRef.current = editor
-  }, [editor])
+    if (!editor) return
+    synchronizePromptEditor(editor, draft, isRestoring)
+  }, [editor, draft, isRestoring])
 
   // Expose fill method for suggestion chips
   useEffect(() => {
     if (fillRef) {
       fillRef.current = (text: string) => {
-        editor?.commands.setContent(`<p>${text}</p>`)
+        editor?.commands.setContent(textDocument(text))
         setDraft(text)
         editor?.commands.focus("end")
       }
     }
   }, [editor, fillRef, setDraft])
 
-  const hasContent = draft.trim().length > 0
+  const hasContent = draft.trim().length > 0 || images.length > 0
 
   const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index))
+    const current = inputRef.current
+    const next = current.images.filter((_, i) => i !== index)
+    inputRef.current = { ...current, images: next }
+    current.onImagesChange(next)
   }, [])
 
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
 
-  const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (!files) return
-    for (const file of files) {
-      setAttachments((prev) => [...prev, file])
-    }
-    event.target.value = ""
-  }, [])
+  const handleFileSelect = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      addFiles(Array.from(event.target.files ?? []))
+      event.target.value = ""
+    },
+    [addFiles],
+  )
 
   return (
     <div
+      onPasteCapture={(event) => {
+        const files = Array.from(event.clipboardData.files)
+        if (!files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        const text = event.clipboardData.getData("text/plain")
+        if (text) editorRef.current?.commands.insertContent(textDocument(text).content)
+        addFiles(files)
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault()
+      }}
+      onDropCapture={(event) => {
+        const files = Array.from(event.dataTransfer.files)
+        if (!files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        addFiles(files)
+      }}
       className={cn(
         "relative border-t border-border",
         approvalMode === "auto_approve_all" && "border-t-2 border-err/30",
@@ -333,26 +437,75 @@ export function OperatorPromptInput({
           <div className="h-full w-1/3 animate-[shimmer_1.5s_ease-in-out_infinite] bg-primary" />
         </div>
       )}
-      {/* Image thumbnails */}
-      {attachments.length > 0 && (
-        <div className="flex gap-2 px-4 pt-3">
-          {attachments.map((file, i) => (
-            <div
-              key={`${file.name}-${i}`}
-              className="relative size-16 rounded-md border border-border overflow-hidden bg-muted"
+      {isRestoring ? (
+        <p role="status" className="px-4 pt-3 text-xs text-muted-foreground">
+          Restoring saved prompt…
+        </p>
+      ) : null}
+      {storageError ? (
+        <p role="status" className="px-4 pt-3 text-xs text-warn">
+          {storageError}
+        </p>
+      ) : null}
+      {admissionError ? (
+        <p role="alert" className="px-4 pt-3 text-xs text-err">
+          {admissionError}
+        </p>
+      ) : null}
+      {conflicts.length ? (
+        <section
+          aria-label="Saved operator drafts"
+          className="space-y-2 px-4 pt-3 text-xs text-muted-foreground"
+        >
+          <p role="status">
+            Conflicting drafts were preserved. Restore one to edit it; your current edits stay saved
+            separately.
+          </p>
+          {conflicts.map((saved) => (
+            <Button
+              key={saved.id}
+              size="sm"
+              variant="outline"
+              className="block max-w-full truncate"
+              onClick={() => onRecover(saved.id)}
             >
-              <img src={URL.createObjectURL(file)} alt={file.name} className="size-full object-cover" />
-              <button
-                type="button"
-                onClick={() => removeAttachment(i)}
-                className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground"
-              >
-                &times;
-              </button>
-            </div>
+              Restore saved draft: {saved.text.slice(0, 100) || "Image-only prompt"} · {saved.images.length}{" "}
+              images
+            </Button>
+          ))}
+        </section>
+      ) : null}
+      {pendingAttempt ? (
+        <div className="space-y-2 px-4 pt-3 text-xs text-muted-foreground">
+          <p>
+            {isSubmitting ? "Submitting" : "Unacknowledged"} attempt: {pendingAttempt.draft.images.length}{" "}
+            image
+            {pendingAttempt.draft.images.length === 1 ? "" : "s"}
+            {pendingAttempt.draft.text ? ` · ${pendingAttempt.draft.text.slice(0, 100)}` : ""}. New edits stay
+            separate.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={isSubmitting} onClick={onRetry}>
+              Retry original
+            </Button>
+            <Button size="sm" variant="ghost" disabled={isSubmitting} onClick={onDiscard}>
+              Discard attempt
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {isReadingImages ? (
+        <p role="status" className="px-4 pt-3 text-xs text-muted-foreground">
+          Reading images…
+        </p>
+      ) : null}
+      {images.length > 0 ? (
+        <div className="flex flex-wrap gap-2 px-4 pt-3">
+          {images.map((image, index) => (
+            <DraftImageThumbnail key={image.id} image={image} onRemove={() => removeAttachment(index)} />
           ))}
         </div>
-      )}
+      ) : null}
 
       {/* Editor */}
       <div className="operator-editor max-h-48 overflow-y-auto scrollbar-thin">
@@ -365,16 +518,29 @@ export function OperatorPromptInput({
           {/* Attach button */}
           <Tooltip>
             <TooltipTrigger
-              render={<Button size="icon" variant="ghost" className="size-7" onClick={openFilePicker} />}
+              render={
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  aria-label="Attach images"
+                  disabled={isRestoring || !imageInput.supported}
+                  onClick={openFilePicker}
+                />
+              }
             >
               <HugeiconsIcon icon={Image02Icon} size={14} />
             </TooltipTrigger>
-            <TooltipContent>Attach image</TooltipContent>
+            <TooltipContent>
+              {imageInput.supported
+                ? `Attach PNG, JPEG or WebP (up to ${imageInput.maxImages})`
+                : "This model does not support images"}
+            </TooltipContent>
           </Tooltip>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             multiple
             className="hidden"
             onChange={handleFileSelect}
@@ -548,6 +714,7 @@ export function OperatorPromptInput({
           {queuedInputs > 0 ? (
             <Badge variant="outline" className="text-[10px]">
               {queuedInputs} queued
+              {queuedImages > 0 ? ` · ${queuedImages} ${queuedImages === 1 ? "image" : "images"}` : ""}
             </Badge>
           ) : null}
           {isBusy && onAbort ? (
@@ -575,7 +742,8 @@ export function OperatorPromptInput({
                 <Button
                   size="icon"
                   onClick={handleSubmit}
-                  disabled={!hasContent || isSubmitting}
+                  aria-label={isBusy ? "Queue follow-up" : "Send prompt"}
+                  disabled={!hasContent || isSubmitting || isRestoring || isReadingImages || !!pendingAttempt}
                   className="size-7"
                 />
               }
@@ -586,6 +754,39 @@ export function OperatorPromptInput({
           </Tooltip>
         </div>
       </div>
+    </div>
+  )
+}
+
+export function textDocument(text: string) {
+  return {
+    type: "doc",
+    content: text.split("\n").map((line) => ({
+      type: "paragraph",
+      ...(line ? { content: [{ type: "text", text: line }] } : {}),
+    })),
+  }
+}
+
+export function synchronizePromptEditor(editor: Editor, draft: string, isRestoring: boolean) {
+  // Programmatic restore and acknowledgement must not emit edits back into the persisted revision.
+  editor.setEditable(!isRestoring, false)
+  if (editor.getText({ blockSeparator: "\n" }) !== draft)
+    editor.commands.setContent(textDocument(draft), { emitUpdate: false })
+}
+
+function DraftImageThumbnail({ image, onRemove }: { image: DraftImage; onRemove: () => void }) {
+  return (
+    <div className="relative size-16 overflow-hidden rounded-md border border-border bg-muted">
+      <OperatorImagePreview image={image} alt={image.name} />
+      <button
+        type="button"
+        aria-label={`Remove ${image.name}`}
+        onClick={onRemove}
+        className="absolute right-0 top-0 flex size-5 items-center justify-center bg-background/90 text-foreground"
+      >
+        ×
+      </button>
     </div>
   )
 }
