@@ -21,6 +21,9 @@ import { AgentRpcRoute } from "../../src/rpc/server.js"
 import { AlertEngine } from "../../src/services/alert-engine.js"
 import { MetricsBroadcast } from "../../src/services/metrics-broadcast.js"
 import { MetricsIngestion } from "../../src/services/metrics-ingestion.js"
+import { Database } from "../../src/services/database.js"
+import * as tables from "../../drizzle/schema.js"
+import { makeCoreMetricsPayload } from "../helpers/fixtures.js"
 import { TestDatabaseLayer } from "../helpers/test-database.js"
 
 const NODE_1_TOKEN = "node-1-token-for-tests"
@@ -55,7 +58,7 @@ const ServeHub = Layer.mergeAll(AgentRpcRoute, HttpAuthGate).pipe(
  * Opens an agent socket with `token` (which also passes the upgrade gate) and
  * calls `agent.connect` claiming `hostname`. Runs in the caller's scope.
  */
-const connectAs = (hostname: string, token: string) =>
+const openAgent = (token: string) =>
   Effect.gen(function* () {
     const url = yield* HttpServer.addressFormattedWith((address) =>
       Effect.succeed(`${address.replace(/^http/, "ws")}/ws/rpc/agent`),
@@ -70,20 +73,31 @@ const connectAs = (hostname: string, token: string) =>
       Effect.provide(RpcSerialization.layerNdjson),
     )
     const client = yield* RpcClient.make(AgentHubRpcs).pipe(Effect.provide(clientProtocol))
-    return yield* client["agent.connect"]({
-      token,
-      hostname,
-      version: "0.0.1",
-      platform: "linux",
-      capabilities: {
-        system: true,
-        network: false,
-        process: false,
-        temperature: false,
-        gpu: false,
-        smart: false,
-      },
-    }).pipe(Effect.timeout("5 seconds"), Effect.exit)
+    return client
+  })
+
+const registration = (hostname: string, token: string) => ({
+  token,
+  hostname,
+  version: "0.0.1",
+  platform: "linux",
+  capabilities: {
+    system: true,
+    network: false,
+    process: false,
+    temperature: false,
+    gpu: false,
+    smart: false,
+  },
+})
+
+const connectAs = (hostname: string, token: string) =>
+  Effect.gen(function* () {
+    const client = yield* openAgent(token)
+    return yield* client["agent.connect"](registration(hostname, token)).pipe(
+      Effect.timeout("5 seconds"),
+      Effect.exit,
+    )
   })
 
 const connectedHostnames = AgentRegistry.use((registry) => registry.listConnected()).pipe(
@@ -127,6 +141,78 @@ describe("agent.connect token binding", () => {
     Effect.gen(function* () {
       expectInvalidToken(yield* connectAs("node-3", NODE_1_TOKEN))
       expect(yield* connectedHostnames).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(ServeHub)),
+  )
+})
+
+const expectReportRejection = (exit: Exit.Exit<unknown, unknown>, reason: string) => {
+  expect(Exit.isFailure(exit)).toBe(true)
+  const error = Exit.isFailure(exit)
+    ? exit.cause.reasons.find((cause) => cause._tag === "Fail")?.error
+    : undefined
+  expect(error).toMatchObject({ _tag: "AgentReportError", reason })
+}
+
+describe("agent report connection attribution", () => {
+  it.live("requires registration and atomically rejects foreign collection references", () =>
+    Effect.gen(function* () {
+      const client = yield* openAgent(NODE_1_TOKEN)
+      expectReportRejection(
+        yield* client["agent.reportPluginCollection"]({ systemId: "node-1", collection: {} }).pipe(
+          Effect.exit,
+        ),
+        "not-connected",
+      )
+      yield* client["agent.connect"](registration("node-1", NODE_1_TOKEN))
+      yield* connectAs("node-2", NODE_2_TOKEN)
+      expectReportRejection(
+        yield* client["agent.report"](makeCoreMetricsPayload("node-2")).pipe(Effect.exit),
+        "system-mismatch",
+      )
+      const foreign = { pluginId: "docker", kind: "container", nodeId: "node-2", id: "foreign" }
+      for (const collection of [
+        { entities: [{ ref: foreign, ts: Date.now() }] },
+        { metrics: [{ pluginId: "docker", metricId: "cpu", ts: Date.now(), entity: foreign, value: 99 }] },
+        {
+          events: [
+            {
+              pluginId: "docker",
+              eventId: "test",
+              ts: Date.now(),
+              entity: foreign,
+              severity: "info" as const,
+            },
+          ],
+        },
+        {
+          entities: [
+            {
+              ref: { ...foreign, nodeId: "node-1" },
+              ts: Date.now(),
+              relationships: [{ type: "uses", target: foreign }],
+            },
+          ],
+        },
+      ]) {
+        expectReportRejection(
+          yield* client["agent.reportPluginCollection"]({ systemId: "node-1", collection }).pipe(Effect.exit),
+          "node-mismatch",
+        )
+      }
+      const db = yield* Database
+      expect(db.select().from(tables.systemMetrics).all()).toEqual([])
+      expect(db.select().from(tables.pluginEntities).all()).toEqual([])
+      expect(db.select().from(tables.pluginMetricPoints).all()).toEqual([])
+      expect(db.select().from(tables.pluginEvents).all()).toEqual([])
+      expect(db.select().from(tables.alerts).all()).toEqual([])
+      yield* client["agent.report"](makeCoreMetricsPayload("node-1"))
+      expect(
+        db
+          .select()
+          .from(tables.systemMetrics)
+          .all()
+          .map((row) => row.systemId),
+      ).toEqual(["node-1"])
     }).pipe(Effect.scoped, Effect.provide(ServeHub)),
   )
 })
