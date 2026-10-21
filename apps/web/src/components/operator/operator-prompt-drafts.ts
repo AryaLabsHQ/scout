@@ -235,6 +235,7 @@ export class PromptDraftController {
   private writes = Promise.resolve()
   private restoring: Promise<void> | undefined
   private unpersistedAttemptId: string | null = null
+  private unpersistedRevisionId: string | null = null
   private activityVersion = 0
   constructor(
     readonly sessionId: string,
@@ -258,13 +259,16 @@ export class PromptDraftController {
         .map(immutableDraft),
     })
   }
-  private persist(draft: PromptDraft, replaces: string) {
+  private persist(draft: PromptDraft, replaces: string, localRevision = false) {
     if (!this.state.ready) return
     this.writes = this.writes.then(async () => {
+      // Track edits in write order so a later edit cannot change an earlier reservation's eligibility.
+      if (localRevision) this.unpersistedRevisionId = draft.id
       try {
         const saved = await changePromptDraft(this.factory, this.sessionId, (stored) =>
           saveRevision(stored, draft, replaces),
         )
+        if (this.unpersistedRevisionId === draft.id) this.unpersistedRevisionId = null
         this.observe(saved)
         // A stale editor can discover an attempt, but can never clear one through saving.
         if (saved.pending && !this.state.pending)
@@ -303,7 +307,7 @@ export class PromptDraftController {
           this.state.draft.id !== saved?.draft?.id &&
           this.state.draft.id !== pending?.draft.id
         )
-          this.persist(this.state.draft, initialRevision)
+          this.persist(this.state.draft, initialRevision, true)
       } catch {
         this.update({
           ready: true,
@@ -346,7 +350,7 @@ export class PromptDraftController {
     const previous = this.state.draft.id
     const draft = immutableDraft({ id: crypto.randomUUID(), text, images })
     this.update({ draft, error: this.state.pending ? this.state.error : null })
-    this.persist(draft, previous)
+    this.persist(draft, previous, true)
   }
   recover = (draftId: string) => {
     const saved = this.state.conflicts.find((draft) => draft.id === draftId)
@@ -398,6 +402,7 @@ export class PromptDraftController {
           // A stale retry must not resurrect an acknowledged or discarded attempt.
           if (
             (!create || !savedDrafts(stored).some((draft) => draft.id === pending.draft.id)) &&
+            !(create && this.unpersistedRevisionId === pending.draft.id) &&
             this.unpersistedAttemptId !== pending.requestId
           )
             return stored
@@ -409,7 +414,10 @@ export class PromptDraftController {
           }
         })
         this.observe(saved)
-        if (saved.pending?.requestId === pending.requestId) this.unpersistedAttemptId = null
+        if (saved.pending?.requestId === pending.requestId) {
+          this.unpersistedAttemptId = null
+          if (this.unpersistedRevisionId === pending.draft.id) this.unpersistedRevisionId = null
+        }
         if (!this.unpersistedAttemptId) this.update({ storageError: null })
       } catch {
         this.unpersistedAttemptId = pending.requestId
@@ -446,6 +454,7 @@ export class PromptDraftController {
       // Always send the captured immutable envelope, never the current editable revision.
       await send(payloadFor(pending))
       this.unpersistedAttemptId = null
+      if (this.unpersistedRevisionId === pending.draft.id) this.unpersistedRevisionId = null
       this.update({
         draft: this.state.draft.id === pending.draft.id ? emptyDraft() : this.state.draft,
         pending: null,
@@ -477,6 +486,7 @@ export class PromptDraftController {
     const pending = this.state.pending
     this.activityVersion++
     this.unpersistedAttemptId = null
+    if (this.unpersistedRevisionId === pending.draft.id) this.unpersistedRevisionId = null
     this.update({
       draft: this.state.draft.id === pending.draft.id ? emptyDraft() : this.state.draft,
       pending: null,

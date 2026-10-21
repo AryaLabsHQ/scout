@@ -33,6 +33,146 @@ async function controller(sessionId = "session-a", database = new IDBFactory()) 
 }
 
 describe("recoverable operator admission", () => {
+  it("sends a failed edit-save after storage recovers without another edit and retries exact bytes", async () => {
+    const { value, database } = await controller()
+    const images = [image, { ...image, id: "b", data: "BAUG" }]
+    const failingWrite = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError")
+    })
+    try {
+      value.edit("retained draft", images)
+      await value.flush()
+      expect(value.getSnapshot().storageError).not.toBeNull()
+    } finally {
+      failingWrite.mockRestore()
+    }
+    const sent: unknown[] = []
+    let edited = false
+    const unsubscribe = value.subscribe(() => {
+      if (!edited && value.getSnapshot().sending) {
+        edited = true
+        value.edit("newer pending edit", [])
+      }
+    })
+    await value.submit(DEFAULT_IMAGE_INPUT, async (payload) => {
+      sent.push(payload)
+      expect((await readPromptDraft(database, "session-a"))?.pending?.requestId).toBe(payload.requestId)
+      throw new Error("lost acknowledgement")
+    })
+    unsubscribe()
+    expect(sent).toEqual([
+      {
+        sessionId: "session-a",
+        requestId: expect.any(String),
+        text: "retained draft",
+        images: images.map(({ mimeType, data }) => ({ mimeType, data })),
+      },
+    ])
+    await value.retry(async (payload) => {
+      sent.push(payload)
+    })
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toEqual(sent[0])
+    expect(value.getSnapshot().draft.text).toBe("newer pending edit")
+    expect(value.getSnapshot().pending).toBeNull()
+  })
+
+  it.each(["acknowledge", "discard"])(
+    "retains a failed local revision behind a foreign pending attempt until %s",
+    async (resolution) => {
+      const { value: local, database } = await controller()
+      const { value: foreign } = await controller("session-a", database)
+      const failingWrite = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+        throw new DOMException("Quota exceeded", "QuotaExceededError")
+      })
+      try {
+        local.edit("retained local", [image])
+        await local.flush()
+      } finally {
+        failingWrite.mockRestore()
+      }
+      foreign.edit("foreign", [{ ...image, data: "BAUG" }])
+      await foreign.submit(DEFAULT_IMAGE_INPUT, async () => {
+        throw new Error("offline")
+      })
+      const pending = foreign.getSnapshot().pending
+      let calls = 0
+      await local.submit(DEFAULT_IMAGE_INPUT, async () => {
+        calls++
+      })
+      expect(calls).toBe(0)
+      expect((await readPromptDraft(database, "session-a"))?.pending).toEqual(pending)
+      expect(local.getSnapshot().draft.text).toBe("retained local")
+      if (resolution === "acknowledge") await foreign.retry(async () => {})
+      else {
+        foreign.discard()
+        await foreign.flush()
+      }
+      await local.refresh()
+      await local.submit(DEFAULT_IMAGE_INPUT, async (payload) => {
+        calls++
+        expect(payload.text).toBe("retained local")
+        expect(payload.images).toEqual([{ mimeType: image.mimeType, data: image.data }])
+        expect(payload.requestId).not.toBe(pending?.requestId)
+      })
+      expect(calls).toBe(1)
+    },
+  )
+
+  it("does not treat a failed save of a recovered remote revision as a new local edit", async () => {
+    const database = new IDBFactory()
+    const other = { ...draft, id: "revision-b", text: "other" }
+    await writePromptDraft(database, "session-a", {
+      version: 2,
+      draft: other,
+      pending: null,
+      conflicts: [draft],
+    })
+    const { value: stale } = await controller("session-a", database)
+    const { value: owner } = await controller("session-a", database)
+    const failingWrite = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError")
+    })
+    try {
+      stale.recover(draft.id)
+      await stale.flush()
+    } finally {
+      failingWrite.mockRestore()
+    }
+    owner.recover(draft.id)
+    await owner.submit(DEFAULT_IMAGE_INPUT, async () => {})
+    let calls = 0
+    await stale.submit(DEFAULT_IMAGE_INPUT, async () => {
+      calls++
+    })
+    expect(calls).toBe(0)
+    expect((await readPromptDraft(database, "session-a"))?.pending).toBeNull()
+  })
+
+  it.each(["acknowledge", "discard"])(
+    "does not reserve a saved revision settled by another controller via %s",
+    async (resolution) => {
+      const database = new IDBFactory()
+      await writePromptDraft(database, "session-a", { version: 1, draft, pending: null })
+      const { value: stale } = await controller("session-a", database)
+      const { value: owner } = await controller("session-a", database)
+      await owner.submit(DEFAULT_IMAGE_INPUT, async () => {
+        if (resolution === "discard") throw new Error("offline")
+      })
+      if (resolution === "discard") {
+        owner.discard()
+        await owner.flush()
+      }
+      let calls = 0
+      await stale.submit(DEFAULT_IMAGE_INPUT, async () => {
+        calls++
+      })
+      expect(calls).toBe(0)
+      expect(stale.getSnapshot().pending).toBeNull()
+      expect((await readPromptDraft(database, "session-a"))?.pending).toBeNull()
+    },
+  )
+
   it("preserves another restored controller's uncertain attempt when saving newer edits", async () => {
     const { value: first, database } = await controller()
     const { value: second } = await controller("session-a", database)
