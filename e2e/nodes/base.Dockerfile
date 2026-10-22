@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Bun for running the agent directly from source
-RUN curl -fsSL https://bun.sh/install | bash
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4"
 ENV PATH="/root/.bun/bin:$PATH"
 
 # Remove systemd units that don't work in containers
