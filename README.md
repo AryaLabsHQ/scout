@@ -63,7 +63,7 @@ Cross-runtime shapes come from [`packages/shared`](./packages/shared/README.md),
 
 ### Prerequisites
 
-- Bun `1.4.x` (the exact version is `packageManager` in `package.json`)
+- Bun `>=1.4.4` (the exact version is `packageManager` in `package.json`)
 - Docker for the optional E2E harness
 
 ### Install Dependencies
