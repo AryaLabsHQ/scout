@@ -228,7 +228,9 @@ const PluginConfig = Schema.StructWithRest(
 );
 ```
 
-`Schema.StructWithRest`. The Zod equivalent is `.catchall(...)`.
+`Schema.StructWithRest`. The Zod equivalent is `.catchall(...)`. The base struct must have an
+object-shaped encoded type; whole-object transformations are not supported, so apply
+`Schema.fromJsonString` or similar to the finished schema instead.
 
 ## The Zod-bridge pattern (during migration)
 

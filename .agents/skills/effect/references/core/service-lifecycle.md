@@ -42,6 +42,11 @@ lifetime.
 the callback and returns the item without requiring a `Scope`. Build the pool once in the owning
 layer. Do not hand-roll a Map of connections.
 
+`Pool.makeWithTTL({ acquire, min, max, timeToLive, timeToLiveStrategy })` shrinks the pool back
+toward `min`. The default `"usage"` strategy retires only idle, unreserved excess items, oldest idle
+first, measured from their last release; `"creation"` measures from item creation. Checks run once
+per `timeToLive`, so retirement can take up to twice that long.
+
 ## Concise Snippet
 
 ```ts

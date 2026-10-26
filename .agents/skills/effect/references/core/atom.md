@@ -87,6 +87,37 @@ const failedWithPrevious = AsyncResult.failureWithPrevious(Cause.fail(new Error(
 });
 ```
 
+## Hydration and Initial Values
+
+`Atom.initialValue(atom, value)` pairs an atom with a seed for `AtomRegistry` `initialValues`.
+`Atom.serializable(atom, { key, schema })` makes an atom (de)hydratable by key; its encoded form is
+`Schema.Json`. Both accept `{ skipInitialRun: true }`: a seeded (non-`Initial`) effect or stream
+atom then keeps the hydrated or seeded value instead of running on mount, until it is refreshed or a
+dependency changes. Dependencies read inside the effect are tracked from its first real run.
+
+```ts
+const seeded = Atom.initialValue(userAtom, AsyncResult.success(user), { skipInitialRun: true });
+```
+
+## Typed Reactivity Keys
+
+`reactivityKeys` options (and `Atom.withReactivity`, `Reactivity.mutation` / `query` / `invalidate`,
+`AtomHttpApi`, `AtomRpc`) are untyped by default. An application can augment `Reactivity.Keys` to
+map key names to ID types; undeclared names and mismatched IDs then fail to type-check. Declare a
+key as `never` if it is only used in array form. Only applications should augment it, never
+libraries.
+
+```ts
+import "effect/reactivity/Reactivity";
+
+declare module "effect/reactivity/Reactivity" {
+  interface Keys {
+    readonly users: number;
+    readonly events: never;
+  }
+}
+```
+
 ## Framework Packages
 
 - React: `@effect/atom-react`

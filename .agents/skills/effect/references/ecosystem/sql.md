@@ -144,10 +144,31 @@ for deliberately raw, audited SQL.
   and `PgPool` owns pool lifecycle (`PgPool.make`, plus `reserve` for exclusive access to one
   concurrent item). Use `PgProtocol` and `PgTypes` for lower-level codec work. Prepared statements
   are enabled by default, multiplexing is optional, and `listen` returns a scoped `Queue.Dequeue`.
+- `PgClient` pool and connection options worth knowing: `idleTimeout` (default 60 seconds),
+  `acquireTimeout` (bounds the wait for a free pooled connection and fails with `ConnectionError`;
+  unbounded by default), `keepAlive` (idle duration before TCP keepalive probes, so a silently dead
+  connection errors instead of hanging queries), and `onAcquire`, an effect that runs in the
+  consuming fiber after every checkout (per statement, `withTransaction`, `reserve`, `listen`; keep
+  it cheap) whose service requirements become requirements of the client constructor or layer.
+  `PgMigrator` schema dumps run `pg_dump` against the connection `PgClient` resolves.
 - Plain object parameters are no longer inferred as JSON. Wrap JSON values with `sql.json(value)`
   (or `PgClient.json`) and keep `PgClientConfig.types` as a `PgTypes.Registry`. The binary codecs
   change result types: `int8` → `bigint`, timestamps → `Date`, `date` → string, and `bytea`/unknown
   OIDs → `Uint8Array`.
+- `SqlClient.afterCommit(effect)` runs an effect once the outermost transaction commits (immediately
+  outside a transaction). `SqlClient.BeginTransaction` is a `Context.Reference<string | undefined>`;
+  provide it around one `withTransaction` to replace the top-level `BEGIN` (for example
+  `"BEGIN ISOLATION LEVEL SERIALIZABLE"`) without a separate `SET TRANSACTION`. It is sent as raw
+  SQL, so never build it from untrusted input, and `sql-libsql`, `sql-mssql` and `sql-sqlite-do`
+  ignore it.
+- Every `SqlClient` has a `driver` string (`"pg"`, `"pglite"`, `"sqlite-node"`, ...). A custom
+  driver must pass `driver` to `SqlClient.make`.
+- Migration failures surface as a typed `MigrationError` (`Effect.catchTag("MigrationError", ...)`).
+- `ClickhouseClient.client` exposes the underlying `@clickhouse/client` instance for features the
+  SQL client does not wrap, such as `exec()` with raw output formats.
+- With `SpanPropagationEnabled`, statement spans record `db.client.connection.wait_time_ms`.
+  Statement spans are named from `db.namespace`, then `server.address[:port]`, then
+  `db.system.name`, falling back to `sql.execute` (`Statement.spanName` / `Statement.spanTarget`).
 - `SqlClient.reactive` and `SqlClient.reactiveMailbox` integrate query invalidation with the
   `effect/reactivity` module; use them when reads should refresh from changed keys instead of
   polling.

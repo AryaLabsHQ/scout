@@ -290,6 +290,10 @@ const layer = Layer.effect(
 - `ConfigProvider.fromUnknown(root)` — deterministic config from a plain object/JSON (tests,
   embedded config, parsed files).
 - `ConfigProvider.fromEnv()` — environment variables (the default provider).
+- `ConfigProvider.fromDotEnv({ path?, expandVariables?, preserveEmptyStrings? })` — an `Effect` that
+  reads `.env` (or `path`) through `FileSystem`; `fromDotEnvContents(text, options)` parses a
+  string. With `expandVariables`, `${NAME}` and `${NAME:-default}` expand recursively, self and
+  circular references expand to empty, and `\$NAME` stays literal.
 - `ConfigProvider.constantCase` — map camelCase schema keys to `SCREAMING_SNAKE_CASE` env vars.
 - `ConfigProvider.nested(prefix)` — scope a provider under a prefix.
 

@@ -161,16 +161,48 @@ const makeApiClient = Effect.gen(function* () {
   and `408` / `429` / `500` / `502` / `503` / `504` responses. It retries both errors and transient
   responses by default; pass
   `{ retryOn: "errors-only" | "response-only" | "errors-and-responses", schedule, times, while }` to
-  narrow the scope or supply a custom schedule.
+  narrow the scope or supply a custom schedule. A `Retry-After` header (seconds or HTTP date) on the
+  response or on a status-code error sets the minimum delay before the next attempt.
 - `HttpClient.withRateLimiter(...)` paces requests proactively and learns from rate-limit /
   `Retry-After` headers. It requires a `RateLimiter` (`effect/persistence/RateLimiter`) plus an
   initial `window`, `limit`, and `key` (options also include `algorithm` — `"fixed-window"` default
   or `"token-bucket"` — `tokens`, `disableResponseInspection`, and `disableAdaptiveLearning`). It
   adds `RateLimiterError` to the error channel and automatically retries `429` responses (including
-  an `HttpClientError` wrapping a `429`) back through the limiter.
+  an `HttpClientError` wrapping a `429`) back through the limiter. Once a response reports the
+  remaining budget as exhausted, later requests wait for the reported reset before being sent.
 - Operation-level `Effect.retry(...)` when the retry decision depends on domain-typed errors,
   provider payloads, or idempotency rules rather than raw transport status. See
   [retry/schedule.md](../retry/schedule.md) for `retryAfterMs`-aware schedules.
+
+### Typed Retry-After and HTTP dates
+
+`Headers.parseRetryAfter(value)` returns `Result<RetryAfter, HeaderParseError>`, where `RetryAfter`
+is a duration or a `DateTime.Utc`; `Headers.retryAfterDelay(retryAfter, nowMillis)` turns either
+form into a `Duration`. Also available: `retryAfterDuration`, `retryAfterDateTime`,
+`formatRetryAfter`, `parseHttpDate` / `formatHttpDate`. Use them instead of hand-parsing
+`Retry-After` in custom retry schedules.
+
+### Request And Response Details
+
+- `HttpClientRequest.compressBody(request, "gzip" | "deflate", { minSize? })` is effectful (returns
+  `Effect<HttpClientRequest>`): it compresses the body, sets `content-encoding`, and leaves bodies
+  below `minSize` (default 1KB) or requests that already have `content-encoding` unchanged.
+- `UrlParams` and `HttpClientRequest.setUrlParam` / `appendUrlParam` accept `Redacted` values; the
+  wire URL carries the unwrapped value while inspection and errors show it redacted.
+- Client and server spans redact sensitive query values (names in `UrlParams.CurrentRedactedNames`)
+  and URL credentials. Span names are the bare HTTP method. Header capture on spans is opt-in: the
+  default `HttpClient.TracerHeaderFilter` and `HttpMiddleware.TracerHeaderFilter` record no headers;
+  provide a filter `(headerName, "request" | "response") => boolean` to capture some, and names in
+  `Headers.CurrentRedactedNames` are recorded as `<redacted>`.
+- `HttpClient.followRedirects` only works with `FetchHttpClient` when `FetchHttpClient.RequestInit`
+  is provided as `{ redirect: "manual" }`; an invalid `Location` returns the redirect response
+  unchanged.
+- `HttpClientResponse.toWeb(response)` returns `Option<Response>`: `Some` with the original Web
+  `Response` for fetch-backed clients (keeps runtime body capabilities, e.g. writing straight to
+  R2), `None` otherwise.
+- `HttpClientRequest.upgrade(protocol)` sets `Connection: Upgrade` / `Upgrade: protocol`, and
+  `HttpClientResponse.upgrade` yields the raw connection as a `Socket` after a `101`. Node clients
+  support it; fetch-backed responses fail. For WebSockets use `Socket.makeWebSocket` instead.
 
 ### Raw fetch (deliberate exception)
 
@@ -237,6 +269,28 @@ reimplement by hand.
 | `HttpMiddleware`     | Middleware stack                                          |
 | `HttpEffect`         | Effect-based request handlers                             |
 | `HttpBody`           | Request body types and parsers                            |
+
+## Server Middleware And Limits
+
+- `HttpMiddleware.decompression({ maxDecompressedSize? })` decompresses `gzip` / `deflate` request
+  bodies, bounds the decompressed size, and answers other `content-encoding` values with `415`.
+- Request bodies that exceed `HttpIncomingMessage.MaxBodySize` (or the decompression limit) fail
+  with `413`; other parse failures stay `400`.
+- `HttpMiddleware.xForwardedHeaders({ trustedProxies })` takes an explicit trusted-proxy policy:
+  `ReadonlyArray<IpNetwork>` or a `Predicate<IpAddress>`. It applies `X-Forwarded-For` / `-Host` /
+  `-Proto` only when the direct peer is trusted, replaces `remoteAddress` with the client address,
+  and keeps the transport peer in `request.peerAddress`. Nothing reads `x-forwarded-proto` directly:
+  `HttpServerRequest.toURL` uses the validated `request.protocol`, else infers HTTPS from
+  `originalUrl`.
+
+```ts
+import { HttpMiddleware } from "effect/http";
+import { IpNetwork } from "effect/net";
+
+const behindLoadBalancer = HttpMiddleware.xForwardedHeaders({
+  trustedProxies: [IpNetwork.fromStringUnsafe("10.0.0.0/8")],
+});
+```
 
 ## HttpApi (typed API builders)
 

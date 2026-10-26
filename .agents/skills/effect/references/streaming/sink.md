@@ -28,6 +28,9 @@ const take5 = Sink.take<number>(5);
 
 // Take while predicate is true
 const takeWhilePositive = Sink.takeWhile((n: number) => n > 0);
+
+// Take through the first match: the matching element is included and the rest is returned as leftovers
+const takeUntilBig = Sink.takeUntil((n: number) => n > 100);
 ```
 
 ## Folding

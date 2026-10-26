@@ -75,6 +75,11 @@ definitions via the `Rpc` value (or a `RpcGroup` containing many).
 `primaryKey: (payload) => string` — opt-in deduplication key. When provided, identical calls in
 flight collapse into one (caching/batching).
 
+Annotate an RPC with `Rpc.ParseOptions`
+(`rpc.annotate(Rpc.ParseOptions, { concurrency: "unbounded" })`, or
+`group.annotateRpcs(Rpc.ParseOptions, …)` for a whole group) to set the `SchemaAST.ParseOptions`
+used when the client and server encode/decode its payload, successes, stream chunks, and exits.
+
 ## Build a group
 
 ```ts
@@ -172,6 +177,17 @@ The returned `client` is a record indexed by procedure tag. Each method is
 `(payload) => Effect<Success, Error | RpcClientError>`. Streaming procedures return `Stream<A, E>`
 instead.
 
+`layerProtocolHttp` sends one HTTP request per RPC call. Set `batch: { window, maxSize? }` to send
+concurrent calls from the same client in a single HTTP request: the first call opens a batch, calls
+made before `window` elapses join it, and it is sent when the window ends or `maxSize` is reached.
+`makeProtocolHttp(client, { batch })` takes the same option.
+
+For WebSocket/socket transports, `RpcClient.layerProtocolSocket` (and `makeProtocolSocket`) accepts
+`pingInterval` (default 5 seconds), `pingTimeout` (defaults to the interval; any decoded server
+frame counts as liveness), `retryPolicy`, `retryTransientErrors`, `onTransientError`, and
+`onPingTimeout: Effect<void>`, which runs only when a ping timeout drops an open connection (before
+`onDisconnect` and before in-flight calls fail).
+
 ## Streaming responses
 
 ```ts
@@ -239,6 +255,9 @@ RpcSerialization.ndjson; // newline-delimited JSON
 RpcSerialization.jsonRpc(); // JSON-RPC 2.0 wire format
 RpcSerialization.layerSchemaBinary({ maxFrameSize: 16 * 1024 * 1024 });
 ```
+
+NDJSON uses the `application/x-ndjson` content type, skips empty lines, and fails on a malformed
+non-empty line with `RpcSerialization.NdjsonDecodeError` (parse error in `cause`).
 
 Provide `layerJson`, `layerNdjson`, or `layerJsonRpc(...)` on both server and client. The
 `layerSchemaBinary(...)` constructor is also a Layer. Wire format must match. Custom serializers

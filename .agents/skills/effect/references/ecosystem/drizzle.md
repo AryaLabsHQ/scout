@@ -33,10 +33,9 @@ Drizzle's schema/query DX with Effect's resource management, structured concurre
 `~/Developer/drizzle-orm/drizzle-orm/src/relations.ts:1619` **Source:**
 `drizzle-orm/pg-core/casing.ts` (`snakeCase`, `camelCase`) - see
 `~/Developer/drizzle-orm/drizzle-orm/src/pg-core/casing.ts:5` **Source:** `@effect/sql-pg`
-(`PgClient`, `PgClient.layerConfig`) - see `~/Developer/effect/packages/sql/pg/src/PgClient.ts:74`
+(`PgClient`, `PgClient.layerConfig`) - see `~/Developer/effect/packages/sql/pg/src/PgClient.ts:79`
 
-Verified against `drizzle-orm@1.0.0-rc.4` and `@effect/sql-pg` on the skill's baseline `effect` line
-(see [v4-beta-deltas.md](v4-beta-deltas.md)).
+Verified against `drizzle-orm@1.0.0-rc.4` and `@effect/sql-pg@4.0.6`.
 
 ## When to use
 
@@ -59,7 +58,7 @@ public surface.
 ## Install
 
 ```bash
-bun add --exact drizzle-orm @effect/sql-pg@4.0.0 effect@4.0.0
+bun add --exact drizzle-orm @effect/sql-pg@4.0.6 effect@4.0.6
 # Keep effect and @effect/sql-pg on the same version.
 ```
 
@@ -261,8 +260,7 @@ a domain error.
   `cockroach-core`. Don't import from a different dialect than your tables.
 - **`defineRelations` replaces the old per-table `relations(table, ...)` API.** Mixing both in the
   same project is allowed but discouraged — pick one.
-- **`@effect/sql-pg` peer-deps.** Drizzle 1.0 requires
-  `@effect/sql-pg >= 4.0.0-beta.58 || >= 4.0.0`. Check
+- **`@effect/sql-pg` peer-deps.** Drizzle 1.0 requires `@effect/sql-pg >= 4.0.0`. Check
   `~/Developer/drizzle-orm/drizzle-orm/package.json` `peerDependencies` for the exact bound.
 - **Driver-side codecs.** `effectPgCodecs` (in `drizzle-orm/effect-postgres/codecs.ts`) is the
   default codec set. Override with `make({ relations, codecs: customCodecs })` if you need custom

@@ -31,18 +31,18 @@
 - `Prompt.ts` — interactive prompts (`String`, `Select`, `Confirm`, `MultiSelect`, `Password`, etc.)
 - `GlobalFlag.ts` — `--help`, `--version`, custom global settings
 - `HelpDoc.ts` — auto-generated help formatting
-- `Completions.ts` — bash/zsh/fish completion script generation
-- `CliOutput.ts` — pluggable output formatter (e.g. ANSI colors)
+- `Completions.ts` — bash/zsh/fish/powershell completion script generation
+- `CliOutput.ts` — pluggable output formatter (e.g. ANSI colors) and `displayWidth`
+- `TerminalCapabilities.ts` — color/animate/prompt detection shared by built-in output
 - `CliError.ts` — typed CLI errors (`MissingOption`, `InvalidValue`, etc.)
 
-> **PascalCase constructors (rc.113).** `Primitive`, `Param`, `Flag`, `Argument`, `Prompt`, and
-> `GlobalFlag` constructors are PascalCase at the current baseline. `Flag.String`, `Flag.Int`,
-> `Flag.Finite`, `Flag.Boolean`, `Flag.Date`, `Flag.Literals`, `Flag.ChoiceWithValue` and their
-> `Argument.*` equivalents; `Prompt.String` / `Prompt.Int` / `Prompt.Number` / `Prompt.Select` /
-> `Prompt.Confirm` / `Prompt.MultiSelect`; `GlobalFlag.Action` / `GlobalFlag.Setting`. `choice` is
-> now `Literals` (arrays of literals), not a casing change. Primitive `_tag` values are `"Int"`,
-> `"Finite"`, and `"Never"` (previously `"Integer"`, `"Float"`, `"None"`). Combinators such as
-> `withDefault`, `optional`, `withAlias`, `withDescription`, `map`, and `variadic` keep their names.
+> **PascalCase constructors.** `Primitive`, `Param`, `Flag`, `Argument`, `Prompt`, and `GlobalFlag`
+> constructors are PascalCase: `Flag.String`, `Flag.Int`, `Flag.Finite`, `Flag.Boolean`,
+> `Flag.Date`, `Flag.Literals` (arrays of literals), `Flag.ChoiceWithValue` and their `Argument.*`
+> equivalents; `Prompt.String` / `Prompt.Int` / `Prompt.Number` / `Prompt.Select` / `Prompt.Confirm`
+> / `Prompt.MultiSelect`; `GlobalFlag.Action` / `GlobalFlag.Setting`. Primitive `_tag` values are
+> `"Int"`, `"Finite"`, and `"Never"`. Combinators such as `withDefault`, `optional`, `withAlias`,
+> `withDescription`, `map`, and `variadic` are camelCase.
 
 ## Decision Tree
 
@@ -60,7 +60,9 @@ What do I need?
 ├─ Subcommand reads parent flags            → yield* parent inside child handler
 ├─ Hide from help (still runnable)          → Command.unlisted / Flag.withHidden
 ├─ Interactive prompt                       → Prompt.String / Prompt.Select / Prompt.Confirm / Prompt.MultiSelect
-└─ Shell completions                        → Completions.generate(descriptor, "bash" | "zsh" | "fish")
+├─ Cross-flag rule (mutually exclusive)     → Command.validate((input) => Effect.fail(new CliError.ValidationError({ message })))
+├─ Rename/remove --no-<name>                → Flag.withNegation("skip-x") / Flag.withoutNegation
+└─ Shell completions                        → built-in --completions <shell>; Completions.generate(name, shell, descriptor)
 ```
 
 ## Minimal command
@@ -98,7 +100,10 @@ NodeRuntime.runMain(main);
 ## Flags vs Arguments vs Params
 
 - **Flag** (`--name`, `-n`) — `Flag.String`, `Flag.Int`, `Flag.Finite`, `Flag.Boolean`, `Flag.Date`,
-  `Flag.Literals`, `Flag.ChoiceWithValue`. Boolean flags accept `--no-flag` for negation.
+  `Flag.Literals`, `Flag.ChoiceWithValue`. Boolean flags accept `--no-<name>` for negation; rename
+  it with `Flag.withNegation("skip-<name>")` or drop it with `Flag.withoutNegation` (both also
+  update shell completions). `Flag.withOptionalValue("always")` gives GNU-style `--color[=WHEN]`
+  flags: a bare flag uses the given value, an explicit value must be attached with `=`.
 - **Argument** (positional) — `Argument.String`, `Argument.Int`, `Argument.Finite`, `Argument.Date`,
   `Argument.Literals`, `Argument.ChoiceWithValue`, `Argument.File`, `Argument.Directory`. Use
   `.pipe(Argument.variadic)` for `...args`. Positional booleans do not exist; use a boolean flag.
@@ -222,15 +227,17 @@ const setup = Effect.gen(function* () {
 ```
 
 Available prompt types: `String`, `Password`, `Hidden`, `Confirm`, `Toggle`, `Select`,
-`MultiSelect`, `Int`, `Number`, `Date`, `File`. Each takes typed options. Since rc.114 the `message`
-option is optional for `Prompt.Select` and `Prompt.MultiSelect`; `Prompt.AutoComplete` still
+`MultiSelect`, `AutoComplete`, `List`, `Int`, `Number`, `Date`, `File`. Each takes typed options.
+The `message` option is optional for `Prompt.Select` and `Prompt.MultiSelect`; `Prompt.AutoComplete`
 requires it.
 
 `Prompt.run(prompt)` is also exposed if you want to run a single prompt outside a command. Prompts
 depend on the `Terminal` service.
 
-Theme symbols and colors through `Prompt.Theme`, or a per-prompt `theme` option. Do not pass
-`prefix` on individual prompts. That option is gone.
+Theme symbols and colors through `Prompt.Theme`, or a per-prompt `theme` option. Prompts and the
+command wizard honor `NO_COLOR` (no color or style escapes, cursor controls kept). Terminal input is
+acquired only when a prompt actually needs input, so constant fallback prompts leave piped stdin
+untouched.
 
 ## Global flags
 
@@ -265,9 +272,37 @@ CLI errors are tagged Schema classes from `CliError.ts`:
 | `MissingArgument`    | Required arg absent             |
 | `InvalidValue`       | Value failed primitive coercion |
 | `UnknownSubcommand`  | Subcommand name unknown         |
+| `ValidationError`    | `Command.validate` check failed |
 
 `Command.run` returns `Effect<void, E | CliError.CliError, ...>`. Handle them at the boundary or let
 the runtime print them — the default formatter renders user-friendly messages.
+
+### Cross-flag validation
+
+`Command.validate` runs against the parsed input before the handler. A `CliError.ValidationError`
+failure is rendered with the command help, like any parse error:
+
+```ts
+import { Effect } from "effect";
+import { CliError, Command, Flag } from "effect/cli";
+
+const download = Command.make(
+  "download",
+  { api: Flag.Boolean("use-api"), docker: Flag.Boolean("use-docker") },
+  handler,
+).pipe(
+  Command.validate((input) =>
+    input.api && input.docker
+      ? Effect.fail(
+          new CliError.ValidationError({ message: "--use-api and --use-docker are exclusive" }),
+        )
+      : Effect.void,
+  ),
+);
+```
+
+`Command.withExamples` takes either an array of `{ command, description? }` or a function of
+`{ commandPath }`, so examples stay correct wherever the command is mounted.
 
 ## Output formatting
 
@@ -278,6 +313,15 @@ import { CliOutput } from "effect/cli";
 
 const layer = CliOutput.layer(CliOutput.defaultFormatter({ colors: true }));
 ```
+
+`CliOutput.displayWidth(text)` measures terminal cells (wide characters, emoji, ANSI-stripped) with
+the same logic as built-in help and tables; use it to align custom output.
+
+Built-in help, version, and error output follows the `TerminalCapabilities` reference
+(`{ canColor, canAnimate, canPrompt }`): `NO_COLOR` disables color, `FORCE_COLOR` enables it off a
+TTY, `TERM=dumb` disables all three. Provide `TerminalCapabilities.layer` (needs `Stdio`) to detect
+through `ConfigProvider`, or provide a value to override. Only `canColor` is read by the built-ins;
+read the others in your own rendering.
 
 ## Status via logging and --log-level
 
@@ -332,15 +376,16 @@ Related mechanics:
 
 ## Shell completions
 
-Generate completion scripts for `bash` / `zsh` / `fish`:
+Every `Command.run` CLI has the built-in `--completions <bash|zsh|fish|powershell|sh|pwsh>` global
+flag that prints the script (`sh` = `bash`, `pwsh` = `powershell`).
+
+Programmatic generation takes the executable name, the shell, and a `CommandDescriptor`:
 
 ```ts
 import { Completions } from "effect/cli";
 
-const script = Completions.generate(commandDescriptor, "zsh");
+const script = Completions.generate("my-app", "powershell", descriptor);
 ```
-
-The `commandDescriptor` is automatically built from your `Command` definition.
 
 ## Hidden commands and flags
 
@@ -363,8 +408,10 @@ const verbose = Flag.Boolean("verbose").pipe(Flag.withHidden);
   manually.
 - **Variadic must be last** — `Argument.variadic` consumes remaining tokens; place it after fixed
   positional arguments.
-- **Boolean negation** — `Flag.Boolean("force")` accepts both `--force` and `--no-force`. If you
-  want only the positive form, wrap manually with a primitive.
+- **Boolean negation** — `Flag.Boolean("force")` accepts both `--force` and `--no-force`. For only
+  the positive form use `Flag.withoutNegation`.
+- **Single-dash long names** — `-num=3` is split into separate short flags; use `--num=3`. A short
+  cluster with an inline value, like `-vn=3`, parses as `-v -n=3`.
 - **Prompts in CI** — prompts read from the `Terminal` service. In non-TTY environments they fail.
   Detect with `Terminal.isTty` or fall back to flags.
 

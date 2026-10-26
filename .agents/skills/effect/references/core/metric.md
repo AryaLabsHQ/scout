@@ -24,14 +24,16 @@ const handler = Effect.gen(function* () {
 
 ## Key Functions
 
-| Function                             | Description                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `Metric.counter(name, options?)`     | Counter for totals                                                                                     |
-| `Metric.gauge(name, options?)`       | Point-in-time value                                                                                    |
-| `Metric.histogram(name, boundaries)` | Distribution over buckets (boundaries via `Metric.linearBoundaries` or `Metric.exponentialBoundaries`) |
-| `Metric.summary(options)`            | Sliding-window summary                                                                                 |
-| `Metric.frequency(name)`             | Count of string occurrences                                                                            |
-| `Metric.update(metric, value)`       | Update any metric with a value                                                                         |
+| Function                                        | Description                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Metric.counter(name, options?)`                | Counter for totals                                                                                     |
+| `Metric.gauge(name, options?)`                  | Point-in-time value                                                                                    |
+| `Metric.histogram(name, boundaries)`            | Distribution over buckets (boundaries via `Metric.linearBoundaries` or `Metric.exponentialBoundaries`) |
+| `Metric.summary(options)`                       | Sliding-window summary                                                                                 |
+| `Metric.frequency(name)`                        | Count of string occurrences                                                                            |
+| `Metric.update(metric, value)`                  | Update any metric with a value                                                                         |
+| `Metric.remove(metric)`                         | Remove the metric's series (for its current attributes) from the registry (unstable)                   |
+| `Metric.registerUnsafe(metric, context, hooks)` | Register a series whose `hooks.get` is read at snapshot time; returns `{ remove() }` (unstable)        |
 
 ## Use Cases
 

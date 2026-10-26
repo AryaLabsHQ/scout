@@ -66,7 +66,8 @@ Use lower-level modules only when custom composition is required:
 import { OtelLogger, OtelMetrics, OtelTracer, Resource } from "@effect/opentelemetry";
 ```
 
-- `OtelTracer.layer`: create/install the Effect tracer from an OTel provider and resource.
+- `OtelTracer.layer`: create/install the Effect tracer from an `OtelTracerProvider` (instrumentation
+  scope `effect` at the current Effect version; no `Resource` requirement).
 - `OtelTracer.currentOtelSpan`: access the current OTel span, failing when no span exists.
 - `OtelMetrics.makeProducer` / `OtelMetrics.layer`: bridge Effect metrics to metric readers.
 - `OtelLogger.layerLoggerProvider` / `OtelLogger.layer`: construct a provider and install/merge the
@@ -74,6 +75,17 @@ import { OtelLogger, OtelMetrics, OtelTracer, Resource } from "@effect/opentelem
 - `Resource.layerFromEnv`: construct resource metadata from environment/configuration.
 
 ## Notes
+
+- Spans without an Effect parent inherit an active OpenTelemetry span created outside Effect; an
+  Effect parent always wins (use `Effect.withParentSpan` to inherit Effect-installed ambient spans).
+- Interrupt-only spans stay `Unset` with `effect.fiber.interrupted: true`. Log records carry the
+  active span context, `exception.*` attributes for causes, and `effect.*` attributes
+  (`effect.fiberId`, `effect.log_span.<label>`).
+- `Resource.layerFromEnv` keeps `=` inside `OTEL_RESOURCE_ATTRIBUTES` values and skips empty keys.
+- HTTP spans follow OpenTelemetry conventions: bare-method span names and opt-in header capture (see
+  [platform.md](platform.md)).
+- To export without the OTel SDK, `effect/observability` `Otlp.layer*` supports gzip
+  (`compression: "gzip"`); see [unstable.md](unstable.md).
 
 - Register Node auto-instrumentations before importing modules they patch.
 - Older-pinned consumers: check the installed package surface via

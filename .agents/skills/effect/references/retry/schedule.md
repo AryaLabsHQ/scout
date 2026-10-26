@@ -13,9 +13,8 @@
 
 `Schedule<Output, Input, Error, Env>`
 
-defines retry/repeat policies. This page documents the skill's baseline release; consumers pinned to
-an older beta map differences through [v4-beta-deltas.md](../ecosystem/v4-beta-deltas.md), which
-owns the baseline and the Schedule consolidation that landed at beta.97.
+defines retry/repeat policies. Consumers pinned to an older release map differences through
+[v4-beta-deltas.md](../ecosystem/v4-beta-deltas.md).
 
 ## Core rules
 

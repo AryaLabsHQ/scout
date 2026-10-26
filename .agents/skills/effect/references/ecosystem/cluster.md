@@ -22,8 +22,8 @@
 
 **Source:** `effect/cluster/*` - see `~/Developer/effect/packages/effect/src/cluster/`
 
-The cluster module spans 39 files; only the user-facing entry points are listed here. For internals
-(envelope formats, runner lifecycle, snowflake IDs), read source directly.
+The cluster module spans many files; only the user-facing entry points are listed here. For
+internals (envelope formats, runner lifecycle, snowflake IDs), read source directly.
 
 | File                                                             | Purpose                                                                                                         |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -158,7 +158,9 @@ const HourlyCleanup = ClusterCron.make({
 ```
 
 Survives runner restarts and rebalances. Backed by `MessageStorage` (so requires a durable storage
-layer).
+layer). Pass `calculateNextRunFromPrevious: true` to process every run in order through a single
+entity, catching up missed runs without overlap (a failing run is retried in place, blocking later
+runs until it succeeds or is older than `skipIfOlderThan`).
 
 ## Runtime: assembling a cluster node
 
@@ -211,6 +213,12 @@ const ClusterNode = Layer.mergeAll(
 Run with `NodeRuntime.runMain(Layer.launch(ClusterNode))` — the runner registers itself, claims
 shards, and starts processing messages.
 
+On shutdown, `Sharding` hands shards off one at a time after their entities and singletons stop so
+live runners take them over sooner (best effort, bounded wait; remaining locks are then released). A
+shutting-down runner acquires no new shards. Requests sent while a shard is mid-handoff wait up to
+`shardLockExpiration` rather than failing with `EntityNotAssignedToRunner`. Persisted messages sent
+while the local shard waits for its lock are saved first.
+
 ## External clients (RPC-over-HTTP into the cluster)
 
 `EntityProxy` exposes entities over standard `RpcGroup` / `HttpApiGroup` so external clients
@@ -240,6 +248,11 @@ const proxyHandlers = EntityProxyServer.layerHttpApi({
 
 For production, always use SQL-backed storage — entity state across restarts and rebalances depends
 on it.
+
+`SqlMessageStorage.layer` and `SqlRunnerStorage.layer` run migrations on startup, so the connection
+needs DDL permissions. To migrate with an owner connection in a deploy step and run with a DML-only
+connection, use `layerMigrations({ prefix? })` separately from `layerStorage({ prefix? })`;
+`layerWith({ prefix })` is the combined form with a custom table prefix.
 
 ## Kubernetes integration
 
@@ -305,9 +318,21 @@ const TxRpc = MyRpc.annotate(ClusterSchema.WithTransaction, true);
 
 const NoInterrupt = MyRpc.annotate(ClusterSchema.Uninterruptible, "server");
 // Server-side handler is uninterruptible.
+
+const Stoppable = MyRpc.annotate(ClusterSchema.InterruptOnTermination, true);
+// Interrupted as soon as entity termination starts (long-lived requests). Persisted requests
+// resume under the next owner without saving an interrupt reply; server-side Uninterruptible wins.
 ```
 
 Annotations are inspected by `Sharding` and the storage layer to decide how to route and persist.
+
+## Metrics
+
+`ClusterMetrics` exposes `entities`, `entityMailboxSizeMax`, `singletons`, `runners`,
+`runnersHealthy`, `shards`, `shardsReleasing`, and `shardReleaseDuration`. Per-entity
+`entityMailboxSize` is opt-in via the `mailboxMetrics` entity option or
+`ShardingConfig.entityMailboxMetrics`. A forced shard release that stays pending past
+`shardLockExpiration` logs a repeating warning naming the affected shards and entity types.
 
 ## Pitfalls
 

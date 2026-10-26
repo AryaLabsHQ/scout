@@ -42,17 +42,18 @@ NodeRuntime.runMain(
 
 ## Common Layers and Modules
 
-| Module / Layer                                         | What it provides                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------- |
-| `NodeRuntime.runMain`                                  | Runtime entrypoint for Node                                         |
-| `NodeServices.layer`                                   | Standard Node platform services bundle                              |
-| `NodeHttpServer.layer(() => createServer(), { port })` | Node HTTP server adapter (requires server factory + listen options) |
-| `NodeHttpClient.layerUndici`                           | Node HTTP client layer using Undici                                 |
-| `NodeFileSystem.layer`                                 | File system service implementation                                  |
-| `NodeTerminal.layer`                                   | Terminal service implementation                                     |
-| `NodeWorker.layerPlatform` / `NodeWorker.layer(spawn)` | Worker platform and spawner layers                                  |
-| `NodePath.layer`                                       | Path utilities (posix/win32)                                        |
-| `NodeSocket.layerWebSocketConstructor`                 | WebSocket constructor for Node                                      |
+| Module / Layer                                          | What it provides                                                                                                                  |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `NodeRuntime.runMain`                                   | Runtime entrypoint for Node                                                                                                       |
+| `NodeServices.layer`                                    | Standard Node platform services bundle                                                                                            |
+| `NodeHttpServer.layer(() => createServer(), { port })`  | Node HTTP server adapter (requires server factory + listen options)                                                               |
+| `NodeHttpClient.layerUndici`                            | Node HTTP client layer using Undici                                                                                               |
+| `NodeHttpClient.layerNodeHttp` / `layerNodeHttpOptions` | Node `http`/`https` client; `HttpAgentOptions` adds `socketPath` (Unix socket) and TLS settings (`ca`, `cert`, `key`, mutual TLS) |
+| `NodeFileSystem.layer`                                  | File system service implementation                                                                                                |
+| `NodeTerminal.layer`                                    | Terminal service implementation                                                                                                   |
+| `NodeWorker.layerPlatform` / `NodeWorker.layer(spawn)`  | Worker platform and spawner layers                                                                                                |
+| `NodePath.layer`                                        | Path utilities (posix/win32)                                                                                                      |
+| `NodeSocket.layerWebSocketConstructor`                  | WebSocket constructor for Node                                                                                                    |
 
 ## HTTP Server Example
 
@@ -128,4 +129,9 @@ layers you need (e.g., `NodeFileSystem.layer` alone for filesystem access).
 
 - Import `HttpRouter`, `HttpServer`, and `HttpClient` from `effect/http`. The Node adapter
   (`NodeHttpServer`, `NodeHttpClient`) lives in `@effect/platform-node`.
+- `NodeHttpServer.make` / `layerServer` / `layer` / `layerConfig` also accept `Http2.createServer()`
+  and `Http2.createSecureServer({ ..., allowHTTP1: true })` from `node:http2`.
+  `NodeHttpServerRequest.toIncomingMessage` and `toServerResponse` then return the `node:http` or
+  `node:http2` request/response union, so narrow (for example on `httpVersionMajor`) before using
+  HTTP/1.1-only members.
 - Requires Node 18+ (for fetch-based APIs) or Node 20+ LTS.

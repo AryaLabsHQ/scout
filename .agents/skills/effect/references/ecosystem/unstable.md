@@ -1,7 +1,7 @@
 # Other domain subpaths (formerly `effect/unstable/*`)
 
-`effect@4.0.0` has no `effect/unstable/*` export. The nineteen domain subpaths (`ai`, `cli`,
-`cluster`, `devtools`, `encoding`, `eventlog`, `http`, `http-api`, `net`, `observability`,
+`effect` has no `effect/unstable/*` export. The twenty domain subpaths (`ai`, `cli`, `cluster`,
+`devtools`, `encoding`, `eventlog`, `graphql`, `http`, `http-api`, `net`, `observability`,
 `persistence`, `process`, `reactivity`, `rpc`, `schema`, `socket`, `sql`, `workers`, `workflow`) and
 `testing` are top-level `effect/<area>` exports. `Arbitrary` is a root module, not a subpath. The
 filename is kept so existing links resolve; the content is the stable-path routing.
@@ -15,17 +15,18 @@ Focused guides cover `ai`, `cli`, `cluster`, `http`, `http-api`, `reactivity`, `
 `sql`, `workers`, and `workflow`. This page routes the remaining public subpaths to the source-owned
 namespace.
 
-| Subpath                | Primary surface                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `effect/devtools`      | `DevTools.layer`, socket/WebSocket tracing, and metrics/span inspection                                      |
-| `effect/encoding`      | `Base64`, `Base64Url`, `Hex`, `EncodingError`, `Ini`, `Yaml`, `Toml`, `Ndjson`, `Sse`, and `SchemaBinary`    |
-| `effect/eventlog`      | Event groups, journals, replay/remote logs, encryption, and SQL-backed storage                               |
-| `effect/net`           | `NetAddress`, `IpNetwork`, and `IpInterface` host/address values                                             |
-| `effect/observability` | OTLP JSON/Protobuf serialization, exporters, resources, logs, traces, and Prometheus metrics                 |
-| `effect/persistence`   | Persistable values, key-value stores, persisted caches/queues, Redis, and rate limiting                      |
-| `effect/process`       | `ChildProcess` commands, piping, handles, and the `ChildProcessSpawner` service                              |
-| `effect/schema`        | `Model` variants for database/API shapes, `VariantSchema`, and the `SchemaCompiler`/JIT/AOT compiler modules |
-| `effect/testing`       | `TestClock`, `TestConsole`, and `TestSchema`; see [vitest.md](vitest.md)                                     |
+| Subpath                | Primary surface                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `effect/devtools`      | `DevTools.layer`, socket/WebSocket tracing, and metrics/span inspection                                                                                            |
+| `effect/encoding`      | `Base64`, `Base64Url`, `Hex`, `EncodingError`, `Ini`, `Yaml`, `Toml`, `Ndjson`, `Sse`, `SchemaBinary`, `JsonArray`, `Tar`, `Zip`, and `Xml`                        |
+| `effect/eventlog`      | Event groups, journals, replay/remote logs, `EventRow` convergent rows, encryption, and SQL-backed storage                                                         |
+| `effect/graphql`       | Experimental typed GraphQL operations: `GraphQL`, `GraphQLGroup`, `GraphQLClient`, `GraphQLProtocol`, `GraphQLResolver`, `GraphQLMiddleware`, `GraphQLClientError` |
+| `effect/net`           | `NetAddress`, `IpNetwork`, `IpInterface`, `Host`, `Dns`, and `AddressResolver`                                                                                     |
+| `effect/observability` | OTLP JSON/Protobuf serialization, exporters, resources, logs, traces, and Prometheus metrics                                                                       |
+| `effect/persistence`   | Persistable values, key-value stores, persisted caches/queues, Redis, rate limiting, and `UserDirectories`                                                         |
+| `effect/process`       | `ChildProcess` commands, piping, handles, and the `ChildProcessSpawner` service                                                                                    |
+| `effect/schema`        | `Model` variants for database/API shapes, `VariantSchema`, and the `SchemaCompiler`/JIT/AOT compiler modules                                                       |
+| `effect/testing`       | `TestClock`, `TestConsole`, and `TestSchema`; see [vitest.md](vitest.md)                                                                                           |
 
 ## Practical routing
 
@@ -35,7 +36,13 @@ namespace.
   no longer exist; `effect/encoding/EncodingError` names or narrows the failure.
 - Use `effect/encoding` `Ini`, `Yaml`, and `Toml` for parse-only configuration formats and
   `SchemaBinary` for schema-derived binary frames. They do not add YAML/TOML/INI npm dependencies or
-  replace core JSON codecs.
+  replace core JSON codecs. `Base64Url.encodePadded` (and the `padding` option of
+  `SchemaGetter.encodeBase64Url`) produce padded URL-safe Base64.
+- Streaming codecs are Effect channels, usable with `Stream.pipeThroughChannel`: `Ndjson` (byte
+  decoders accept `maxLineBytes`; `NdjsonError.reason` is `InvalidJson`, `InvalidUtf8`, or
+  `LineTooLarge`), `Sse`, `JsonArray` (stream the elements of one JSON array, root or by JSON
+  Pointer, without buffering), `Tar` (`@stability unstable`), and experimental `Zip` and `Xml`.
+  `Xml` and `Zip` can change in patch releases.
 - Use `effect/schema/Model` when one field declaration should derive select, insert, update, and
   JSON variants; pair it with `SqlModel` for typed CRUD.
 - `effect/schema` also ships optional, `@stability unstable` Schema compilers. Import
@@ -47,9 +54,35 @@ namespace.
   Effect. Platform adapters provide the spawner.
 - Use `effect/net` for `NetAddress` / `IpNetwork` / `IpInterface` when server addresses, host
   formatting, or IP interface enumeration must stay typed. Prefer it over ad-hoc `{ host, port }`
-  shapes and platform-specific address types.
+  shapes and platform-specific address types. Constructors come in `fromString`, `fromInput`
+  (accepts parts or an existing value), and `*Unsafe` forms; `NetAddress.loopbackAddresses` lists
+  the loopback addresses.
+- `effect/net` `Host` (`DomainName`, `HostPort`, `toFullyQualified`, `toRelative`,
+  `parseHostsFile`), `Dns` (service with `lookup`, `resolve` per record type including `TLSA`, and
+  `reverse`; `Dns.layerStatic` for fixtures), and `AddressResolver` (resolves `host:port` input to
+  socket addresses) are `@stability experimental`. Provide the real `Dns` with `NodeDns.layer`,
+  `BunDns.layer`, or `DenoDns.layer`; TLSA queries need Node.js 22.15/23.9+ and fail with
+  `Unsupported` on Bun, Deno, and older Node. For UDP see [socket.md](socket.md#udp-datagramsocket).
+- `effect/graphql` (`@stability experimental`) models operations as `GraphQL` values grouped with
+  `GraphQLGroup.make(...)`; `GraphQLClient.make` builds a typed client over a `GraphQLProtocol`
+  (`layerHttp` / `makeHttp`, including subscription transports), `GraphQLResolver` batches lookups,
+  and `GraphQLMiddleware` / `GraphQLClientError` cover middleware and failures. The npm package
+  `@effect/graphql-generator` generates typed operations from documents. Read
+  `~/Developer/effect/packages/effect/src/graphql/` before adopting.
 - Use `effect/observability` for OTLP/Prometheus protocol plumbing; use core observability
-  references for Effect logging, spans, and tracing primitives.
+  references for Effect logging, spans, and tracing primitives. `Otlp.layer`, `layerJson`, and
+  `layerProtobuf` take `compression: "gzip" | "none"` (default `"none"`; bodies under 1KB stay
+  uncompressed), and `Otlp.layerFromConfig` reads `OTEL_EXPORTER_OTLP_COMPRESSION` and the
+  per-signal variants.
+- `PersistedQueue.offer(element, { delay })` postpones an element's first delivery (memory, Redis,
+  and SQL stores). `UserDirectories` (`layer` / `layerPlatform`) resolves XDG-style `config` /
+  `data` / `cache` / `state` directories, e.g. for `KeyValueStore.layerFileSystem`.
+- `DevTools.layer` reconnects to the DevTools server every second, so the server may start after the
+  app.
+- `effect/eventlog` writes batches with the `EventLog` service's `writeMany` (one lock, transaction,
+  and journal commit); `EventRow` builds convergent `set` / `patch` / `remove` row events with
+  per-field conflict resolution. Compaction helpers are `EventLog.groupCompaction` /
+  `groupBatchCompaction`.
 - Use `eventlog`, `persistence`, or `devtools` only when their explicit durability, remote-log, or
   inspection boundary is part of the design. Check their `@stability` tags against the installed
   version before adoption.

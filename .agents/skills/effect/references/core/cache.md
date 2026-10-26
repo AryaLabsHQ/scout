@@ -69,8 +69,10 @@ const program = Effect.gen(function* () {
 - Cache construction is effectful. Build the cache once in the owning layer/scope and share the
   handle; a cache built per call caches nothing.
 - For a single value (no key), use `Effect.cached(effect)` or `Effect.cachedWithTTL(effect, ttl)`
-  instead of a one-key Cache. Since rc.114 `cachedWithTTL` may compute the TTL from each completed
-  `Exit`, so successes and failures can cache for different durations.
+  instead of a one-key Cache. `cachedWithTTL` and `cachedInvalidateWithTTL` also accept a function
+  from the completed `Exit` to a TTL, so successes and failures can cache for different durations.
+  Concurrent callers share one computation, which is interrupted only after every caller has been
+  interrupted; interrupted results are never cached.
 - For cached resources that need cleanup (connections, clients), use `ScopedCache`.
 
 ## Exit-Aware TTL (cache successes, skip degraded results)

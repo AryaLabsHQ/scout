@@ -3,8 +3,6 @@
 **Source:** `@effect/platform-node-shared` - see
 `~/Developer/effect/packages/platform/node-shared/src/`
 
-At `effect@4.0.0` the same files live under `packages/platform/node-shared/src/`.
-
 `@effect/platform-node-shared` provides shared Node-oriented platform modules used by both
 `@effect/platform-node` and `@effect/platform-bun`.
 

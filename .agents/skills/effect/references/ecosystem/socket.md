@@ -24,9 +24,11 @@ Use `writer.write` for one frame and `writer.writeAll` for a non-empty batch. Cl
 termination is reported as a `SocketError`, so reconnecting is an ordinary retry around the scoped
 consume loop. Closing the scope also interrupts a suspended pull.
 
-`Reader.upgrade(options?)` performs an in-place TLS upgrade where the adapter supports it. The Node
-shared adapter provides `NodeSocket.layerNet`, `NodeSocket.layerTls`, and corresponding server
-layers; browser and runtime-specific WebSocket layers remain in their platform packages.
+`Reader.upgrade(options?)` performs an in-place TLS upgrade where the adapter supports it; pass
+`servername` for a client upgrade to set the SNI name and certificate identity check explicitly
+(server upgrades ignore it). The Node shared adapter provides `NodeSocket.layerNet`,
+`NodeSocket.layerTls`, and corresponding server layers; browser and runtime-specific WebSocket
+layers remain in their platform packages.
 
 The old push-style `run`, `runString`, and `runRaw` APIs are not part of the current source. Keep
 the reader/writer boundary visible when adapting a protocol.
@@ -48,9 +50,48 @@ channel, use `Socket.makeWebSocketChannel(url, options?)`; for dependency inject
 `Socket.layerWebSocket(url, options?)`. Browser-compatible construction is available through
 `Socket.layerWebSocketConstructorGlobal`.
 
+Pass `headers` (a string record) next to `protocols` in the options to send handshake headers. That
+needs a Node or Bun WebSocket constructor; without `headers`, protocols are passed straight to the
+constructor, so browser-compatible calls keep working.
+
+`Socket.readerString` / `toChannelString` decode with a streaming decoder, so a character split
+across binary frames is reassembled; use `readerBytes` and decode per frame when each WebSocket
+message must stand alone.
+
 ## Socket Servers
 
 `SocketServer.SocketServer` exposes the bound `address` and a long-running `run(handler)` that hands
 each accepted `Socket.Socket` to the handler. Platform packages provide the concrete TCP or Unix
 socket server layer; keep the server scope alive for the duration of the accept loop and handle
 `SocketServer.SocketServerError` at the process boundary.
+
+## UDP (`DatagramSocket`)
+
+`effect/socket/DatagramSocket` is the pull-based UDP counterpart (`@stability experimental`).
+Provide a platform layer: `NodeDatagramSocket.layer(options?)`, `BunDatagramSocket.layer(options?)`,
+or `DenoDatagramSocket.layer(options?)` (Deno needs unstable UDP support; otherwise reads fail with
+`DatagramSocketUnsupportedError`). Options cover `bind`, `peer` or `connect`, `family`, multicast,
+and `receiveBuffer: { capacity?, strategy?: "dropping" | "sliding" }`.
+
+```ts
+import { Effect } from "effect";
+import { NetAddress } from "effect/net";
+import { DatagramSocket } from "effect/socket";
+
+const server = NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 5353);
+
+export const request = (payload: string) =>
+  Effect.gen(function* () {
+    const socket = yield* DatagramSocket.DatagramSocket;
+    const reader = yield* socket.reader; // opens and binds the native socket
+    const writer = yield* socket.writer;
+    yield* writer.write({ payload, address: server });
+    const [response] = yield* reader.pull; // non-empty batch of { payload, address }
+    return response.payload;
+  }).pipe(Effect.scoped);
+```
+
+Acquiring `reader` opens the socket and only one reader is open at a time; writes wait until a
+reader is open, so a send-only client still acquires one. To reply,
+`writer.write({ payload, address: received })` reuses the sender address. `reader.joinMulticast`,
+`reader.address`, and `reader.dropped()` (receive-buffer overflow count) are also available.

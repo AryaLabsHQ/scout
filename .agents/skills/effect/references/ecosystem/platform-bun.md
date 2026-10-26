@@ -2,8 +2,6 @@
 
 **Source:** `@effect/platform-bun` - see `~/Developer/effect/packages/platform/bun/src/`
 
-At `effect@4.0.0` the same files live under `packages/platform/bun/src/`.
-
 Use `@effect/platform-bun` when your runtime is Bun and you want Effect-native layers for Bun HTTP
 server, filesystem, terminal, workers, and command execution.
 
@@ -29,17 +27,17 @@ BunRuntime.runMain(
 
 ## Common Layers and Modules
 
-| Module / Layer                                       | What it provides                                |
-| ---------------------------------------------------- | ----------------------------------------------- |
-| `BunRuntime.runMain`                                 | Runtime entrypoint for Bun                      |
-| `BunServices.layer`                                  | Standard Bun platform services bundle           |
-| `BunHttpServer.layer({ port })`                      | Bun HTTP server adapter                         |
-| `BunHttpClient.layer`                                | Bun HTTP client layer (uses Bun's native fetch) |
-| `BunFileSystem.layer`                                | Bun filesystem service                          |
-| `BunTerminal.layer`                                  | Bun terminal service                            |
-| `BunWorker.layerPlatform` / `BunWorker.layer(spawn)` | Worker platform and spawner layers              |
-| `BunPath.layer`                                      | Path utilities                                  |
-| `BunSocket.layerWebSocket`                           | WebSocket layer                                 |
+| Module / Layer                                       | What it provides                                                                 |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `BunRuntime.runMain`                                 | Runtime entrypoint for Bun                                                       |
+| `BunServices.layer`                                  | Standard Bun platform services bundle                                            |
+| `BunHttpServer.layer({ port })`                      | Bun HTTP server adapter                                                          |
+| `BunHttpClient.layer` / `layerOptions(options)`      | Bun HTTP client layer (native fetch); options carry Unix socket and TLS settings |
+| `BunFileSystem.layer`                                | Bun filesystem service                                                           |
+| `BunTerminal.layer`                                  | Bun terminal service                                                             |
+| `BunWorker.layerPlatform` / `BunWorker.layer(spawn)` | Worker platform and spawner layers                                               |
+| `BunPath.layer`                                      | Path utilities                                                                   |
+| `BunSocket.layerWebSocket`                           | WebSocket layer                                                                  |
 
 ## HTTP Server Example
 

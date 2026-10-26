@@ -185,6 +185,10 @@ const greet = Match.type<{ name: string; age: number }>().pipe(
 );
 ```
 
+`Match.when`, `whenOr`, `whenAnd`, and `not` reject object patterns whose keys the input type does
+not have (a typo like `{ agee: 18 }` is a type error). A tuple pattern applied to an array or
+variadic tuple narrows only the matched prefix; the remaining elements keep their original type.
+
 ## Combining Patterns
 
 ```ts

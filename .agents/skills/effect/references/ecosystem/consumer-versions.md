@@ -20,10 +20,11 @@ differences live in [v4-beta-deltas.md](v4-beta-deltas.md).
      this skill's `effect/<area>` imports do not resolve there.
    - `4.0.0-rc.118` → the module paths, `effect/encoding`, and Schema check names in this skill
      resolve, but `Schema.brand`, partition order, and other `4.0.0`-only changes do not apply.
-   - `4.0.0` → this skill's examples, as written.
-   - A later published version or unreleased `origin/main` → read the intervening sections of
-     [v4-beta-deltas.md](v4-beta-deltas.md) and the package changelog; only use it if the consumer
-     intentionally runs that build.
+   - `4.0.0` through `4.0.5` → this skill's examples apply, except the changes listed in
+     [4.0.0 → 4.0.6](v4-beta-deltas.md#400--406) for releases after the resolved one.
+   - `4.0.6` → this skill's examples, as written.
+   - A later published version or unreleased `origin/main` → read the package changelog past
+     `4.0.6`; only use it if the consumer intentionally runs that build.
 
 Representative checks:
 
@@ -42,10 +43,10 @@ merely to answer which version is present.
   this skill's baseline:
 
   ```bash
-  bun add --exact effect@4.0.0
+  bun add --exact effect@4.0.6
   ```
 
-  The `latest` dist-tag is `4.0.0` (checked 2026-10-01). `effect@rc` is the older `4.0.0-rc.118` and
+  The `latest` dist-tag is `4.0.6` (checked 2026-10-27). `effect@rc` is the older `4.0.0-rc.118` and
   `effect@beta` is `4.0.0-beta.107`; neither is this skill's baseline.
 
 - Pin runtime and integration packages to the same version: `@effect/platform-*`, `@effect/vitest`,

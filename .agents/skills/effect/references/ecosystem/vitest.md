@@ -33,11 +33,10 @@ file owns project test policy and exemplar paths; this reference owns the API gu
 ## Install
 
 ```bash
-bun add -D vitest @effect/vitest@4.0.0
+bun add -D vitest @effect/vitest@4.0.6
 ```
 
-Pin `@effect/vitest` to the same version as `effect`. It peers `vitest >=5.0.0 <6.0.0`. The `beta`
-and `rc` dist-tags are older prereleases, not this skill's baseline.
+Pin `@effect/vitest` to the same version as `effect`. It peers `vitest >=5.0.0 <6.0.0`.
 
 ## Setup
 
@@ -504,9 +503,10 @@ it.effect("NumberFromString round-trips", () =>
 ## Property Tests
 
 `it.prop` and `it.effect.prop` accept `Schema` values or native `Arbitrary` values. The callback
-receives generated inputs; return `false` (or fail the Effect) to falsify the property and trigger
+receives generated inputs. A synchronous `it.prop` callback must return a boolean or `void`
+(returning an Effect or Promise is rejected); return `false` to falsify the property and trigger
 shrinking. `it.effect.prop` is the Effectful form when the property needs services, deterministic
-time, or other requirements.
+time, or other requirements; fail the Effect to falsify it.
 
 ```ts
 import { Schema } from "effect";
@@ -562,6 +562,10 @@ it.effect("publishes exactly once", () =>
 ```
 
 ## Scoped Resources
+
+`beforeAll` and `beforeEach` from `@effect/vitest` also accept a callback that returns an `Effect`.
+It is run and awaited with a `Scope`: the `beforeAll` scope closes after the suite's `afterAll`
+hooks, the `beforeEach` scope when the test finishes. The Effect must not require other services.
 
 Scoping is automatic in v4. The scope closes automatically when the test ends, triggering cleanup
 finalizers:

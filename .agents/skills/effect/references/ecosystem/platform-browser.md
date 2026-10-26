@@ -14,8 +14,6 @@
 
 `~/Developer/effect/packages/platform/browser/src/`
 
-At `effect@4.0.0` the same files live under `packages/platform/browser/src/`.
-
 Use `@effect/platform-browser` for Effect programs running in browsers, including browser HTTP
 client integration, worker layers, and browser storage layers.
 

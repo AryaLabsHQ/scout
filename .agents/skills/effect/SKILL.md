@@ -1,14 +1,14 @@
 ---
 name: effect
 description:
-  "Effect-TS v4 (stable 4.0.0): Effect, Option, Result, Context.Service, Layer, Stream, Schedule,
+  "Effect-TS v4 (stable 4.0.6): Effect, Option, Result, Context.Service, Layer, Stream, Schedule,
   Schema, ByteSize, domain subpaths (effect/http, http-api, net, sql, ai, cli, cluster, rpc, socket,
-  workers, encoding, devtools, eventlog, observability, persistence, process, schema, reactivity,
-  workflow, testing), root Arbitrary, native SQL/PostgreSQL, and @effect/vitest property tests.
-  Covers HttpApi + HttpApiMiddleware seams, three-slot DI, RequestContext, AppConfig, platform
-  adapters, Drizzle effect-postgres, and Effect-native TypeScript architecture. Cloudflare Workers
-  and workerd fetch hosting belong to cloudflare, TanStack Start dashboards to tanstack-start, and
-  subjective naming or abstraction taste to craft."
+  workers, encoding, devtools, eventlog, graphql, observability, persistence, process, schema,
+  reactivity, workflow, testing), root Arbitrary, native SQL/PostgreSQL, and @effect/vitest property
+  tests. Covers HttpApi + HttpApiMiddleware seams, three-slot DI, RequestContext, AppConfig,
+  platform adapters, Drizzle effect-postgres, and Effect-native TypeScript architecture. Cloudflare
+  Workers and workerd fetch hosting belong to cloudflare, TanStack Start dashboards to
+  tanstack-start, and subjective naming or abstraction taste to craft."
 disable-model-invocation: true
 metadata:
   opencode/slash: "true"
@@ -21,7 +21,7 @@ Read the reference for the task. `~/Developer/effect` is the canonical checkout.
 version-sensitive APIs, check resolved
 [consumer dependencies](references/ecosystem/consumer-versions.md) against the
 [version lineage and deltas](references/ecosystem/v4-beta-deltas.md). This skill documents
-`effect@4.0.0`; code still on a 4.0.0 beta or RC needs the lineage page.
+`effect@4.0.6`; code on an earlier 4.0.x release, beta, or RC needs the lineage page.
 
 ## Core defaults
 
@@ -162,7 +162,7 @@ means the root `effect` package. `none` means the row is not tied to one package
 | HttpApi seams, middleware order, tracer tests          | `effect/http-api`                               | `references/ecosystem/httpapi-seams.md`             |
 | SQL and drivers                                        | `effect/sql` plus driver                        | `references/ecosystem/sql.md`                       |
 | Drizzle ORM                                            | `drizzle-orm/effect-postgres`, `@effect/sql-pg` | `references/ecosystem/drizzle.md`                   |
-| AI providers and models                                | `effect/ai` plus provider                       | `references/ecosystem/ai.md`                        |
+| AI models, decisions, tools, MCP server and client     | `effect/ai` plus provider                       | `references/ecosystem/ai.md`                        |
 | CLI commands, args, prompts                            | `effect/cli`                                    | `references/ecosystem/cli.md`                       |
 | RPC                                                    | `effect/rpc`                                    | `references/ecosystem/rpc.md`                       |
 | Cluster                                                | `effect/cluster`                                | `references/ecosystem/cluster.md`                   |
@@ -192,18 +192,17 @@ means the root `effect` package. `none` means the row is not tied to one package
 
 ### Domain subpaths without a focused reference
 
-At `effect@4.0.0` there is no `effect/unstable/*` export. The domain areas that were unstable
-subpaths at RC are top-level `effect/<area>` exports: 19 domain subpaths (`ai`, `cli`, `cluster`,
-`devtools`, `encoding`, `eventlog`, `http`, `http-api`, `net`, `observability`, `persistence`,
-`process`, `reactivity`, `rpc`, `schema`, `socket`, `sql`, `workers`, `workflow`) plus `testing`.
-`Arbitrary` is a root module (`effect/Arbitrary`, `import { Arbitrary } from "effect"`), not a
-subpath, and the old `unstable/arbitrary` barrel is gone. The path no longer says "unstable", but
-most of these modules still carry `@stability unstable` in their API docs, so minor releases may
-break them; root modules without a stability tag follow semver. The index above has focused
-references for eleven of them. Eight are routed through
-[unstable.md](references/ecosystem/unstable.md): `devtools`, `encoding`, `eventlog`, `net`,
-`observability`, `persistence`, `process`, and `schema`. `testing` (`TestClock`, `TestConsole`,
-`TestSchema`) is covered by [vitest.md](references/ecosystem/vitest.md) and
+There is no `effect/unstable/*` export. Domain areas are top-level `effect/<area>` exports: 20
+domain subpaths (`ai`, `cli`, `cluster`, `devtools`, `encoding`, `eventlog`, `graphql`, `http`,
+`http-api`, `net`, `observability`, `persistence`, `process`, `reactivity`, `rpc`, `schema`,
+`socket`, `sql`, `workers`, `workflow`) plus `testing`. `Arbitrary` is a root module
+(`effect/Arbitrary`, `import { Arbitrary } from "effect"`), not a subpath. The path does not say
+"unstable", but most of these modules carry `@stability unstable` in their API docs, so minor
+releases may break them; root modules tagged stable follow semver. The index above has focused
+references for eleven of them. Nine are routed through
+[unstable.md](references/ecosystem/unstable.md): `devtools`, `encoding`, `eventlog`, `graphql`,
+`net`, `observability`, `persistence`, `process`, and `schema`. `testing` (`TestClock`,
+`TestConsole`, `TestSchema`) is covered by [vitest.md](references/ecosystem/vitest.md) and
 [datetime.md](references/core/datetime.md). Read the source under
 `~/Developer/effect/packages/effect/src/<area>/` for implementation detail. A
 `-> effect/unstable/...` import is an RC-era path; see

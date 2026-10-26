@@ -14,7 +14,7 @@
 
 <!-- End table of contents -->
 
-**Source:** `effect/Effect.ts` (`Effect.callback`, `Effect.async`)
+**Source:** `effect/Effect.ts` (`Effect.callback`)
 
 - see
 

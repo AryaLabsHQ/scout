@@ -72,8 +72,9 @@ Guidance:
 - Use `schema.makeEffect(...)` when construction failure should stay in the Effect error channel.
 - Use `schema.makeOption(...)` when validation details are intentionally discarded.
 - Pass `{ disableChecks: true }` only when the input is already validated and you are deliberately
-  skipping `.check(...)` constraints. Never reach for a type cast to bypass validation — decode or
-  construct through the schema instead.
+  skipping `.check(...)` constraints (types and structure are still parsed and constructor defaults
+  still apply). Never reach for a type cast to bypass validation — decode or construct through the
+  schema instead.
 
 ```ts
 const user = User.make({ id: 1, name: "Arya", email: "a@example.com" });
@@ -123,7 +124,7 @@ const option = Schema.decodeUnknownOption(User)({ id: 1, name: "Arya", email: "a
 
 ## Assert (runtime validation)
 
-Assert a value directly — do not use the removed `Schema.Codec.ToAsserts` helper:
+Assert a value directly with `Schema.asserts`:
 
 ```ts
 import { Schema } from "effect";
@@ -182,7 +183,7 @@ Prefer the Effect variant at runtime boundaries; reserve the sync variant for st
 arrays. Vendored Standard Schema V1 types live at `effect/StandardSchema`. Do not add
 `@standard-schema/spec`. Compact binary encoding is `SchemaBinary.toCodec` from `effect/encoding`,
 not a Schema combinator. Base64 and hex byte helpers are `effect/encoding/Base64`, `Base64Url`, and
-`Hex` (root `Encoding` was removed).
+`Hex`. `SchemaGetter.encodeBase64Url({ padding: true })` keeps the `=` padding (default omits it).
 
 ## Let Schema Own Wire Encoding
 
@@ -311,7 +312,7 @@ export const toWireSchema = <S extends Schema.Constraint>(schema: S) => Schema.t
 ```
 
 Wrapper helpers such as `Schema.toType`, `Schema.toEncoded`, `Schema.toCodecJson`, and
-`Schema.toCodecStringTree` retain their source schema on `.schema`. `Schema.Void` now accepts any
+`Schema.toCodecStringTree` retain their source schema on `.schema`. `Schema.Void` accepts any
 present value and decodes it to `undefined`; use `Schema.Undefined` when the input must be exactly
 `undefined`.
 
@@ -329,8 +330,9 @@ const trimmedNonEmpty = Schema.Trimmed.check(Schema.isNonEmpty());
 
 Filters available: `isMinLength`, `isMaxLength`, `isBetweenLength`, `isGreaterThan`, `isLessThan`,
 `isBetween({ minimum, maximum })`, `isInt`, `isMultipleOf`, `isFinite`, `isPattern`,
-`isStartingWith`, `isEndingWith`, `isIncluding`, `isUUID`, `isULID`.
-`isMinLength`/`isMaxLength`/`isBetweenLength` count UTF-16 code units;
+`isStartingWith`, `isEndingWith`, `isIncluding`, `isUUID`, `isGUID`, `isULID`, `isLowercased`,
+`isUppercased`, `isCapitalized`. `isInt` exports as a JSON Schema integer bounded by the
+safe-integer range. `isMinLength`/`isMaxLength`/`isBetweenLength` count UTF-16 code units;
 `isMinCodePoints`/`isMaxCodePoints`/`isBetweenCodePoints` count Unicode code points. The subject
 comes last in range names (`isBetweenLength`, `isBetweenSize`, `isBetweenProperties`).
 
@@ -426,7 +428,7 @@ const Row = Schema.Struct({
   ),
 });
 
-// decodeUnknown* now requires R when defaults do
+// decodeUnknown* requires R when defaults do
 await Effect.runPromise(Schema.decodeUnknownEffect(Row)({}).pipe(Effect.provide(IdGenLive)));
 ```
 
@@ -502,12 +504,14 @@ Guidance:
 - Use `Schema.TaggedStruct(...)` for an ordinary Effect-owned `_tag` variant (single case, or a
   building block for a union).
 - Use `Schema.TaggedUnion(...)` to build a `_tag` discriminated union from scratch; it exposes
-  `.cases`, `.guards`, `.isAnyOf`, and `.match`.
+  `.tag` (the discriminant key), `.cases`, `.guards`, `.isAnyOf`, `.match`, and `.matchOrElse`.
 - Use `Schema.tag(...)` when an external contract has a custom discriminator field such as `type` or
   `kind`; combine those structs with `Schema.Union([...]).pipe(Schema.toTaggedUnion("type"))` when
   union helpers are needed.
 - Use `Schema.tagDefaultOmit(...)` deliberately when the encoded contract omits the discriminant
   (filled on decode/construct, stripped on encode).
+- `Schema.toTaggedUnion(...)` throws at runtime when members share a discriminant value, including
+  across nested unions and `1` vs `"1"`; there is no compile-time uniqueness check.
 - Avoid `Schema.Class` and `Schema.TaggedClass` for new data models.
 
 ```ts
@@ -554,7 +558,13 @@ const raw = User.make({ id: 1, name: "Arya", email: "a@example.com" }, { disable
 // Option / Effect variants
 const userOpt = User.makeOption({ id: 1, name: "Arya", email: "a@example.com" });
 const userEff = User.makeEffect({ id: 1, name: "Arya", email: "a@example.com" });
+
+// Subclass with extra fields; same-named fields replace inherited ones
+class Admin extends User.extend<Admin>("Admin")({ role: Schema.String }) {}
 ```
+
+`disableChecks: true` skips filters only; wrong types and shapes are still rejected. `.extend` does
+not verify that a replaced field stays compatible with the base class contract.
 
 **Source:** `effect/Schema.ts` - see `~/Developer/effect/packages/effect/src/Schema.ts`
 
@@ -574,6 +584,8 @@ try {
   }
 }
 ```
+
+`SchemaError` serializes to a compact `{ _tag, message }` object in JSON logs and Node inspection.
 
 ## Tagged Error Classes (Schema.TaggedError)
 
@@ -663,11 +675,33 @@ const decoded = SchemaRepresentation.toRepresentations([
 
 Use `fromJsonSchemaDocument` / `fromJsonSchemaMultiDocument` to import JSON Schema and
 `toCodeDocument(...)` to emit TypeScript. JSON Schema import is strict: unsupported keywords throw
-instead of being dropped, and references inside a subschema with its own `$id` are rejected. Since
-rc.113 the built-in revivers live here, named `SchemaRepresentation.makeReviverDeclaration`,
+instead of being dropped, and references inside a subschema with its own `$id` are rejected. The
+built-in revivers live here, named `SchemaRepresentation.makeReviverDeclaration`,
 `makeReviverFilter`, and `makeReviverFilterGroup` (they moved off `Schema`). Persisted
-representation documents serialize `Union` settings as `{ options: { mode: "oneOf" | "anyOf" } }`
-rather than a top-level `mode`, so migrate stored documents when crossing rc.112.
+representation documents serialize `Union` settings as `{ options: { mode: "oneOf" | "anyOf" } }`.
+Pass `includeAnnotationKey` (a key predicate) to `fromJsonSchemaDocument` /
+`fromJsonSchemaMultiDocument` to keep selected custom JSON metadata such as `x-*` keys as
+annotations.
+
+## JSON Schema and Standard Schema
+
+```ts
+import { Schema } from "effect";
+
+// JSON Schema (draft 2020-12) document from a schema; custom annotation keys opt in by predicate
+const doc = Schema.toJsonSchemaDocument(User, {
+  includeAnnotationKey: (key) => key.startsWith("x-"),
+});
+
+// Standard Schema V1 / Standard JSON Schema V1 adapters (fresh copy; compose in either order)
+const standard = Schema.toStandardSchemaV1(User);
+const standardJson = Schema.toStandardJSONSchemaV1(User);
+```
+
+`toJsonSchemaDocument` also accepts `onExcessProperty: "error"` to close object schemas and
+`generateDescriptions`. Colliding bounds tighten in place (`Schema.Natural` exports `minimum: 0`).
+`Schema.toCodecGoJson(schema)` (unstable) is a JSON codec that also accepts the `null` values Go's
+`encoding/json` emits for nil slices, maps, and optional keys; encoding matches `toCodecJson`.
 
 Partial tagged-union matching is `Schema.TaggedUnion(members).matchOrElse(cases, fallback)`; use it
 when only some cases need handling and the fallback receives the narrowed remainder.

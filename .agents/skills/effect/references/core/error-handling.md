@@ -297,6 +297,11 @@ const asResult = Effect.result(Effect.fail("nope"));
 const asOption = Effect.option(Effect.fail("nope"));
 ```
 
+`Effect.result` and `Effect.option` capture only typed failures. If the cause also contains a
+defect, nothing is captured: the effect still fails, and the typed errors in that cause become
+defects. An interruption alongside a typed error does not prevent capture (the interruption is
+discarded); an interruption-only cause still fails the effect.
+
 ## Retry
 
 ```ts
@@ -307,6 +312,10 @@ const retried = Effect.tryPromise({
   catch: (error) => new Error(String(error)),
 }).pipe(Effect.retry(Schedule.recurs(3)));
 ```
+
+`Effect.retry` retries typed failures only; a failure whose cause includes a defect or interruption
+is not retried. When the runtime combines a typed failure with a defect, the defect takes
+precedence, so typed-error recovery cannot swallow a crashing finalizer.
 
 ## Defects
 

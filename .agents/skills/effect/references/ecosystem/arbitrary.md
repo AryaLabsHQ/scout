@@ -1,9 +1,7 @@
 # Native Arbitrary and property testing
 
-`effect@4.0.0` provides native schema-derived generation as the root `effect/Arbitrary` module
-(`import { Arbitrary } from "effect"`). It replaces the removed `effect/testing/FastCheck` bridge
-and the removed `Schema.toArbitrary` helpers. RC builds exposed it as `effect/unstable/arbitrary`;
-that barrel no longer exists, and the module's APIs are still tagged `@stability unstable`.
+`effect/Arbitrary` provides native schema-derived generation as a root module
+(`import { Arbitrary } from "effect"`). Its APIs are tagged `@stability unstable`.
 
 ```ts
 import * as Arbitrary from "effect/Arbitrary";
@@ -42,5 +40,6 @@ it.prop("reversing twice is identity", [Schema.Array(Schema.Int)], ([values]) =>
 );
 ```
 
-Property callbacks may return `false` or fail with an Effect error to trigger shrinking. Keep the
-property Effect-native when it needs services or deterministic time.
+Synchronous `it.prop` callbacks must return a boolean or `void`; returning `false` or throwing
+triggers shrinking, and returning an Effect or Promise is rejected. Use `it.effect.prop` when the
+property needs services, deterministic time, or Effect failures.

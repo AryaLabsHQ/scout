@@ -222,7 +222,7 @@ add **one** of these depending on your store pattern:
 export class Service extends Context.Service<Service, DatabaseClient>()("@app/Database") {}
 
 export const layer = (connectionString: string) =>
-  Layer.scoped(Service /* PgClient.layer -> PgDrizzle.make({ relations }) */);
+  Layer.effect(Service /* PgClient.layer -> PgDrizzle.make({ relations }) */);
 
 export * as Database from "./database";
 ```

@@ -18,6 +18,7 @@
 - [rc.113 → rc.114](#rc113--rc114)
 - [rc.114 → rc.115](#rc114--rc115)
 - [rc.115 → 4.0.0 stable](#rc115--400-stable)
+- [4.0.0 → 4.0.6](#400--406)
 - [Schema](#schema)
 - [Effect / errors](#effect--errors)
 - [Runtime / platform](#runtime--platform)
@@ -26,12 +27,11 @@
 - [Config / observability](#config--observability)
 - [CLI / other](#cli--other)
 
-**Baseline: the rest of the skill documents `effect@4.0.0` (stable).** The source map follows
-`~/Developer/effect` at `67ba4e46a11ccda0b6761578bfd22c04ae00167d`, the commit whose package
-metadata reports `4.0.0`. The previous baseline was `9ad9891e24058065bcd445772e005f8ce4b3e42f`
-(`4.0.0-rc.115` plus a few commits). Use exact release tags for published-package claims. Check
-resolved dependencies in [consumer-versions.md](consumer-versions.md) before copying an example into
-a consumer.
+**Baseline: the rest of the skill documents `effect@4.0.6`.** The source map follows
+`~/Developer/effect` at tag `effect@4.0.6` (`3b28bf686b`). The previous baseline was
+`67ba4e46a11ccda0b6761578bfd22c04ae00167d` (`4.0.0`). Use exact release tags for published-package
+claims. Check resolved dependencies in [consumer-versions.md](consumer-versions.md) before copying
+an example into a consumer.
 
 **Historical sections keep the paths of their release.** Every `effect/unstable/<area>` import,
 `Encoding` helper, or `Schema.is*` name in a section above
@@ -495,6 +495,109 @@ landed in `rc.118`; the Schema brand and partition changes landed only in `4.0.0
   fractional or external strings such as `"1.5 MiB"` with `ByteSize.fromString`.
 - `@effect/vitest` peers `vitest >=5.0.0 <6.0.0`, and TypeScript 5.9+ is required.
 
+## 4.0.0 → 4.0.6
+
+Patch releases `4.0.1`–`4.0.6` ship on one line for `effect` and every runtime `@effect/*` package.
+Many `effect/<area>` modules carry `@stability unstable`, so several patches below break call sites.
+Verified against tag `effect@4.0.6` and the package changelogs; PR numbers are upstream
+`Effect-TS/effect`.
+
+### Breaking or behavior-changing
+
+- **`Crypto.randomUUIDv4` / `randomUUIDv7` are methods** (`4.0.3`, #8935): write
+  `yield* crypto.randomUUIDv4()`; `{ format: "bytes" }` returns 16 bytes. See
+  [runtime-services.md](../core/runtime-services.md).
+- **`HttpMiddleware.xForwardedHeaders` requires `{ trustedProxies }`** (`4.0.6`, #9701). Forwarded
+  headers apply only from a trusted peer, `HttpServerRequest.peerAddress` and `protocol` were added,
+  and `toURL` no longer reads `x-forwarded-proto`. See [platform.md](platform.md).
+- **`FileSystem`**: `File.Info` 64-bit fields are `bigint` / `Option<bigint>` (`4.0.5`, #9112);
+  custom implementations must provide `lstat` (`4.0.6`, #6428); `File.read` positions are `bigint`
+  (`4.0.3`, #8900).
+- **SQL drivers**: `SqlClient.make` requires `driver` (`4.0.6`, #9222);
+  `SqlClient.makeWithTransaction` owns the connection scope and `acquireConnection` receives
+  `restore` (`4.0.6`, #9517). Affects custom drivers only. See [sql.md](sql.md).
+- **CLI lexer**: `-num=3` splits into short flags; write `--num=3` (`4.0.6`, #9287).
+- **RPC NDJSON** content type is `application/x-ndjson`; malformed lines fail with
+  `NdjsonDecodeError` (`4.0.6`, #9562).
+- **Cause / Exit JSON** uses `reasons` instead of `failures`; Schema error paths follow (`4.0.6`,
+  #9323).
+- **Tagged unions**: duplicate discriminants throw at runtime from `Schema.toTaggedUnion` /
+  `TaggedUnion` (`4.0.6`, #9556; `4.0.5` had a compile-time check, #9103).
+- **`Match`** object patterns reject unknown keys; tuple patterns narrow only the matched prefix
+  (`4.0.5`, #9088, #9098).
+- **HTTP tracing**: span names are the bare method; header capture is opt-in via
+  `TracerHeaderFilter`; 5xx marks server spans failed (`4.0.2`, #8873). Sensitive query values and
+  URL credentials are redacted (`4.0.5`, #9136). Oversized request bodies return 413, not 400
+  (`4.0.6`).
+- **SQL tracing** follows OpenTelemetry: spans are named by `db.namespace`, then `server.address`,
+  then `db.system.name`; `effect.sql.method` replaces `db.operation.name` (`4.0.2`, #8866).
+  `@effect/sql-pg` default `idleTimeout` is 60s (`4.0.1`, #8679).
+- **Layers**: `Layer.provide`, `provideMerge`, and `mergeAll` memoize by identity, so a shared
+  composed layer shares dependencies wrapped in `Layer.fresh` (`4.0.6`, #9634).
+- **Effect runtime**: `Effect.retry` skips causes containing defects or interruptions (`4.0.2`,
+  #8799); defects take precedence over typed failures when combined (`4.0.6`, #9433); `forkIn` /
+  `forkScoped` on a closed scope return an interrupted fiber without running (`4.0.6`, #9395,
+  #9729); interruption is abandonment in `Effect.cached*`, `Cache`, `ScopedCache`, `RcRef`, and
+  `RcMap` (`4.0.1`, #8719).
+- **`Sink.takeUntil`** includes the matched element and returns the rest as leftovers (`4.0.4`,
+  #9049).
+- **AI**: `Rate.criteria` entries are `{ label, description }` (`4.0.5`, #9124); `McpServer` layer
+  types require resource-template and prompt completion services (`4.0.2`, `4.0.5`, #9151, #9135);
+  AI tracing follows OpenTelemetry GenAI conventions (`4.0.2`, #8870).
+- **Atoms**: hydrated serializable atoms build on first read and `Atom.Serializable` codecs use
+  `Schema.Json` (`4.0.6`, #9519, #9524).
+- `@effect/platform-deno` requires Deno `>= 2.9.3` (`4.0.6`, #9702). `OtelTracer` layers no longer
+  require `Resource` (`4.0.2`, #8868). `HttpEffect.appendPreResponseHandlerUnsafe` takes the fiber
+  context (`4.0.6`, #9569).
+
+### Additions
+
+- **New subpath `effect/graphql`** (`4.0.4`, #8979, experimental) with the
+  `@effect/graphql-generator` codegen package. See [unstable.md](unstable.md).
+- **New packages**: `@effect/ai-cloudflare` (`4.0.1`) and `@effect/ai-typesafe`.
+- **AI**: `McpClient` / `McpClientError` (`4.0.6`, #8862); `McpServer.layerHttpRequestScoped`
+  (`4.0.4`), `allowSubscriptions: false` (`4.0.3`), `allowSessionTermination` (`4.0.2`);
+  `DecisionModel.decideSettled` (`4.0.6`) and provider decision models;
+  `toolCallValidation: "deferred"` (`4.0.4`, #9008). See [ai.md](ai.md).
+- **Root modules**: `Bytes`, `SemVer`, `SemVerRange`, `TextDiff` (`4.0.6`); `Path.resolveWithin`
+  (`4.0.5`); `Stdio.stderrIsTerminal` (`4.0.3`); `FileSystem` `noFollow` and positional reads
+  (`4.0.3`); `Metric.remove` / `registerUnsafe` (`4.0.6`); `Effect.Transaction` attempt metadata
+  (`4.0.5`); `cachedInvalidateWithTTL` `Exit`-to-TTL callback (`4.0.1`). See
+  [root-modules.md](../core/root-modules.md).
+- **Testing**: `TestCrypto` in `effect/testing` (`4.0.6`); `@effect/vitest` runs Effects returned
+  from `beforeAll` / `beforeEach` and sync `it.prop` rejects Effect or Promise returns (`4.0.6`).
+- **Schema**: `SemVer`, `DateTimeUtcFromHttpDate`, `RetryAfter`, `Host`, `DomainName`, `Port`,
+  `Dns*Record` schemas; `isGUID`; `toCodecGoJson`; `includeAnnotationKey` for JSON Schema import and
+  `OpenApi.fromApi`; compact `SchemaError` JSON (`4.0.3`); safe-integer bounds and in-place bound
+  tightening in JSON Schema export (`4.0.3`, `4.0.4`). See [schema.md](../schema/schema.md).
+- **HTTP**: `HttpClientRequest.compressBody`, `HttpMiddleware.decompression` (`4.0.5`);
+  `retryTransient` honors `Retry-After` and `withRateLimiter` waits for budget reset (`4.0.4`);
+  typed HTTP-date and `Retry-After` `Headers` helpers, `HttpClientRequest.upgrade`,
+  `HttpClientResponse.toWeb` (`4.0.6`); `Redacted` URL params (`4.0.5`). See
+  [platform.md](platform.md).
+- **HttpApi**: `HttpApiSchema.StreamNdjson`, streaming request payloads with
+  `HttpApiPayloadTooLarge`, and `HttpApiSchema.Upgrade` (`4.0.6`); Scalar `preferredSecurityScheme`
+  (`4.0.4`). See [httpapi.md](httpapi.md).
+- **RPC / sockets / net**: RPC HTTP `batch` and `Rpc.ParseOptions` (`4.0.6`); socket `pingInterval`
+  / `pingTimeout` / `onPingTimeout` (`4.0.2`–`4.0.3`); `Host`, `Dns`, `AddressResolver`, and UDP
+  `DatagramSocket` (`4.0.3`); WebSocket handshake headers and TLS `servername` (`4.0.3`).
+- **Encoding**: `Base64Url.encodePadded` and `SchemaGetter.encodeBase64Url({ padding })`,
+  `JsonArray`, `Tar`, `Zip`, `Xml` (`4.0.6`).
+- **Platform adapters**: `NodeHttpClient` unix-socket and mutual-TLS options (`4.0.5`);
+  `NodeHttpServer` HTTP/2, `BunHttpClient.layerOptions`, `DenoHttpClient.layerOptions` (`4.0.6`).
+- **SQL**: `@effect/sql-pg` `keepAlive` (`4.0.5`), `acquireTimeout` and `onAcquire` (`4.0.6`);
+  `SqlClient.afterCommit`, `SqlClient.BeginTransaction`, typed `MigrationError`,
+  `ClickhouseClient.client` (`4.0.6`); `Reactivity.Keys` (`4.0.6`).
+- **Cluster / workflow**: `ClusterSchema.InterruptOnTermination` and ordered shard handoff on
+  shutdown (`4.0.3`); persist-before-shard-lock (`4.0.4`); `Workflow.execute({ detached })` and
+  parked `SuspendOnFailure` workflows (`4.0.5`); cluster mailbox and shard-release metrics
+  (`4.0.6`).
+- **CLI**: `CliOutput.displayWidth` and PowerShell completions (`4.0.3`); `Flag.withOptionalValue`
+  (`4.0.5`); `Command.validate`, `Flag.withNegation` / `withoutNegation`, function-form
+  `Command.withExamples`, `TerminalCapabilities` (`4.0.6`). See [cli.md](cli.md).
+- **Observability**: OTLP gzip compression (`4.0.5`); OTel log records carry the active span
+  (`4.0.5`).
+
 ## Schema
 
 | Change                                                                            | Since   | Skill impact                                |
@@ -577,7 +680,7 @@ landed in `rc.118`; the Schema brand and partition changes landed only in `4.0.0
 | `String.configCase`; numeric segments fixed in camel/pascal case    | beta.91    | Config key formatting               |
 | `Cron.next` no longer skips earlier matching days on month overflow | beta.86    | Scheduled jobs                      |
 
-When pinning a new release, bump the baseline at the top of this file and the dedicated `effect`
-entry in `metadata/skill-sources.md` after source and snippet validation. Read the version off the
-consumer's lockfile with the gate in [consumer-versions.md](consumer-versions.md) rather than
-recording it here.
+When pinning a new release, update this file's baseline after source and snippet validation. Source
+repository maintainers also update the dedicated `effect` entry in the repository's
+`metadata/skill-sources.md`; that index is not part of an installed skill. Read the consumer's
+resolved version with [consumer-versions.md](consumer-versions.md) rather than recording it here.

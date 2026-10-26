@@ -44,7 +44,8 @@ const program = Effect.gen(function* () {
 
 Use `References.CurrentLogSpans` for log spans and `References.TracerEnabled` for tracing state.
 
-`References.CurrentConcurrency` was removed in beta.102. Pass an explicit `number` or `"unbounded"`.
+Concurrency is never ambient: pass an explicit `number` or `"unbounded"` to combinators that take
+`Types.Concurrency`.
 
 ---
 

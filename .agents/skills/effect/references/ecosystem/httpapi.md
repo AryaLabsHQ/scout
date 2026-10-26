@@ -14,6 +14,8 @@ description:
 - [When to use HttpApi vs HttpRouter](#when-to-use-httpapi-vs-httprouter)
 - [Endpoint definition](#endpoint-definition)
 - [Streaming responses](#streaming-responses)
+- [Streaming request payloads](#streaming-request-payloads)
+- [HTTP/1.1 upgrades](#http11-upgrades)
 - [Schema-typed errors with `httpApiStatus`](#schema-typed-errors-with-httpapistatus)
 - [Middleware-based auth](#middleware-based-auth)
 - [Typed clients](#typed-clients)
@@ -190,8 +192,68 @@ const streamGroup = HttpApiGroup.make("events").add(
 const handler = Effect.succeed(Stream.fromIterable([{ message: "hello" }]));
 ```
 
-Guards: `HttpApiSchema.isStreamSchema`, `isStreamSse`, `isStreamUint8Array`. Typed stream errors can
-use the reserved `effect/httpapi/stream/failure` SSE event (see source `HttpApiSchema.ts`).
+`HttpApiSchema.StreamNdjson({ schema })` is a third stream shape: one JSON element per line,
+`application/x-ndjson` by default, handler returns `Stream<A>`. It has no `error` schema; a failure
+mid-stream aborts the connection. Typed stream errors are an SSE feature and use the reserved
+`effect/httpapi/stream/failure` event (see source `HttpApiSchema.ts`).
+
+## Streaming request payloads
+
+`HttpApiSchema.StreamUint8Array` and `HttpApiSchema.StreamNdjson` also work as an endpoint `payload`
+on body-carrying methods (`StreamSse` is response-only and throws). The handler receives a lazy
+`Stream` that reads the body as it pulls.
+
+```ts
+import { Schema, Stream } from "effect";
+import { HttpApiEndpoint, HttpApiSchema } from "effect/http-api";
+
+const Row = Schema.Struct({ id: Schema.Number });
+
+const importRows = HttpApiEndpoint.post("importRows", "/rows", {
+  payload: HttpApiSchema.StreamNdjson({
+    schema: Row,
+    maxBytes: "100 MiB", // whole body; no default
+    maxElementBytes: "64 KiB", // one line; default 1 MiB
+  }),
+  success: Schema.Number,
+});
+
+// Handler: payload is Stream<{ readonly id: number }, HttpApiSchemaError | HttpApiPayloadTooLarge>
+const handle = ({ payload }: { payload: Stream.Stream<{ readonly id: number }, unknown> }) =>
+  Stream.runCount(payload);
+```
+
+- Malformed NDJSON lines or elements that fail to decode fail the stream with `HttpApiSchemaError`
+  (400); `maxBytes` / `maxElementBytes` breaches fail it with `HttpApiPayloadTooLarge`
+  (`{ limit, size }`, 413). Both are part of the handler's error type.
+- `StreamUint8Array({ contentType?, maxBytes? })` has no `MaxBodySize` fallback; set `maxBytes` when
+  the upload must be bounded.
+- An endpoint has at most one streaming payload, and it cannot share a content type with a buffered
+  one.
+- `HttpApiClient` takes a `Stream` as `payload` for such endpoints and adds the stream's services to
+  the returned effect.
+
+## HTTP/1.1 upgrades
+
+`success: HttpApiSchema.Upgrade({ protocol })` declares an endpoint that answers
+`101 Switching Protocols` and then carries raw bytes in both directions (for example Docker-style
+`tcp` attach). It must be the only success schema, cannot have a `payload` or be a `HEAD` endpoint,
+and does not support `"websocket"`: use `HttpServerRequest.upgrade` and `Socket.makeWebSocket` for
+WebSockets.
+
+```ts
+const attach = HttpApiEndpoint.post("attach", "/containers/:id/attach", {
+  params: { id: Schema.String },
+  success: HttpApiSchema.Upgrade({ protocol: "tcp" }),
+});
+```
+
+The handler receives `socket: Socket.Socket` alongside the usual request fields; the `101` is sent
+when it acquires the socket's reader, so declared errors can still be returned before that. Requests
+that do not ask for the protocol get `426 Upgrade Required`. The generated client sends
+`Connection: Upgrade` / `Upgrade: protocol` and returns `{ headers, socket }`
+(`HttpApiClient.Upgraded`); OpenAPI documents the `101` response. Node clients support it; fetch
+cannot hand over the connection.
 
 ## Schema-typed errors with `httpApiStatus`
 
@@ -273,6 +335,10 @@ export const AuthorizationLive = Layer.effect(
 **Non-security middleware** wraps the endpoint `httpEffect` directly:
 `MyMiddleware.of((httpEffect, { endpoint, group }) => …)`.
 
+Response-encoding failures render as an empty `500` and are reported to `ErrorReporter`, while
+request-decoding failures stay `400` and are not reported. An undeclared error that implements
+`HttpServerRespondable` renders its own response if error-schema encoding fails.
+
 **Schema errors at the edge:** `HttpApiMiddleware.layerSchemaErrorTransform` maps
 `HttpApiSchemaError` into middleware-declared `error` schemas (otherwise schema failures can surface
 as defects). Malformed JSON request payloads are `Payload` schema errors and render as HTTP 400 at
@@ -311,10 +377,10 @@ const responseOnly =
   });
 ```
 
-Supported `responseMode` values are `decoded-only`, `decoded-and-response`, and `response-only`. For
-SDK-style clients, also check `HttpApiClient.urlBuilder` for constructing endpoint URLs and
-`HttpApiMiddleware.layerClient` for client-side middleware values required by `requiredForClient`
-middleware.
+Supported `responseMode` values are `decoded-only` (the default), `decoded-and-response`, and
+`response-only`; a union-typed mode produces the matching union result. For SDK-style clients, also
+check `HttpApiClient.urlBuilder` for constructing endpoint URLs and `HttpApiMiddleware.layerClient`
+for client-side middleware values required by `requiredForClient` middleware.
 
 ---
 
@@ -469,6 +535,16 @@ const docRoute = HttpRouter.use((router) =>
 
 `jsonUnsafe` caches the serialized `Uint8Array` so subsequent requests reuse the same buffer —
 combined with the memoized accessor above, the spec is generated once per process.
+
+`OpenApi.fromApi(api, { includeAnnotationKey })` also forwards the Schema JSON Schema option of the
+same name; pass a predicate to keep custom annotation keys such as `x-*` vendor extensions in the
+generated schemas. Streaming payloads document `x-effect-stream` encodings (`sse`, `uint8array`,
+`ndjson`), and upgrade endpoints document the `101` response.
+
+`HttpApiScalar.layer(api, { path, scalar })` accepts a `ScalarConfig`, including
+`authentication: { preferredSecurityScheme }` to preselect OpenAPI security scheme names in the
+client. `HttpApiScalar.layer` and `HttpApiSwagger.layer` load their bundled assets when the layer is
+built, not when the module is imported.
 
 ### Reshaping the spec via `annotations({ transform })`
 

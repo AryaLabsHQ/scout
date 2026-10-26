@@ -225,7 +225,7 @@ yield *
 | `number`      | Fixed limit of concurrent executions   |
 | `undefined`   | Sequential execution                   |
 
-`"inherit"` was removed in beta.102. Pass an explicit `number` or `"unbounded"`.
+`"inherit"` is not a valid value. Pass an explicit `number` or `"unbounded"`.
 
 ---
 

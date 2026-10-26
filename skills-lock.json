@@ -6,7 +6,7 @@
       "sourceUrl": "git@github.com:aryasaatvik/skills.git",
       "sourceType": "git",
       "skillPath": "skills/domain/effect/SKILL.md",
-      "computedHash": "d2c4202af9f736196ed4397bb5f8dd5d74146842aff435bbb23ced753a067b60",
+      "computedHash": "16b25eb265d4c9f3e616a151466d40d5bbbdfcb9ed0b797776eab70ab0b2a79a",
       "agents": [
         "universal",
         "claude-code"

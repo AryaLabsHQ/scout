@@ -172,6 +172,13 @@ the fiber — so the same layer built in one `provide` call is reused in subsequ
 const main = program.pipe(Effect.provide(MyServiceLayer), Effect.provide(MyServiceLayer));
 ```
 
+Composed layers are memoized by identity too: `Layer.provide`, `Layer.provideMerge`, and
+`Layer.mergeAll` (and operators built on them) check the `MemoMap`, so one composed layer referenced
+from several parents is built once per memo map. A shared composed layer shares everything inside
+it, including dependencies wrapped in `Layer.fresh`; wrap the composed layer itself in `Layer.fresh`
+to get a separate copy. A shared build runs on the first requester's fiber, so if that fiber is
+interrupted, every requester waiting on the share is affected.
+
 **Source:** `effect/internal/layer.ts` - see
 `~/Developer/effect/packages/effect/src/internal/layer.ts` (MemoMap implementation)
 

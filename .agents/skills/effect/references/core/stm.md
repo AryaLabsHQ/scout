@@ -63,6 +63,11 @@ const program = Effect.gen(function* () {
 `Effect.tx` is idempotent under nesting — a nested `Effect.tx` joins the outer transaction's journal
 instead of creating a new boundary.
 
+Inside a transaction body, `yield* Effect.Transaction` returns `TransactionMeta`: `attempt` (starts
+at 1), `retryReason` (`"retry"` after `Effect.txRetry`, `"conflict"` after a consistency conflict,
+`undefined` on the first attempt), and the timing fields `start`, `now`, `elapsed`, and
+`elapsedSincePrevious` (mirroring `Schedule.CurrentMetadata`).
+
 ## Explicit Retry (Effect.txRetry)
 
 Block the transaction until an accessed `Tx*` value changes:

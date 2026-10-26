@@ -48,12 +48,14 @@ What do I need?
 ├─ Implement workflow body                        → workflow.toLayer((payload, executionId) => Effect.gen(...))
 ├─ A side effect inside a workflow                → Activity.make({ name, success, error, execute })
 ├─ Sleep that survives restart                    → DurableClock.sleep("5 minutes")
-├─ Wait for an external signal                    → DurableDeferred.make + DurableDeferred.into / await
-├─ Compensation on failure                        → workflow.withCompensation((value, cause) => cleanup)
+├─ Wait for an external signal                    → DurableDeferred.make + DurableDeferred.await / succeed
+├─ Durable race between branches                  → DurableDeferred.raceAll({ name, success, error, effects })
+├─ Compensation on failure                        → Workflow.withCompensation((value, cause) => cleanup)
 ├─ Add cleanup finalizer                          → Workflow.addFinalizer
 ├─ Invoke from outside                            → workflow.execute(payload) (Effect)
 ├─ Poll for result                                → workflow.poll(executionId)
 ├─ Interrupt running execution                    → workflow.interrupt(executionId)
+├─ Park on failure until resumed                  → workflow.annotate(Workflow.SuspendOnFailure, true)
 ├─ Engine for tests                               → WorkflowEngine.layerMemory
 ├─ Engine for production                          → ClusterWorkflowEngine.layer (from cluster module)
 └─ External clients (RPC/HTTP)                    → WorkflowProxy.toRpcGroup / toHttpApiGroup
@@ -81,7 +83,7 @@ possible.
 
 ```ts
 import { Activity, Workflow } from "effect/workflow";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 const ProcessOrderLive = ProcessOrder.toLayer((payload, executionId) =>
   Effect.gen(function* () {
@@ -135,6 +137,24 @@ const result = yield * ProcessOrder.poll(id); // Option<Result<Success, Error>>
 `workflow.interrupt(executionId)` cancels a running execution. `workflow.resume(executionId)`
 continues a suspended one (after `Workflow.suspend`).
 
+A discarded child started from inside another workflow stays linked to its parent: its completion
+wakes the parent and interrupting the parent interrupts it. Add `detached: true` (only valid with
+`discard: true`) to break both links:
+
+```ts
+yield * Child.execute(payload, { discard: true, detached: true });
+```
+
+Do not await a detached execution later; its completion will not wake the awaiting workflow.
+
+Annotate a workflow with `Workflow.SuspendOnFailure` to suspend on any error instead of failing. The
+suspended execution does not retry the failed activity until `workflow.resume(executionId)`;
+interrupting it completes it as interrupted without re-running the activity:
+
+```ts
+const Durable = ProcessOrder.annotate(Workflow.SuspendOnFailure, true);
+```
+
 ## Durable sleep + signals
 
 ```ts
@@ -157,22 +177,30 @@ const SchedulingWorkflow = ScheduleEmail.toLayer((payload) =>
 ```ts
 const ApprovalWorkflow = WaitForApproval.toLayer((payload, executionId) =>
   Effect.gen(function* () {
-    const approval = yield* DurableDeferred.make<boolean>("approval");
-    // External system completes via DurableDeferred.into:
-    //   yield* DurableDeferred.into(approval, true)
-    const approved = yield* approval.await;
+    const approval = DurableDeferred.make("approval", { success: Schema.Boolean });
+    // Hand `token` to the external system; it completes the deferred with
+    //   DurableDeferred.succeed(approval, { token, value: true })
+    const token = yield* DurableDeferred.token(approval);
+    // Side effects run as named activities so replays skip completed work.
+    yield* Activity.make({ name: "NotifyApprover", execute: notifyApprover(token) });
+    const approved = yield* DurableDeferred.await(approval);
     if (!approved) return yield* Effect.fail("rejected");
-    yield* doApprovedThing();
+    yield* Activity.make({ name: "DoApprovedThing", execute: doApprovedThing() });
   }),
 );
 ```
+
+`DurableDeferred.into(deferred)` runs an effect and records its exit into the deferred.
+`DurableDeferred.raceAll({ name, success, error, effects })` is a durable race: the first result is
+recorded under `name` and replays return it, and the durable waits of losing branches (such as a
+losing `DurableClock.sleep`) are released once the race settles.
 
 ## Compensation (saga pattern)
 
 If a workflow fails after partial progress, registered compensations run in reverse order:
 
 ```ts
-const Workflow = ProcessOrder.toLayer((payload) =>
+const ProcessOrderSaga = ProcessOrder.toLayer((payload) =>
   Effect.gen(function* () {
     const charge = yield* Activity.make({
       name: "charge",
@@ -180,7 +208,7 @@ const Workflow = ProcessOrder.toLayer((payload) =>
     });
 
     yield* shipOrder(payload.orderId).pipe(
-      ProcessOrder.withCompensation((_, cause) =>
+      Workflow.withCompensation((_, cause) =>
         // Runs only if the workflow ultimately fails
         Effect.gen(function* () {
           yield* refundCard(charge.chargeId);
