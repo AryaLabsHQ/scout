@@ -1,10 +1,9 @@
 ---
 name: react-best-practices
 description:
-  React performance and rendering guidelines for TanStack Start apps (React 19). Use when writing,
-  reviewing, or refactoring React components, bundles, waterfalls, re-renders, hydration, or SSR
-  loaders. For HttpApi data fetching and atom patterns, use tanstack-start. Triggers on bundle size,
-  Suspense, lazy loading, createServerFn, loaders, parallel async, useMemo, hydration.
+  "React 19 performance and rendering rules for TanStack Start apps. Use when writing, reviewing, or
+  refactoring components, bundles, waterfalls, re-renders, hydration, Suspense, or SSR loaders. For
+  HttpApi data fetching and atoms use tanstack-start."
 license: MIT
 ---
 

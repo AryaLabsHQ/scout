@@ -1,18 +1,11 @@
 ---
 name: effect
 description:
-  "Effect-TS v4 (stable 4.0.6 audit, 4.1.2 deltas): Effect, Option, Result, Context.Service, Layer,
-  Stream, Schedule, Schema, ByteSize, domain subpaths (effect/http, http-api, net, sql, ai, cli,
-  cluster, rpc, socket, workers, encoding, devtools, eventlog, graphql, observability, persistence,
-  process, schema, reactivity, workflow, testing), root Arbitrary, native SQL/PostgreSQL, and
-  @effect/vitest property tests. Covers HttpApi + HttpApiMiddleware seams, three-slot DI,
-  RequestContext, AppConfig, platform adapters, Drizzle effect-postgres, and Effect-native
-  TypeScript architecture. Cloudflare Workers and workerd fetch hosting belong to cloudflare,
-  TanStack Start dashboards to tanstack-start, and subjective naming or abstraction taste to craft."
-disable-model-invocation: true
+  "Use when writing, reviewing, or debugging TypeScript that imports `effect` (v4): services and
+  layers, Schema, errors, streams, HttpApi, SQL, CLI, and @effect/vitest tests. Cloudflare hosting
+  belongs to cloudflare, TanStack Start to tanstack-start, and naming or abstraction taste to craft."
 metadata:
   opencode/slash: "true"
-  opencode/autoinvoke: "false"
 ---
 
 # Effect
@@ -78,148 +71,90 @@ for outgoing HTTP. See [datetime.md](references/core/datetime.md),
 
 ## Style posture
 
-Use Effect directly. Effect is already the abstraction layer. Use its public primitives. Do not
-build project-local helper frameworks that hide Effect control flow, dependency access, runtime
-boundaries, or typed error handling. A little duplication beats a helper that forces readers to
-understand both Effect and a project-specific wrapper. Add a local helper only for a repeated domain
-concept or a real interop boundary. Give migration facades an exit plan.
-
+Use Effect directly; do not build project-local helper frameworks around it. The full posture, and
+when to use `how` and `why` before changing or deleting a wrapper, is in
+[effect-native-architecture.md](references/patterns/effect-native-architecture.md#0-the-one-rule-the-right-amount-of-effect-native).
 Schema owns wire encoding at JSON, HTTP, OpenAPI, and persistence boundaries. See
 [schema.md](references/schema/schema.md#let-schema-own-wire-encoding). The done-check for
 Effect-heavy work is the quality gate in
-[effect-native-architecture.md](references/patterns/effect-native-architecture.md#quality-gate). Use
-`how` before changing an unfamiliar Effect subsystem and `why` before preserving or deleting a
-suspicious historical wrapper when those skills are available. Otherwise inspect the relevant local
-implementation and tests, and use targeted git history for the wrapper decision.
+[effect-native-architecture.md](references/patterns/effect-native-architecture.md#quality-gate).
 
-## Where to start
+## Routing
 
-```text
-Which layer is the question about?
-├─ Consumer version, RC/beta, `effect/unstable/*` import, or lineage question → references/ecosystem/consumer-versions.md and references/ecosystem/v4-beta-deltas.md
-├─ App structure → references/patterns/effect-native-architecture.md
-├─ HTTP layer. Route by what you have:
-│  ├─ HTTP server, client, or router primitives → references/ecosystem/platform.md
-│  ├─ typed HttpApi contract, clients, or OpenAPI → references/ecosystem/httpapi.md
-│  └─ middleware order, RequestContext, tracer tests → references/ecosystem/httpapi-seams.md
-├─ Moving existing code into Effect. Route by what you have:
-│  ├─ async/await → references/patterns/async-await-migration.md
-│  ├─ Node callbacks → references/patterns/callback-interop.md
-│  ├─ Zod schemas → references/patterns/schema-zod-interop.md
-│  ├─ an API that must stay callable from non-Effect code → references/patterns/dual-api-design.md
-│  └─ tests → references/patterns/testing-migration.md
-├─ A specific module, primitive, or ecosystem package → the Product index below
-├─ An additional root `effect` utility/data module  → references/core/root-modules.md
-├─ A domain subpath not listed in the index         → references/ecosystem/unstable.md
-├─ Cloudflare Worker host → the cloudflare skill. Module scope holds inert descriptions only.
-├─ TanStack Start and AtomHttpApi dashboard client → the tanstack-start skill
-└─ Subjective taste → the craft skill
-```
+Read the row that matches the task. Paths are relative to this skill directory.
 
-## Product index
+| Task or symbol                                                                    | Reference                                           |
+| --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Consumer version, RC/beta, `effect/unstable/*` import, lineage                    | `references/ecosystem/consumer-versions.md`         |
+| Version lineage and prerelease deltas                                             | `references/ecosystem/v4-beta-deltas.md`            |
+| App structure, three-slot DI, quality gate                                        | `references/patterns/effect-native-architecture.md` |
+| Real-world production patterns                                                    | `references/patterns/real-world.md`                 |
+| Service effectification                                                           | `references/patterns/service-effectification.md`    |
+| Migrate async/await                                                               | `references/patterns/async-await-migration.md`      |
+| Migrate Node callbacks                                                            | `references/patterns/callback-interop.md`           |
+| Zod schemas, schema patterns                                                      | `references/patterns/schema-zod-interop.md`         |
+| API callable from non-Effect code                                                 | `references/patterns/dual-api-design.md`            |
+| Migrate tests                                                                     | `references/patterns/testing-migration.md`          |
+| `Effect`: create, run, chain                                                      | `references/core/effect.md`                         |
+| `Effect.gen`, `Effect.fn`                                                         | `references/core/gen.md`                            |
+| Errors, `catch*` family, `Cause`                                                  | `references/core/error-handling.md`                 |
+| Fibers, `Deferred`, `Ref`                                                         | `references/core/concurrency.md`                    |
+| `Chunk`, `Channel`, collections                                                   | `references/core/collections.md`                    |
+| `Config`, `ConfigProvider`                                                        | `references/core/config.md`                         |
+| `ByteSize`                                                                        | `references/core/byte-size.md`                      |
+| TypeClass abstractions                                                            | `references/core/typeclass.md`                      |
+| `Cache`, memoization                                                              | `references/core/cache.md`                          |
+| `Queue` backpressure                                                              | `references/core/queue.md`                          |
+| `PubSub`                                                                          | `references/core/pubsub.md`                         |
+| `Request`, `RequestResolver`, N+1 batching                                        | `references/core/request.md`                        |
+| `Metric`                                                                          | `references/core/metric.md`                         |
+| `Effect.tx`, `TxRef`, `TxHashMap`                                                 | `references/core/stm.md`                            |
+| `Clock`, `DateTime`, `TestClock`                                                  | `references/core/datetime.md`                       |
+| Logging, tracing, spans                                                           | `references/core/observability.md`                  |
+| `Effect.run*` program boundaries                                                  | `references/core/runtime.md`                        |
+| Runtime bootstrapping, lifecycle                                                  | `references/core/advanced-runtime.md`               |
+| Clock, Random, Logger, Tracer services                                            | `references/core/runtime-services.md`               |
+| `Pool`, `LayerMap`, `Redacted`                                                    | `references/core/service-lifecycle.md`              |
+| `RateLimiter`, `Cron`, `ExecutionPlan`                                            | `references/core/coordination.md`                   |
+| `Match`                                                                           | `references/core/match.md`                          |
+| Atom state (`effect/reactivity`, `@effect/atom-*`)                                | `references/core/atom.md`                           |
+| Other root `effect` utility or data module                                        | `references/core/root-modules.md`                   |
+| `Option`                                                                          | `references/data-types/option.md`                   |
+| `Result`                                                                          | `references/data-types/result.md`                   |
+| `Exit`                                                                            | `references/data-types/exit.md`                     |
+| `Data`: TaggedEnum, TaggedClass, TaggedError                                      | `references/data-types/data.md`                     |
+| `Context.Service`                                                                 | `references/dependency-injection/service.md`        |
+| `Context`                                                                         | `references/dependency-injection/context.md`        |
+| `Layer`                                                                           | `references/dependency-injection/layer.md`          |
+| `Stream`                                                                          | `references/streaming/stream.md`                    |
+| `Sink`                                                                            | `references/streaming/sink.md`                      |
+| `Schedule`: retry, repeat, backoff                                                | `references/retry/schedule.md`                      |
+| `Schema`: brands, variants, wire encoding, codegen                                | `references/schema/schema.md`                       |
+| HTTP server, client, router (`effect/http`)                                       | `references/ecosystem/platform.md`                  |
+| HttpApi contracts, clients, OpenAPI                                               | `references/ecosystem/httpapi.md`                   |
+| HttpApi middleware order, RequestContext, tracer tests                            | `references/ecosystem/httpapi-seams.md`             |
+| `effect/sql` and drivers                                                          | `references/ecosystem/sql.md`                       |
+| Drizzle (`drizzle-orm/effect-postgres`, `@effect/sql-pg`)                         | `references/ecosystem/drizzle.md`                   |
+| `effect/ai`: models, tools, MCP                                                   | `references/ecosystem/ai.md`                        |
+| `effect/cli`                                                                      | `references/ecosystem/cli.md`                       |
+| `effect/rpc`                                                                      | `references/ecosystem/rpc.md`                       |
+| `effect/cluster`                                                                  | `references/ecosystem/cluster.md`                   |
+| `effect/workflow`                                                                 | `references/ecosystem/workflow.md`                  |
+| `effect/workers`                                                                  | `references/ecosystem/workers.md`                   |
+| `effect/socket`, TLS upgrades                                                     | `references/ecosystem/socket.md`                    |
+| `@effect/opentelemetry`                                                           | `references/ecosystem/opentelemetry.md`             |
+| `@effect/vitest`                                                                  | `references/ecosystem/vitest.md`                    |
+| `effect/Arbitrary`, property tests                                                | `references/ecosystem/arbitrary.md`                 |
+| `@effect/platform-node`                                                           | `references/ecosystem/platform-node.md`             |
+| `@effect/platform-bun`                                                            | `references/ecosystem/platform-bun.md`              |
+| `@effect/platform-browser`                                                        | `references/ecosystem/platform-browser.md`          |
+| `@effect/platform-deno`                                                           | `references/ecosystem/platform-deno.md`             |
+| `@effect/platform-node-shared`                                                    | `references/ecosystem/platform-node-shared.md`      |
+| Other domain subpaths; `effect/schema` and `effect/observability` name collisions | `references/ecosystem/unstable.md`                  |
 
-Paths are repo-relative to this skill directory, so they open as written. An empty Package cell
-means the root `effect` package. `none` means the row is not tied to one package.
+Outside this skill:
 
-| Topic                                                  | Package                                         | Reference                                           |
-| ------------------------------------------------------ | ----------------------------------------------- | --------------------------------------------------- |
-| Effect: create, run, chain                             |                                                 | `references/core/effect.md`                         |
-| Additional root utilities and data modules             |                                                 | `references/core/root-modules.md`                   |
-| Generator syntax, `Effect.fn` named functions          |                                                 | `references/core/gen.md`                            |
-| Error handling, `catch*` family, `Cause`               |                                                 | `references/core/error-handling.md`                 |
-| Concurrency: fibers, `Deferred`, `Ref`                 |                                                 | `references/core/concurrency.md`                    |
-| Collections, Chunk, Channel                            |                                                 | `references/core/collections.md`                    |
-| Config / ConfigProvider                                |                                                 | `references/core/config.md`                         |
-| ByteSize: exact byte values and config/schema codecs   |                                                 | `references/core/byte-size.md`                      |
-| TypeClass FP abstractions                              |                                                 | `references/core/typeclass.md`                      |
-| Cache, memoization                                     |                                                 | `references/core/cache.md`                          |
-| Queue backpressure                                     |                                                 | `references/core/queue.md`                          |
-| PubSub                                                 |                                                 | `references/core/pubsub.md`                         |
-| Request / RequestResolver, N+1 batching                |                                                 | `references/core/request.md`                        |
-| Metric                                                 |                                                 | `references/core/metric.md`                         |
-| Transactional state: `Effect.tx`, `TxRef`, `TxHashMap` |                                                 | `references/core/stm.md`                            |
-| Clock, DateTime, TestClock                             |                                                 | `references/core/datetime.md`                       |
-| Observability: logging, tracing, spans                 |                                                 | `references/core/observability.md`                  |
-| Runtime: `Effect.run*` program boundaries              |                                                 | `references/core/runtime.md`                        |
-| Advanced runtime: bootstrapping, lifecycle             |                                                 | `references/core/advanced-runtime.md`               |
-| Runtime services: Clock, Random, Logger, Tracer        |                                                 | `references/core/runtime-services.md`               |
-| Service lifecycle, `Pool`, `LayerMap`, `Redacted`      |                                                 | `references/core/service-lifecycle.md`              |
-| Coordination: RateLimiter, Cron, ExecutionPlan         |                                                 | `references/core/coordination.md`                   |
-| Match: pattern matching                                |                                                 | `references/core/match.md`                          |
-| Option                                                 |                                                 | `references/data-types/option.md`                   |
-| Result                                                 |                                                 | `references/data-types/result.md`                   |
-| Exit                                                   |                                                 | `references/data-types/exit.md`                     |
-| Data: TaggedEnum, TaggedClass, TaggedError             |                                                 | `references/data-types/data.md`                     |
-| Context.Service                                        |                                                 | `references/dependency-injection/service.md`        |
-| Context                                                |                                                 | `references/dependency-injection/context.md`        |
-| Layer                                                  |                                                 | `references/dependency-injection/layer.md`          |
-| Stream                                                 |                                                 | `references/streaming/stream.md`                    |
-| Sink                                                   |                                                 | `references/streaming/sink.md`                      |
-| Schedule: retry, repeat, backoff                       |                                                 | `references/retry/schedule.md`                      |
-| Schema: records, brands, variants, wire encoding       |                                                 | `references/schema/schema.md`                       |
-| Schema representation, revivers, codegen               |                                                 | `references/schema/schema.md`                       |
-| Atom reactive state                                    | `effect/reactivity`, `@effect/atom-*`           | `references/core/atom.md`                           |
-| HTTP server, client, router                            | `effect/http` plus adapter                      | `references/ecosystem/platform.md`                  |
-| Typed HTTP APIs, clients, OpenAPI                      | `effect/http-api` plus adapter                  | `references/ecosystem/httpapi.md`                   |
-| HttpApi seams, middleware order, tracer tests          | `effect/http-api`                               | `references/ecosystem/httpapi-seams.md`             |
-| SQL and drivers                                        | `effect/sql` plus driver                        | `references/ecosystem/sql.md`                       |
-| Drizzle ORM                                            | `drizzle-orm/effect-postgres`, `@effect/sql-pg` | `references/ecosystem/drizzle.md`                   |
-| AI models, decisions, tools, MCP server and client     | `effect/ai` plus provider                       | `references/ecosystem/ai.md`                        |
-| CLI commands, args, prompts                            | `effect/cli`                                    | `references/ecosystem/cli.md`                       |
-| RPC                                                    | `effect/rpc`                                    | `references/ecosystem/rpc.md`                       |
-| Cluster                                                | `effect/cluster`                                | `references/ecosystem/cluster.md`                   |
-| Workflow                                               | `effect/workflow`                               | `references/ecosystem/workflow.md`                  |
-| Node runtime adapter                                   | `@effect/platform-node`                         | `references/ecosystem/platform-node.md`             |
-| Bun runtime adapter                                    | `@effect/platform-bun`                          | `references/ecosystem/platform-bun.md`              |
-| Browser runtime adapter                                | `@effect/platform-browser`                      | `references/ecosystem/platform-browser.md`          |
-| Deno runtime adapter                                   | `@effect/platform-deno`                         | `references/ecosystem/platform-deno.md`             |
-| Node shared utilities                                  | `@effect/platform-node-shared`                  | `references/ecosystem/platform-node-shared.md`      |
-| Pull-based sockets and TLS upgrades                    | `effect/socket`                                 | `references/ecosystem/socket.md`                    |
-| OpenTelemetry tracing and metrics                      | `@effect/opentelemetry`                         | `references/ecosystem/opentelemetry.md`             |
-| Testing Effect code                                    | `@effect/vitest`                                | `references/ecosystem/vitest.md`                    |
-| Native Arbitrary and property testing                  | `effect/Arbitrary`, `@effect/vitest`            | `references/ecosystem/arbitrary.md`                 |
-| Worker clients and runners                             | `effect/workers`                                | `references/ecosystem/workers.md`                   |
-| Version lineage and prerelease deltas                  | none                                            | `references/ecosystem/v4-beta-deltas.md`            |
-| Resolved dependencies and alignment                    | none                                            | `references/ecosystem/consumer-versions.md`         |
-| Effect-native app architecture, quality gate           | none                                            | `references/patterns/effect-native-architecture.md` |
-| Real-world production patterns                         | none                                            | `references/patterns/real-world.md`                 |
-| Service effectification                                | none                                            | `references/patterns/service-effectification.md`    |
-| Schema patterns, Zod interop                           | none                                            | `references/patterns/schema-zod-interop.md`         |
-| Async/await migration                                  | none                                            | `references/patterns/async-await-migration.md`      |
-| Dual API design: Effect plus imperative                | none                                            | `references/patterns/dual-api-design.md`            |
-| Callback interop                                       | none                                            | `references/patterns/callback-interop.md`           |
-| Testing migration                                      | none                                            | `references/patterns/testing-migration.md`          |
-| TanStack Start and AtomHttpApi dashboard               | `@effect/atom-react`                            | `tanstack-start` skill                              |
-| Other domain subpaths                                  | `effect/*` subpaths                             | `references/ecosystem/unstable.md`                  |
-
-### Domain subpaths without a focused reference
-
-There is no `effect/unstable/*` export. Domain areas are top-level `effect/<area>` exports: 20
-domain subpaths (`ai`, `cli`, `cluster`, `devtools`, `encoding`, `eventlog`, `graphql`, `http`,
-`http-api`, `net`, `observability`, `persistence`, `process`, `reactivity`, `rpc`, `schema`,
-`socket`, `sql`, `workers`, `workflow`) plus `testing`. `Arbitrary` is a root module
-(`effect/Arbitrary`, `import { Arbitrary } from "effect"`), not a subpath. The path does not say
-"unstable", but most of these modules carry `@stability unstable` in their API docs, so minor
-releases may break them; root modules tagged stable follow semver. The index above has focused
-references for eleven of them. Nine are routed through
-[unstable.md](references/ecosystem/unstable.md): `devtools`, `encoding`, `eventlog`, `graphql`,
-`net`, `observability`, `persistence`, `process`, and `schema`. `testing` (`TestClock`,
-`TestConsole`, `TestSchema`) is covered by [vitest.md](references/ecosystem/vitest.md) and
-[datetime.md](references/core/datetime.md). Read the source under
-`~/Developer/effect/packages/effect/src/<area>/` for implementation detail. A
-`-> effect/unstable/...` import is an RC-era path; see
-[v4-beta-deltas.md](references/ecosystem/v4-beta-deltas.md#rc115--400-stable).
-
-Two of those names collide with documented topics and are not the same thing. `effect/schema` is
-`Model` / `VariantSchema` plus the optional JIT/AOT compilers, while core `Schema` lives in the root
-`effect` package and is covered by `references/schema/schema.md`. `effect/observability` is not
-`references/core/observability.md`. The core file covers logging and tracing primitives.
-
-`effect/encoding` replaces root `effect/Encoding`, which no longer exists. It has dedicated
-`Base64`, `Base64Url`, `Hex`, and `EncodingError` modules, plus parse-only `Ini`, `Yaml`, and
-`Toml`, `Ndjson`, `Sse`, and `SchemaBinary` for compact schema-derived frames. Use `Ini.parse`,
-`Yaml.parse`, and `Toml.parse`, then `Schema.decodeUnknownEffect`. Do not add `yaml`, `toml`, or
-`ini` npm packages. Do not invent `Schema.fromYaml`. RPC currently supports JSON, NDJSON, JSON-RPC,
-and SchemaBinary; MessagePack was removed. `SchemaBinary.toCodec(schema)` is the binary codec;
-`fingerprint: true` is positional and not evolution-safe. JSON wire encoding still belongs to
-[schema.md](references/schema/schema.md).
+- Cloudflare Worker host → the `cloudflare` skill. Module scope holds inert descriptions only.
+- TanStack Start and the AtomHttpApi dashboard client (`@effect/atom-react`) → the `tanstack-start`
+  skill.
+- Subjective taste → the `craft` skill.

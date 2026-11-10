@@ -6,7 +6,7 @@
       "sourceUrl": "git@github.com:aryasaatvik/skills.git",
       "sourceType": "git",
       "skillPath": "skills/domain/effect/SKILL.md",
-      "computedHash": "198be31543460e4366e6b117c759861da6d4f3709b66efca88806e4ecef2402b",
+      "computedHash": "08f32f53f0a2f8900da2b59f1ed95e2992e27b676ac2e123dd1702a700ccda0e",
       "agents": [
         "universal",
         "claude-code"
@@ -17,7 +17,7 @@
       "sourceUrl": "git@github.com:aryasaatvik/skills.git",
       "sourceType": "git",
       "skillPath": "skills/domain/react-best-practices/SKILL.md",
-      "computedHash": "f7b28df3d1ae47736539dfdeae49f4a1c2693cf9a14f963a6b902fe9eb064696",
+      "computedHash": "5094966293d4661280f2070bce22c4438600edc955ffbf0ef43b5175157db050",
       "agents": [
         "universal",
         "claude-code"

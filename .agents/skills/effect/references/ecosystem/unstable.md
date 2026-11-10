@@ -26,7 +26,14 @@ namespace.
 | `effect/persistence`   | Persistable values, key-value stores, persisted caches/queues, Redis, rate limiting, and `UserDirectories`                                                         |
 | `effect/process`       | `ChildProcess` commands, piping, handles, and the `ChildProcessSpawner` service                                                                                    |
 | `effect/schema`        | `Model` variants for database/API shapes, `VariantSchema`, and the `SchemaCompiler`/JIT/AOT compiler modules                                                       |
-| `effect/testing`       | `TestClock`, `TestConsole`, and `TestSchema`; see [vitest.md](vitest.md)                                                                                           |
+| `effect/testing`       | `TestClock`, `TestConsole`, and `TestSchema`; see [vitest.md](vitest.md) and [datetime.md](../core/datetime.md)                                                    |
+
+## Names that collide with core topics
+
+Two of those names collide with documented topics and are not the same thing. `effect/schema` is
+`Model` / `VariantSchema` plus the optional JIT/AOT compilers, while core `Schema` lives in the root
+`effect` package and is covered by [schema.md](../schema/schema.md). `effect/observability` is not
+[observability.md](../core/observability.md). The core file covers logging and tracing primitives.
 
 ## Practical routing
 
@@ -36,8 +43,13 @@ namespace.
   no longer exist; `effect/encoding/EncodingError` names or narrows the failure.
 - Use `effect/encoding` `Ini`, `Yaml`, and `Toml` for parse-only configuration formats and
   `SchemaBinary` for schema-derived binary frames. They do not add YAML/TOML/INI npm dependencies or
-  replace core JSON codecs. `Base64Url.encodePadded` (and the `padding` option of
-  `SchemaGetter.encodeBase64Url`) produce padded URL-safe Base64.
+  replace core JSON codecs. Use `Ini.parse`, `Yaml.parse`, and `Toml.parse`, then
+  `Schema.decodeUnknownEffect`. Do not add `yaml`, `toml`, or `ini` npm packages. Do not invent
+  `Schema.fromYaml`. RPC currently supports JSON, NDJSON, JSON-RPC, and SchemaBinary; MessagePack
+  was removed. `SchemaBinary.toCodec(schema)` is the binary codec; `fingerprint: true` is positional
+  and not evolution-safe. JSON wire encoding still belongs to [schema.md](../schema/schema.md).
+  `Base64Url.encodePadded` (and the `padding` option of `SchemaGetter.encodeBase64Url`) produce
+  padded URL-safe Base64.
 - Streaming codecs are Effect channels, usable with `Stream.pipeThroughChannel`: `Ndjson` (byte
   decoders accept `maxLineBytes`; `NdjsonError.reason` is `InvalidJson`, `InvalidUtf8`, or
   `LineTooLarge`), `Sse`, `JsonArray` (stream the elements of one JSON array, root or by JSON

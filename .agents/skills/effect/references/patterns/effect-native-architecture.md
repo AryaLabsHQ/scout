@@ -40,6 +40,16 @@ keeps alongside its repos.
 Effect-native does **not** mean "everything is an `Effect`." Business logic and IO seams are modeled
 in Effect; the messy edges are bridged explicitly and kept thin.
 
+Use Effect directly. Effect is already the abstraction layer. Use its public primitives. Do not
+build project-local helper frameworks that hide Effect control flow, dependency access, runtime
+boundaries, or typed error handling. A little duplication beats a helper that forces readers to
+understand both Effect and a project-specific wrapper. Add a local helper only for a repeated domain
+concept or a real interop boundary. Give migration facades an exit plan.
+
+Use `how` before changing an unfamiliar Effect subsystem and `why` before preserving or deleting a
+suspicious historical wrapper when those skills are available. Otherwise inspect the relevant local
+implementation and tests, and use targeted git history for the wrapper decision.
+
 **Model in Effect**
 
 - Business logic / services
