@@ -48,23 +48,23 @@ export function RootDocument({ children }: { children: React.ReactNode }) {
 }
 ```
 
-**Correct (lazy component wrapper):**
+**Not a substitute: `React.lazy`.** A lazy component still renders during SSR, so its `import()`
+runs on the server and browser-only analytics code can execute there. If you want a lazy wrapper,
+render it only after mount:
 
 ```tsx
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 const Analytics = lazy(() => import("./analytics").then((m) => ({ default: m.Analytics })));
 
-export function RootDocument({ children }: { children: React.ReactNode }) {
+export function DeferredAnalytics() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
   return (
-    <html>
-      <body>
-        {children}
-        <Suspense fallback={null}>
-          <Analytics />
-        </Suspense>
-      </body>
-    </html>
+    <Suspense fallback={null}>
+      <Analytics />
+    </Suspense>
   );
 }
 ```

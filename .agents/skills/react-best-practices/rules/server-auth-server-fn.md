@@ -57,8 +57,8 @@ import { Schema } from "effect";
 
 const UpdateProfileSchema = Schema.Struct({
   userId: Schema.String,
-  name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(100)),
-  email: Schema.String.pipe(Schema.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)),
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  email: Schema.String.check(Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)),
 });
 
 export const updateProfile = createServerFn({ method: "POST" })

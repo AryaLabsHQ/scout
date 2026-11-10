@@ -1,68 +1,40 @@
 ---
-title: Parallel Data Fetching with Route Composition
+title: Parallel Data Fetching in Route Loaders
 impact: CRITICAL
 impactDescription: eliminates server-side waterfalls
 tags: server, loaders, parallel-fetching, composition, tanstack-start
 ---
 
-## Parallel Data Fetching with Route Composition
+## Parallel Data Fetching in Route Loaders
 
-Route `loader`s and sibling route modules run in a tree. Restructure with composition so independent
-fetches start together instead of chaining sequentially through parent components.
+TanStack Router runs the `loader`s of every matched route (the parent layout and its child) in
+parallel, and runs `beforeLoad` serially from the top down. A waterfall comes from sequential
+`await`s inside one loader, or from data work placed in `beforeLoad`. Only routes on the matched
+branch load: sibling routes are never matched together, and rendering a component does not run
+another route's loader.
 
-**Incorrect (child loader waits for parent shell work):**
+**Incorrect (sequential awaits in one loader):**
 
 ```tsx
-// routes/dashboard/route.tsx
 export const Route = createFileRoute("/dashboard")({
   loader: async () => {
-    const shell = await fetchShellConfig();
-    return { shell };
+    const header = await fetchHeader();
+    const sidebar = await fetchSidebarItems(); // starts only after the header resolves
+    return { header, sidebar };
   },
-  component: DashboardLayout,
 });
-
-function DashboardLayout() {
-  const { shell } = Route.useLoaderData();
-  return (
-    <div>
-      <Header config={shell} />
-      <Sidebar /> {/* Sidebar's loader only starts after parent resolves */}
-    </div>
-  );
-}
 ```
 
-**Correct (sibling routes fetch in parallel):**
+**Incorrect (data fetch in `beforeLoad` blocks every child loader):**
 
 ```tsx
-// routes/dashboard/route.tsx — layout only, no blocking fetch
 export const Route = createFileRoute("/dashboard")({
-  component: DashboardLayout,
+  beforeLoad: async () => ({ shell: await fetchShellConfig() }),
 });
-
-// routes/dashboard/_layout/header.tsx
-export const Route = createFileRoute("/dashboard/_layout/header")({
-  loader: () => fetchHeader(),
-  component: Header,
-});
-
-// routes/dashboard/_layout/sidebar.tsx
-export const Route = createFileRoute("/dashboard/_layout/sidebar")({
-  loader: () => fetchSidebarItems(),
-  component: Sidebar,
-});
-
-function DashboardLayout() {
-  return (
-    <div>
-      <Header />
-      <Sidebar />
-      <Outlet />
-    </div>
-  );
-}
 ```
+
+Keep `beforeLoad` for auth and redirects; move the fetch to `loader` so it runs alongside the child
+route's loader.
 
 **Correct (parallelize inside a single loader):**
 

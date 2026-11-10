@@ -17,7 +17,7 @@
       "sourceUrl": "git@github.com:aryasaatvik/skills.git",
       "sourceType": "git",
       "skillPath": "skills/domain/react-best-practices/SKILL.md",
-      "computedHash": "f2151ad84ac95dc8e07ca5e7799e505641ccb9f330a47036868995368800f25a",
+      "computedHash": "f7b28df3d1ae47736539dfdeae49f4a1c2693cf9a14f963a6b902fe9eb064696",
       "agents": [
         "universal",
         "claude-code"

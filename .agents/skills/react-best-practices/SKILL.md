@@ -73,7 +73,8 @@ HIGH.
 - `server-hoist-static-io`. Hoist static I/O only where the runtime supports it. Workers load assets
   at build time or fetch them inside a handler.
 - `server-serialization`. Minimize loader and route context payload.
-- `server-parallel-fetching`. Parallelize route loaders with composition.
+- `server-parallel-fetching`. Parallelize fetches inside route loaders; keep data out of
+  `beforeLoad`.
 - `server-nonblocking-side-effects`. Defer logging and analytics after response.
 
 ### 4. Client-side data fetching

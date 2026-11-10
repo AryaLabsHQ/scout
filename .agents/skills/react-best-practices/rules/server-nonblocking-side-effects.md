@@ -8,8 +8,8 @@ tags: server, async, logging, analytics, side-effects, cloudflare, tanstack-star
 ## Use Non-Blocking Side Effects After Response
 
 Schedule logging, analytics, and other side effects so they do not block the response. TanStack
-Start has no `after()` API — defer at the **Worker boundary** with `ctx.waitUntil()`, or
-fire-and-forget only when the client does not need the result.
+Start has no `after()` API — defer at the **Worker boundary** with `ctx.waitUntil()`. A promise left
+floating inside a server function is best-effort only.
 
 **Incorrect (blocks response):**
 
@@ -41,10 +41,10 @@ export default {
 };
 ```
 
-**Correct (safe fire-and-forget inside createServerFn):**
+**Lossy (fire-and-forget inside createServerFn):**
 
-Only when analytics/logging failure must not fail the mutation and the client does not read the
-side-effect result:
+Acceptable only for work you can afford to lose. On Cloudflare Workers the runtime may cancel a
+floating promise once the response is sent, so the analytics call below can be dropped:
 
 ```typescript
 import { createServerFn } from "@tanstack/react-start";
@@ -58,9 +58,9 @@ export const submitForm = createServerFn({ method: "POST" }).handler(async ({ da
 });
 ```
 
-**Not equivalent to `waitUntil`:** `void` inside `createServerFn` still runs before the RPC response
-is sent. For true post-response work (audit logs, webhooks), enqueue from the Worker handler with
-`ctx.waitUntil()` or a queue.
+**Not equivalent to `waitUntil`:** `void` starts the work before the RPC response is sent but does
+not keep it alive afterwards. For work that must complete (audit logs, webhooks), pass the promise
+to `ctx.waitUntil()` from the Worker handler, or send it to a queue.
 
 **Common use cases:**
 
