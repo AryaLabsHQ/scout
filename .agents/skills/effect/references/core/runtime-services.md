@@ -5,15 +5,16 @@ fiber-local state in Effect applications.
 
 ## Key APIs
 
-| Module       | Key APIs                                                                                                                                                         | What they are for                                                       |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `Clock`      | `Clock.sleep`, `Clock.currentTimeMillis`, `Clock.currentTimeNanos`, `Clock.monotonicTimeNanos`, `Clock.clockWith`                                                | Wall-clock and monotonic elapsed time through the runtime clock service |
-| `Duration`   | `Duration.fromInput`, `Duration.millis`, `Duration.seconds`, `Duration.minutes`, `Duration.toMillis`, `Duration.format`                                          | Typed time values and conversions for delays, schedules, and limits     |
-| `Random`     | `Random.next`, `Random.nextIntBetween`, `Random.nextBoolean`, `Random.shuffle`, `Random.choice`                                                                  | Deterministic runtime-provided randomness (and testable overrides)      |
-| `Crypto`     | `yield* Crypto.Crypto` then `crypto.randomUUIDv4()` / `randomUUIDv7()` (`{ format: "bytes" }` for 16 bytes), `randomULID`, `randomBytes(n)`, `digest(alg, data)` | Cryptographic IDs and secure randomness                                 |
-| `Logger`     | `Logger.make`, `Logger.consolePretty()`, `Logger.consoleJson`, `References.MinimumLogLevel`, `Effect.logInfo`, `Effect.annotateLogs`, `Effect.withLogSpan`       | Structured logs and logger-layer composition                            |
-| `Tracer`     | `Effect.withSpan`, `Effect.useSpan`, `Effect.annotateCurrentSpan`, `Tracer.externalSpan`                                                                         | Distributed tracing spans and span metadata                             |
-| `References` | `References.CurrentLogLevel`, `References.CurrentLogAnnotations`, `References.MinimumLogLevel`                                                                   | Fiber-local references                                                  |
+| Module         | Key APIs                                                                                                                                                   | What they are for                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `Clock`        | `Clock.sleep`, `Clock.currentTimeMillis`, `Clock.currentTimeNanos`, `Clock.monotonicTimeNanos`, `Clock.clockWith`                                          | Wall-clock and monotonic elapsed time through the runtime clock service |
+| `Duration`     | `Duration.fromInput`, `Duration.millis`, `Duration.seconds`, `Duration.minutes`, `Duration.toMillis`, `Duration.format`                                    | Typed time values and conversions for delays, schedules, and limits     |
+| `Random`       | `Random.next`, `Random.nextIntBetween`, `Random.nextBoolean`, `Random.shuffle`, `Random.choice`                                                            | Deterministic runtime-provided randomness (and testable overrides)      |
+| `Digest`       | From `effect/crypto`: `yield* Digest.Digest`, then `digest(Digest.sha256, bytes)` or `digestHex(Digest.sha256, bytes)`                                     | Cryptographic hashes                                                    |
+| `SecureRandom` | From `effect/crypto`: `yield* SecureRandom.SecureRandom`, then `uuidV4()` / `uuidV7()` (`{ format: "bytes" }` for 16 bytes), `ulid`, `randomBytes(n)`      | Cryptographic IDs and secure randomness                                 |
+| `Logger`       | `Logger.make`, `Logger.consolePretty()`, `Logger.consoleJson`, `References.MinimumLogLevel`, `Effect.logInfo`, `Effect.annotateLogs`, `Effect.withLogSpan` | Structured logs and logger-layer composition                            |
+| `Tracer`       | `Effect.withSpan`, `Effect.useSpan`, `Effect.annotateCurrentSpan`, `Tracer.externalSpan`                                                                   | Distributed tracing spans and span metadata                             |
+| `References`   | `References.CurrentLogLevel`, `References.CurrentLogAnnotations`, `References.MinimumLogLevel`                                                             | Fiber-local references                                                  |
 
 ## Concise Snippet
 
@@ -51,10 +52,12 @@ Concurrency is never ambient: pass an explicit `number` or `"unbounded"` to comb
   and schedules.
 - Use `TestClock.adjust` to advance time and `TestClock.setTime` to set the current time.
 - Provide `TestClock` directly to effects that need deterministic time.
-- `TestCrypto.layer(seed)` (from `effect/testing`) replaces `Crypto` with a seeded deterministic one
-  that delegates `digest` to the underlying platform `Crypto`. Each build restarts the sequence from
-  the seed; UUIDv7 and ULID values still embed `Clock` time, so pair with `TestClock` for fully
-  reproducible output.
+- Crypto services are not in the platform service layers. Provide `Digest.layerWebCrypto` and
+  `SecureRandom.layerWebCrypto`, or `NodeCrypto.layer` (Bun, Deno, and browser have matching
+  modules). For deterministic tests, provide `SecureRandom.make` with a seeded byte generator that
+  returns a fresh array of the requested size. Build it per test to reset its sequence, and pair
+  UUIDv7 and ULID tests with `TestClock`. On 4.0.x, use the root `Crypto` service and `TestCrypto`
+  instead ([4.0.6 → 4.1.2](../ecosystem/v4-beta-deltas.md#406--412)).
 
 ```ts
 import { Effect, Fiber } from "effect";

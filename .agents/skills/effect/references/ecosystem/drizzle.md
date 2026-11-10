@@ -30,12 +30,12 @@ Drizzle's schema/query DX with Effect's resource management, structured concurre
 `drizzle-orm/effect-core/errors.ts` (`EffectDrizzleQueryError`, `MigratorInitError`) - see
 `~/Developer/drizzle-orm/drizzle-orm/src/effect-core/errors.ts` **Source:**
 `drizzle-orm/relations.ts` (`defineRelations`) - see
-`~/Developer/drizzle-orm/drizzle-orm/src/relations.ts:1619` **Source:**
+`~/Developer/drizzle-orm/drizzle-orm/src/relations.ts:1901` **Source:**
 `drizzle-orm/pg-core/casing.ts` (`snakeCase`, `camelCase`) - see
 `~/Developer/drizzle-orm/drizzle-orm/src/pg-core/casing.ts:5` **Source:** `@effect/sql-pg`
 (`PgClient`, `PgClient.layerConfig`) - see `~/Developer/effect/packages/sql/pg/src/PgClient.ts:79`
 
-Verified against `drizzle-orm@1.0.0-rc.4` and `@effect/sql-pg@4.0.6`.
+Verified against `drizzle-orm@1.0.0-rc.5` and `@effect/sql-pg@4.0.6`.
 
 ## When to use
 
@@ -207,7 +207,7 @@ const runMigrations = Effect.gen(function* () {
 
 `migrate` reads files via Drizzle's `readMigrationFiles` and runs them through `coreMigrate` against
 `db.session`. Failures are typed as `MigratorInitError` (see
-`drizzle-orm/effect-core/errors.ts:38`).
+`drizzle-orm/effect-core/errors.ts:48`).
 
 ## Custom logging
 
@@ -249,9 +249,10 @@ const safeQuery = program.pipe(
 );
 ```
 
-`EffectDrizzleQueryError` is a `Schema.TaggedError` with `query: string`, `params: unknown[]`,
-`cause: unknown`. Always handle it at the boundary where you can either retry, fall back, or surface
-a domain error.
+`EffectDrizzleQueryError` is a `Schema.TaggedError` with `query: string`, `cause: unknown`, and
+`params` (`unknown[]`) only when `make({ paramsInErrors: true })`. rc.5 leaves `params` undefined by
+default (`Schema.UndefinedOr`). Always handle the error at the boundary where you can retry, fall
+back, or surface a domain error.
 
 ## Notes & caveats
 

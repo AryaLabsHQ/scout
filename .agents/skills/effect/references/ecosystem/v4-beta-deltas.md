@@ -19,6 +19,7 @@
 - [rc.114 → rc.115](#rc114--rc115)
 - [rc.115 → 4.0.0 stable](#rc115--400-stable)
 - [4.0.0 → 4.0.6](#400--406)
+- [4.0.6 → 4.1.2](#406--412)
 - [Schema](#schema)
 - [Effect / errors](#effect--errors)
 - [Runtime / platform](#runtime--platform)
@@ -597,6 +598,30 @@ Verified against tag `effect@4.0.6` and the package changelogs; PR numbers are u
   `Command.withExamples`, `TerminalCapabilities` (`4.0.6`). See [cli.md](cli.md).
 - **Observability**: OTLP gzip compression (`4.0.5`); OTel log records carry the active span
   (`4.0.5`).
+
+## 4.0.6 → 4.1.2
+
+`4.1.0` is a minor release that removes modules; `4.1.1` and `4.1.2` are patches on the same line.
+The crypto changes were verified against tag `effect@4.1.2`. The other entries come from a consumer
+migration and cover the seams it used, not every upstream change.
+
+- **Crypto** moves to the `effect/crypto` subpath, and the root `effect/Crypto` and `effect/testing`
+  `TestCrypto` are removed. `Digest.Digest` owns `digest` and `digestHex`, with algorithm values
+  such as `Digest.sha256`. `SecureRandom.SecureRandom` owns `randomBytes`, `uuidV4`, `uuidV7`, and
+  `ulid`. `Aead`, `Cipher`, `Kdf`, `KeyAgreement`, `KeyFormat`, `KeyWrap`, and `Mac` join them.
+  These methods have no typed error channel; failures are defects.
+- **Crypto layers are explicit.** `NodeServices.layer` (and the other platform service layers)
+  provide no crypto service. Provide `Digest.layerWebCrypto` and `SecureRandom.layerWebCrypto`, or
+  the platform module's layers (`NodeCrypto.layer`, `BunCrypto`, `DenoCrypto`, `BrowserCrypto`),
+  which provide every crypto family and their own `SecureRandom`. For deterministic tests, provide
+  `SecureRandom.make` with a seeded byte generator that returns a fresh array of the requested size.
+- **Redis** `Redis.make` requires `connect`, which reserves a dedicated connection. A command-only
+  fake must still declare that boundary and fail loudly if a test unexpectedly reserves one.
+- **Processes**: command arguments can contain `Redacted` values. Inspect or unwrap the `Word` union
+  deliberately instead of assuming every argument is a string.
+- **AI** `AiError.NetworkError` carries `method` and `url` directly. Decision providers without
+  locate support implement `ProviderOptions<Exclude<Decision.Any, Decision.Locate>>`; do not
+  advertise `supportsLocate` unless the provider handles that decision.
 
 ## Schema
 

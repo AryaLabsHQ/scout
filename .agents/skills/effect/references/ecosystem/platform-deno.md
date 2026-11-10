@@ -36,7 +36,7 @@ DenoRuntime.runMain(
 | `DenoWorkerRunner.layer` / `layerMessagePort`          | Worker-side runner layers                                                         |
 | `DenoSocket.layerTcp` / `layerWebSocket`               | TCP and WebSocket sockets                                                         |
 | `DenoSocketServer`                                     | Node-shared TCP/Unix socket server                                                |
-| `DenoCrypto`                                           | Crypto                                                                            |
+| `DenoCrypto`                                           | `effect/crypto` layers (`Digest`, `SecureRandom`, and the other families)         |
 | `DenoStdio`                                            | Stdio                                                                             |
 
 The source tree nests platform packages under `packages/platform/{node,bun,browser,deno}`. Cite the

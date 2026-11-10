@@ -24,7 +24,7 @@ example.
 | Scalar and structural data  | `BigDecimal`, `BigInt`, `Boolean`, `Number`, `String`, `Symbol`, `Struct`, `Brand`, `Ordering`, `Order`, `Predicate` |
 | Equality and transformation | `Equal`, `Equivalence`, `Differ`, `Reducer`, `Filter`, `Formatter`, `Hash`, `Graph`, `Optic`, `Arbitrary`            |
 | Runtime and coordination    | `Duration`, `Latch`, `ManagedRuntime`, `LayerRef`, `Resource`, `Scope`, `Semaphore`, `Take`, `HashRing`              |
-| Encoding and interchange    | `Crypto`, `JsonPatch`, `JsonPointer`, `JsonSchema`, `StandardSchema`, `ChannelSchema`, `SchemaRepresentation`        |
+| Encoding and interchange    | `JsonPatch`, `JsonPointer`, `JsonSchema`, `StandardSchema`, `ChannelSchema`, `SchemaRepresentation`                  |
 | Versions, bytes, and diffs  | `SemVer`, `SemVerRange`, `Bytes`, `TextDiff`                                                                         |
 | Platform and terminal       | `FileSystem`, `Path`, `Stdio`, `Terminal`, `Utils`                                                                   |
 

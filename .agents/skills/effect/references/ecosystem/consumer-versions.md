@@ -23,8 +23,10 @@ differences live in [v4-beta-deltas.md](v4-beta-deltas.md).
    - `4.0.0` through `4.0.5` → this skill's examples apply, except the changes listed in
      [4.0.0 → 4.0.6](v4-beta-deltas.md#400--406) for releases after the resolved one.
    - `4.0.6` → this skill's examples, as written.
+   - `4.1.0` through `4.1.2` → apply [4.0.6 → 4.1.2](v4-beta-deltas.md#406--412). In particular, use
+     the `effect/crypto` services instead of the removed `effect/Crypto` and `TestCrypto`.
    - A later published version or unreleased `origin/main` → read the package changelog past
-     `4.0.6`; only use it if the consumer intentionally runs that build.
+     `4.1.2`; only use it if the consumer intentionally runs that build.
 
 Representative checks:
 

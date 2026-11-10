@@ -1,14 +1,14 @@
 ---
 name: effect
 description:
-  "Effect-TS v4 (stable 4.0.6): Effect, Option, Result, Context.Service, Layer, Stream, Schedule,
-  Schema, ByteSize, domain subpaths (effect/http, http-api, net, sql, ai, cli, cluster, rpc, socket,
-  workers, encoding, devtools, eventlog, graphql, observability, persistence, process, schema,
-  reactivity, workflow, testing), root Arbitrary, native SQL/PostgreSQL, and @effect/vitest property
-  tests. Covers HttpApi + HttpApiMiddleware seams, three-slot DI, RequestContext, AppConfig,
-  platform adapters, Drizzle effect-postgres, and Effect-native TypeScript architecture. Cloudflare
-  Workers and workerd fetch hosting belong to cloudflare, TanStack Start dashboards to
-  tanstack-start, and subjective naming or abstraction taste to craft."
+  "Effect-TS v4 (stable 4.0.6 audit, 4.1.2 deltas): Effect, Option, Result, Context.Service, Layer,
+  Stream, Schedule, Schema, ByteSize, domain subpaths (effect/http, http-api, net, sql, ai, cli,
+  cluster, rpc, socket, workers, encoding, devtools, eventlog, graphql, observability, persistence,
+  process, schema, reactivity, workflow, testing), root Arbitrary, native SQL/PostgreSQL, and
+  @effect/vitest property tests. Covers HttpApi + HttpApiMiddleware seams, three-slot DI,
+  RequestContext, AppConfig, platform adapters, Drizzle effect-postgres, and Effect-native
+  TypeScript architecture. Cloudflare Workers and workerd fetch hosting belong to cloudflare,
+  TanStack Start dashboards to tanstack-start, and subjective naming or abstraction taste to craft."
 disable-model-invocation: true
 metadata:
   opencode/slash: "true"
@@ -21,7 +21,9 @@ Read the reference for the task. `~/Developer/effect` is the canonical checkout.
 version-sensitive APIs, check resolved
 [consumer dependencies](references/ecosystem/consumer-versions.md) against the
 [version lineage and deltas](references/ecosystem/v4-beta-deltas.md). This skill documents
-`effect@4.0.6`; code on an earlier 4.0.x release, beta, or RC needs the lineage page.
+`effect@4.0.6`; a `4.1.x` consumer also applies the
+[4.0.6 → 4.1.2 deltas](references/ecosystem/v4-beta-deltas.md#406--412), including the
+`effect/crypto` services. Code on an earlier 4.0.x release, beta, or RC needs the lineage page.
 
 ## Core defaults
 
