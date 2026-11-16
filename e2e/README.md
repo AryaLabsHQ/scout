@@ -82,8 +82,8 @@ Expected output after `up.sh`:
 
 ```bash
 # Tail agent logs (reads from .scout/<node>.log on the host)
-./e2e/scripts/logs.sh node-server          # last 20 lines
-./e2e/scripts/logs.sh node-server follow   # tail -f
+./e2e/scripts/logs.sh                      # last 20 lines from each node log
+./e2e/scripts/logs.sh node-server          # follow this node's log (tail -f)
 
 # Drop into a shell in a node
 ./e2e/scripts/exec.sh node-k3s

@@ -76,7 +76,7 @@ Key responsibilities:
 
 - SQLite persistence via Drizzle ORM (WAL mode)
 - Metrics ingestion with tiered retention (1m / 10m / 20m / 120m / 480m over 30 days)
-- Alert evaluation engine with 3-strike debounce
+- Alert evaluation engine with per-rule consecutive-sample thresholds
 - Plugin registry and metadata serving
 - Operator session runtime (pi-durable harness; see `docs/operator/architecture.md`)
 - Browser and agent WebSocket RPC servers
@@ -97,7 +97,7 @@ Agents run as standalone binaries on each monitored machine. Each agent connects
 Key responsibilities:
 
 - Auto-discover system capabilities (CPU, memory, disk, network, GPU, SMART, temps, processes)
-- Run plugin hosts for systemd, Docker, and Kubernetes collectors
+- Run plugin hosts for systemd, Docker, Kubernetes, and edge collectors
 - Report core metrics and plugin collection results on a 15-second interval
 - Handle hub-initiated commands: terminal sessions, plugin actions, plugin log streams
 
@@ -155,7 +155,7 @@ Both report RPCs require the outer `systemId` to match the registered host. Plug
 
 All RPC methods are defined in `packages/shared/src/rpc/` and organized by communication direction.
 
-### Browser -> Hub (`ClientHubRpcs` -- 37 methods)
+### Browser -> Hub (`ClientHubRpcs` -- 38 methods)
 
 | Domain      | Method                              | Type     |
 | ----------- | ----------------------------------- | -------- |
@@ -182,6 +182,7 @@ All RPC methods are defined in `packages/shared/src/rpc/` and organized by commu
 | Operator    | `operator.sessions.abort`           | Mutation |
 | Operator    | `operator.approvals.resolve`        | Mutation |
 | Operator    | `operator.skills.list`              | Query    |
+| Operator    | `operator.images.get`               | Query    |
 | Operator    | `operator.models.list`              | Query    |
 | Plugins     | `plugins.entities`                  | Query    |
 | Plugins     | `plugins.metrics`                   | Query    |
@@ -205,13 +206,14 @@ All RPC methods are defined in `packages/shared/src/rpc/` and organized by commu
 | `agent.report`                 | Send core metrics payload (CPU, memory, disk, network, etc.)        |
 | `agent.reportPluginCollection` | Send plugin entity snapshots, metric points, and events             |
 
-### Hub -> Agent (`HubAgentRpcs` -- 6 methods)
+### Hub -> Agent (`HubAgentRpcs` -- 7 methods)
 
 | Method              | Type     | Description                              |
 | ------------------- | -------- | ---------------------------------------- |
 | `plugins.runAction` | Mutation | Execute a plugin action on the agent     |
 | `plugins.logs`      | Stream   | Tail plugin log output from the agent    |
 | `terminal.open`     | Stream   | Open a PTY session on the agent          |
+| `terminal.exec`     | Mutation | Execute a command and return its result  |
 | `terminal.input`    | Mutation | Send input to an active terminal session |
 | `terminal.resize`   | Mutation | Resize an active terminal session        |
 | `terminal.close`    | Mutation | Close an active terminal session         |
@@ -276,6 +278,7 @@ packages/plugin-docker/
 | systemd    | `packages/plugin-systemd` | Service entities, metrics, start/stop/restart/enable/disable actions, journal logs                                               |
 | Docker     | `packages/plugin-docker`  | Container/image/volume/network entities, container metrics (CPU/mem/net), start/stop/restart actions, container logs             |
 | Kubernetes | `packages/plugin-k8s`     | Cluster/namespace/node/pod/deployment/service/ingress/job entities, resource metrics and events, scale/restart actions, pod logs |
+| Edge       | `packages/plugin-edge`    | Read-only cloudflared tunnel and Caddy reverse-proxy health                                                                      |
 
 ### Plugin Operator Surface
 
@@ -348,27 +351,27 @@ All configuration is through environment variables. No configuration files.
 
 These architectural decisions are locked and should not be revisited without explicit justification.
 
-| Decision                | Choice                                                                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------ |
-| Hub deployment          | Hub (API + WS) and web (SSR) as separate Bun processes, systemd user units on the hub host |
-| Agent deployment        | Standalone binary + systemd per machine                                                    |
-| Collectors              | Auto-discover + config override per agent                                                  |
-| K8s monitoring          | Generic discovery (not deployment-specific)                                                |
-| Data retention          | 30-day tiered (1m -> 10m -> 20m -> 120m -> 480m)                                           |
-| Plugin model            | Runtime-loaded trusted plugins, one package per plugin                                     |
-| Web serving             | Reverse proxy splits one origin between web (pages) and hub (`/api`, `/ws`, `/health`)     |
-| SSR strategy            | Server functions for initial load, direct client -> hub after                              |
-| Terminal emulator       | ghostty-web (custom React wrapper)                                                         |
-| HTTP layer              | @effect/platform-bun (native WS upgrade)                                                   |
-| Alert rules             | Standard defaults with 3-strike debounce                                                   |
-| Type strategy           | Schema-first at platform boundaries, TS inferred from Effect Schema                        |
-| Report interval         | 15 seconds                                                                                 |
-| React                   | React 19 + shadcn/ui v4 + @effect/atom-react                                               |
-| Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service                                        |
-| Hub <-> agent protocol  | effect/rpc over one WebSocket, DuplexRpcSocket adapter                                     |
-| Auth                    | Cloudflare Access JWT for browsers; shared token for agents                                |
-| Network metrics         | Total rx/tx bytes only                                                                     |
-| K8s scope               | Full workload (Pods, Deployments, Services, Ingress, Jobs)                                 |
-| Historical ranges       | 1h / 6h / 24h / 7d                                                                         |
-| Linting                 | oxlint + oxfmt                                                                             |
-| Name                    | Scout (final)                                                                              |
+| Decision                | Choice                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Hub deployment          | Hub (API + WS) and web (SSR) as separate Bun processes, systemd user units on the hub host                 |
+| Agent deployment        | Standalone binary + systemd per machine                                                                    |
+| Collectors              | Auto-discover + config override per agent                                                                  |
+| K8s monitoring          | Generic discovery (not deployment-specific)                                                                |
+| Data retention          | 30-day tiered (1m -> 10m -> 20m -> 120m -> 480m)                                                           |
+| Plugin model            | Runtime-loaded trusted plugins, one package per plugin                                                     |
+| Web serving             | Reverse proxy splits one origin between web (pages) and hub (`/api`, `/ws`, `/health`)                     |
+| SSR strategy            | Server functions for initial load, direct client -> hub after                                              |
+| Terminal emulator       | ghostty-web (custom React wrapper)                                                                         |
+| HTTP layer              | @effect/platform-bun (native WS upgrade)                                                                   |
+| Alert rules             | Per-rule consecutive-sample thresholds: 3 for CPU/memory/GPU, 1 for disk/SMART, 2 for failed systemd units |
+| Type strategy           | Schema-first at platform boundaries, TS inferred from Effect Schema                                        |
+| Report interval         | 15 seconds                                                                                                 |
+| React                   | React 19 + shadcn/ui v4 + @effect/atom-react                                                               |
+| Client <-> hub protocol | effect/rpc over WebSocket (NDJSON), AtomRpc.Service                                                        |
+| Hub <-> agent protocol  | effect/rpc over one WebSocket, DuplexRpcSocket adapter                                                     |
+| Auth                    | Cloudflare Access JWT for browsers; shared token for agents                                                |
+| Network metrics         | Total rx/tx bytes only                                                                                     |
+| K8s scope               | Full workload (Pods, Deployments, Services, Ingress, Jobs)                                                 |
+| Historical ranges       | 1h / 6h / 24h / 7d / 30d                                                                                   |
+| Linting                 | oxlint + oxfmt                                                                                             |
+| Name                    | Scout (final)                                                                                              |

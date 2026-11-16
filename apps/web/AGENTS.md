@@ -16,7 +16,7 @@ apps/web/
 ├── src/providers/    # Atom registry/runtime, confirm dialog, terminal panel, command palette, operator drawer
 ├── src/components/   # app-specific UI, shell, terminal, charts, shadcn-style primitives
 ├── src/components/shell/     # top bar (machine switcher, nav, live indicator) and session banner
-├── src/components/operator/  # operator chat UI (7 files + tiptap/)
+├── src/components/operator/  # operator chat UI and tiptap input extensions
 ├── src/hooks/        # pins, plugin data queries, unit actions, refresh intervals
 └── src/lib/          # connection state, health thresholds, systemd/k8s/edge entity helpers, formatting
 ```
@@ -34,7 +34,7 @@ apps/web/
 | Confirm before a state change                      | `src/providers/confirm-provider.tsx`                                                      | `useConfirm()`; every mutation goes through it                                  |
 | Plugin data (systemd units, k8s workloads, events) | `src/hooks/use-plugin-data.ts`                                                            | `plugins.entities` / `plugins.metrics` / `plugins.events`, refreshed every 15 s |
 | Generic plugin screens                             | `src/lib/plugin-ui/runtime.tsx`                                                           | json-render catalog for plugins without a dedicated page                        |
-| Operator chat UI                                   | `src/components/operator/`, `src/components/operator/AGENTS.md`                           | 7 component files + 10 tiptap extensions                                        |
+| Operator chat UI                                   | `src/components/operator/`, `src/components/operator/AGENTS.md`                           | Session UI, prompt drafts, images, and tiptap input extensions                  |
 
 ## CONVENTIONS
 
