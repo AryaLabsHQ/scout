@@ -147,3 +147,7 @@ cd e2e && ./scripts/up.sh
 - `docs/architecture.md` — full system architecture reference
 - `docs/operator/README.md` — operator user guide
 - `docs/operator/architecture.md` — operator developer architecture
+
+## REVIEW
+
+- A review of a diff, by a person or a tool, applies the rules in `REVIEW.md`.
